@@ -85,8 +85,8 @@
     \end{column}
   \end{columns}
   \vfill
-  This is not a ``basic RAG application.'' The value is the \textbf{ingestion-time decision} and the
-  deliverable is an \textbf{MCP server}.
+  This is not a ``basic RAG application.'' The value is the \textbf{ingestion-time decision}, the
+  deliverable is an \textbf{MCP server}, and retrieval is \textbf{associative}, not just similar.
 \end{frame}
 
 % ---------- 4. One sentence ----------
@@ -100,19 +100,20 @@
     \item Positioned against 2026's \textbf{learned consolidation} field (mem0, Zep-Graphiti, A-Mem).
     \item Differentiator 1: write-time salience + \textbf{reconciliation} is the product, not a bolt-on.
     \item Differentiator 2: \textbf{transport-agnostic} --- the same brain in a chat, an IDE, anything.
+    \item Differentiator 3: retrieval is \textbf{cue-driven associative recall}, not one similarity search.
   \end{itemize}
 \end{frame}
 
-% ---------- 5. Four minds ----------
-\begin{frame}{Four minds. One job each.}
+% ---------- 5. The minds ----------
+\begin{frame}{Ten small minds, each with one job}
   \begin{figure}
     \centering
     \begin{tikzpicture}[node distance=0.7cm]
       \node[bx] (ui) {Tottie UI\\chat + panel};
       \node[bx,right=1.3cm of ui] (ide) {Coding agent\\(VS Code)};
       \node[pbox,below=0.7cm of ui] (mcp) {MCP server};
-      \node[abx,below=0.7cm of mcp] (core) {Observer $\cdot$ Scribe $\cdot$ Retriever $\cdot$ Curator};
-      \node[abx,below=0.7cm of core] (db) {Postgres + pgvector};
+      \node[abx,below=0.7cm of mcp] (core) {Cue Classifier $\cdot$ Salience $\cdot$ Scribe $\cdot$ Activator $\cdot$ Curator $\cdot$ Consolidator};
+      \node[abx,below=0.7cm of core] (db) {Postgres + pgvector + links};
       \draw[ar] (ui) -- (mcp);
       \draw[ar] (ide) |- (mcp);
       \draw[ar] (mcp) -- (core);
@@ -120,10 +121,10 @@
     \end{tikzpicture}
   \end{figure}
   \begin{itemize}
-    \item \textbf{Observer} --- is this worth remembering?
+    \item \textbf{Salience} --- is this worth remembering at all?
     \item \textbf{Scribe} --- structure, tag, embed, \textbf{reconcile}.
-    \item \textbf{Retriever} --- runs every turn; find what is contextually relevant.
-    \item \textbf{Curator} --- write the compact \textbf{Context Card} the agent receives.
+    \item \textbf{Activator} --- spread activation over the memory graph.
+    \item \textbf{Consolidator} --- sleep: generalise episodes into lessons.
   \end{itemize}
 \end{frame}
 
@@ -135,7 +136,7 @@
     \midrule
     Identity & Persona + permanent constraints. Pinned raw, zero search. \\
     Episodic & Chronological decisions, state changes, history. \\
-    Knowledge & Ingested docs, files, references. \\
+    Knowledge & Ingested docs, files, references (semantic). \\
     Procedural (``Lessons'') & Mistake $\rightarrow$ solution pairs. Autosave. \\
     \bottomrule
   \end{tabularx}
@@ -156,7 +157,7 @@
     $\triangleright$ IDENTITY (pinned) user=Frans - girlfriend birthday = Nov 7\\
     $\triangleright$ EPISODIC 2026-10-29 decided: pgvector, not Qdrant \#tottie \#decision\\
     $\triangleright$ KNOWLEDGE (telecom-arch.pdf p.7) Server C behind A/B \#telecom \#infra\\
-    $\rightarrow$ probe deeper: memory.probe("\#telecom")
+    $\rightarrow$ why: cue=COMMAND $\rightarrow$ seed \#tottie $\rightarrow$ spread 1 hop
   \end{block}
   \begin{itemize}
     \item \textbf{Ambient} --- the card is always there; the agent ``just knows.''
@@ -172,12 +173,43 @@
   \end{block}
   \begin{itemize}
     \item Retrieval filters \texttt{valid\_to IS NULL}, so a stale fact can never surface.
-    \item Plain vector recall has \emph{no update semantics} --- both facts return and the model guesses.
+    \item A retrieved memory becomes \emph{labile} --- contradict it now and it is \textbf{rewritten}
+    (reconsolidation).
     \item This is exactly LongMemEval's \emph{knowledge update} and MemoryAgentBench's \emph{conflict resolution}.
   \end{itemize}
 \end{frame}
 
-% ---------- 9. Three bodies ----------
+% ---------- 9. Cue typing + spreading activation ----------
+\begin{frame}{It does not search. It associates.}
+  \begin{block}{``Implement feature A'' is not a question}
+    It is a \textbf{COMMAND cue}. Its policy is: \emph{assemble what a competent person needs to act}
+    --- project bindings, conventions, past decisions, lessons, constraints.
+  \end{block}
+  \begin{itemize}
+    \item From the cue's nodes, \textbf{activation spreads} along memory links and \textbf{decays}
+    with distance.
+    \item Then \textbf{pattern completion} reconstructs the whole coherent context.
+    \item Three legs, fused: \textbf{semantic + lexical + associative}.
+    \item This is why a memory from fifteen years ago surfaces the moment someone mentions a band.
+  \end{itemize}
+  \vfill
+  \centering\itshape RAG is one leg. This is the whole animal.
+\end{frame}
+
+% ---------- 10. Consolidation ----------
+\begin{frame}{Then it sleeps --- and generalises.}
+  \begin{block}{The Consolidator (``Sleep'')}
+    Replays recent episodic memories, extracts the recurring structure into \textbf{semantic}
+    knowledge, and prunes what is never used. \emph{12 episodic $\rightarrow$ 3 semantic; 4 pruned.}
+  \end{block}
+  \begin{itemize}
+    \item The neurological analogue: hippocampal replay during sleep builds neocortical knowledge.
+    \item No other memory tool shows \emph{generalisation} on camera.
+    \item On demand, so it is deterministic and demoable.
+  \end{itemize}
+\end{frame}
+
+% ---------- 11. Three bodies ----------
 \begin{frame}{One brain. Three bodies.}
   \begin{columns}
     \begin{column}{0.33\textwidth}
@@ -201,14 +233,14 @@
   \textbf{The money shot:} add a fact in the chat, then ask your coding agent --- it already knows.
 \end{frame}
 
-% ---------- 10. The panel ----------
+% ---------- 12. The panel ----------
 \begin{frame}{The Memory Panel: the invisible, made visible}
   Real time, four blocks:
   \begin{enumerate}
     \item \textbf{Learning now} --- the turn + Observer verdict (KEEP/DISCARD, salience, reason).
     \item \textbf{Memories formed} --- \texttt{NEW} / \texttt{UPDATE} / \texttt{SUPERSEDE} / \texttt{SKIP}, with the text.
-    \item \textbf{Inserted where} --- tier chip + tag/room chips + a growing room map.
-    \item \textbf{Context injected} --- the exact card the model received this turn.
+    \item \textbf{Where it inserted them} --- tier chip + tag/room chips + a growing room map.
+    \item \textbf{Why this surfaced} --- \texttt{cue=COMMAND $\rightarrow$ seed $\rightarrow$ spread 1 hop}, plus the exact card the model received.
   \end{enumerate}
   \vfill
   \begin{block}{Why this is the hero}
@@ -216,7 +248,7 @@
   \end{block}
 \end{frame}
 
-% ---------- 11. Proof ----------
+% ---------- 13. Proof ----------
 \begin{frame}{We do not ask you to trust it. We measure it.}
   \begin{itemize}
     \item A \textbf{$\sim$40-item} suite across LongMemEval's categories (knowledge update, temporal,
@@ -231,17 +263,17 @@
   \end{alertblock}
 \end{frame}
 
-% ---------- 12. What we built ----------
+% ---------- 14. What we built ----------
 \begin{frame}{What was built during the Hackathon (Oct 27 -- Nov 4)}
   \begin{tabularx}{\textwidth}{@{}l X@{}}
     \toprule
     Component & \\
     \midrule
-    \texttt{core/} & Memory engine: Observer, Scribe, Retriever, Curator; pgvector store; reconcile \\
-    \texttt{mcp/} & MCP server: 6 tools, 2 resources, the context-card prompt \\
-    \texttt{ui/} & Tottie chat, sprite state machine, live Memory Panel, ablation toggle \\
-    \texttt{eval/} & ON/OFF ablation harness \\
-    \texttt{docs/} & Full architecture + flows + this deck (LaTeX $\rightarrow$ PDF) \\
+    \texttt{core/} & Engine: Cue Classifier, Salience, Scribe, Activator, Completer, Consolidator, Reconciler \\
+    \texttt{mcp/} & MCP server: 7 tools, 2 resources, the context-card prompt \\
+    \texttt{ui/} & Tottie chat, sprite state machine, live Memory Panel, why-surfaced, Sleep, ablation \\
+    \texttt{eval/} & ON/OFF ablation harness + consolidation check \\
+    \texttt{docs/} & Cognition model + architecture + flows + this deck (LaTeX $\rightarrow$ PDF) \\
     \bottomrule
   \end{tabularx}
   \vfill
@@ -249,7 +281,7 @@
   \texttt{docs/business/hackathon\_compliance}.
 \end{frame}
 
-% ---------- 13. The joke + pitch ----------
+% ---------- 15. The joke + pitch ----------
 \begin{frame}{So what did I actually build it for?}
   \begin{center}
     \Large ``Everything I was mad at my girlfriend for ---\\ and the one thing that matters: her birthday.''
@@ -262,7 +294,7 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 14. Close ----------
+% ---------- 16. Close ----------
 \begin{frame}[plain]
   \begin{center}
     \Huge Tottie\\[3mm]

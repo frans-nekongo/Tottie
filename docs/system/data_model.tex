@@ -25,6 +25,10 @@ CREATE TABLE memories (
   tags        text[] NOT NULL DEFAULT '{}',  -- the "rooms": #person/frans, #project/tottie
   salience    real NOT NULL DEFAULT 0.5,     -- write-time importance 0..1
   confidence  real NOT NULL DEFAULT 1.0,
+  principle   text,                          -- the reusable rule behind a decision (memory->judgment)
+  arousal     real DEFAULT 0.0,              -- moment-of-encoding salience (amygdala analogue)
+  access_count int DEFAULT 0,                -- consolidation + decay
+  last_access timestamptz,                   -- decay
   source      jsonb,                         -- {session_id, turn, doc, url, msg_id}
   supersedes  uuid REFERENCES memories(id),  -- temporal chain
   valid_from  timestamptz NOT NULL DEFAULT now(),
@@ -41,8 +45,19 @@ CREATE TABLE memory_events (                 -- the X-ray feed + the eval ledger
   utterance        text,
   observer_verdict jsonb,                    -- {keep, salience, reason, candidates}
   scribe_action    jsonb,                    -- {op, tier, kind, tags, memory_id}
+  cue              jsonb,                    -- {type, entities, policy} for recall events
   latency_ms       int,
   tokens           int
+);
+
+CREATE TABLE memory_links (                  -- the associative index (hippocampal analogue)
+  id       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner    text NOT NULL,
+  src      uuid NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  dst      uuid NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  relation text NOT NULL,                    -- tag | entity | supersedes | temporal | cooccur
+  weight   real NOT NULL DEFAULT 1.0,
+  UNIQUE (owner, src, dst, relation)
 );
 \end{Verbatim}
 
@@ -50,20 +65,30 @@ CREATE TABLE memory_events (                 -- the X-ray feed + the eval ledger
 \begin{Verbatim}[breaklines=true,fontsize=\small]
 CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops);   -- vector recall
 CREATE INDEX ON memories USING gin (tags);                            -- room/tag filter
-CREATE INDEX ON memories USING gin (to_tsvector('english', content)); -- full-text (lexical)
+CREATE INDEX ON memories USING gin (to_tsvector('english', content)); -- full-text (lexical leg)
 CREATE INDEX ON memories (owner, tier) WHERE valid_to IS NULL;        -- live-slice lookup
+CREATE INDEX ON memory_links (owner, src);                            -- spreading activation
+CREATE INDEX ON memory_links (owner, dst);
 \end{Verbatim}
 
+\section{Why \texttt{memory\_links} Exists}
+Tags alone give a flat ``room'' model. The associative leg of retrieval needs \emph{edges}: which
+memories share a tag, which entities co-occur, which memory supersedes which, which are temporally
+adjacent. \texttt{memory\_links} is that adjacency structure --- the substrate the Activator walks.
+Links are written only on tag, entity, and supersede events (not every turn), which bounds write
+amplification.
+
 \section{Temporal Correctness}
-Every fact carries a validity window. When a new fact contradicts an old one, the Scribe sets the
-old row's \texttt{valid\_to = now()} and inserts the new row with \texttt{supersedes = old.id}.
-Retrieval filters \texttt{valid\_to IS NULL}, so \textbf{stale facts are never returned} and the
-agent never has to reconcile in-prompt. This mirrors the temporal-graph behaviour of Zep/Graphiti.
+Every fact carries a validity window. When a new fact contradicts an old one --- and especially when
+the old one was \emph{just retrieved} --- the old row's \texttt{valid\_to} is set to \texttt{now()} and
+the new row is inserted with \texttt{supersedes = old.id}. Retrieval filters
+\texttt{valid\_to IS NULL}, so \textbf{stale facts are never returned}. See
+\emph{Process Flows: Reconsolidation on Access}.
 
 \section{Owner Scoping}
 All reads and writes are scoped by \texttt{owner}. The demo runs a single owner
-(\texttt{owner\_local}), but the schema is multi-tenant from day one: identity, recall, probe, and
-forget all take an owner key, so the same engine can serve many users without cross-contamination.
+(\texttt{owner\_local}), but the schema is multi-tenant from day one: identity, recall, probe,
+consolidate, and forget all take an owner key.
 
 \section{Embeddings}
 Real embeddings use FastEmbed \texttt{BAAI/bge-small-en-v1.5} (384-d), loaded from the local model

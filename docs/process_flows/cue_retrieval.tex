@@ -1,0 +1,55 @@
+\chapter{Process Flow: Cue Typing, Spreading Activation, and Pattern Completion}
+
+\section{The User Types an Instruction, Not a Question}
+\textbf{Trigger:} The user types \emph{``implement feature A''} in the Tottie chat (or a coding agent
+issues the same over MCP).
+
+\textbf{Action / UI State:} The sprite enters \texttt{thinking}; the Memory Panel opens a
+``RECALL'' block with a \emph{cue} chip showing the classified type.
+
+\textbf{System Logic:} The \textbf{Cue Classifier} labels the turn \texttt{COMMAND/INTENT} and extracts
+entities and the project scope (\texttt{\#project/A}). The retrieval \textbf{policy} for a command is
+not ``find similar text''; it is \emph{assemble what a competent person needs to act}: project
+bindings, conventions, prior decisions on \texttt{A}, lessons tied to \texttt{A}, and constraints.
+
+\textbf{Data Flow \& Mutators:} A retrieval request is issued with the intent, entities, and scope; a
+\texttt{memory\_event} of kind \texttt{recall} begins.
+
+\section{Seeding the Associative Network}
+\textbf{Trigger:} The classified cue.
+\textbf{Action / UI State:} The Panel shows seed chips (e.g.\ \texttt{\#project/A}, \texttt{feature A}).
+\textbf{System Logic:} Nodes are seeded directly from the parsed entities (bypassing similarity), and
+the three legs run in parallel: \textbf{semantic} (embedding nearest neighbours), \textbf{lexical}
+(full-text match), and \textbf{associative} (graph nodes for the seeded tags/entities).
+\textbf{Data Flow \& Mutators:} A candidate set of memory ids with initial activation.
+
+\section{Spreading Activation}
+\textbf{Trigger:} The seeded candidate set.
+\textbf{Action / UI State:} The Panel renders each hop as it happens: ``spread 1 hop (w = 0.6)''.
+\textbf{System Logic:} The \textbf{Activator} walks \texttt{memory\_links} outward from the seeds,
+propagating activation with a per-hop decay and a threshold cut-off. Linked memories that were never
+textually similar to the instruction still light up --- because they are \emph{associated}, exactly as
+a band name revives an unrelated scene from fifteen years ago.
+\textbf{Data Flow \& Mutators:} A ranked activation vector over memory ids.
+
+\section{Pattern Completion}
+\textbf{Trigger:} A high-activation region of the graph.
+\textbf{Action / UI State:} The Panel groups the returned memories into one coherent cluster.
+\textbf{System Logic:} The \textbf{Completer} takes the top-activated \emph{cluster} and reconstructs a
+coherent, self-consistent context --- the biological analogue of CA3 recurrent excitation restoring a
+whole memory from a partial cue.
+\textbf{Data Flow \& Mutators:} The cluster replaces the loose hit list.
+
+\section{Curate and Inject}
+\textbf{Trigger:} The completed cluster.
+\textbf{Action / UI State:} The Panel's ``CONTEXT INJECTED THIS TURN'' block shows the final Context
+Card, each line annotated with \emph{why it surfaced} (cue type $\rightarrow$ seed $\rightarrow$ hops).
+\textbf{System Logic:} The \textbf{Curator} assembles the card within a token budget and appends the
+``probe deeper'' pointers.
+\textbf{Data Flow \& Mutators:} The card is injected into the prompt; a \texttt{recall} event is
+streamed to the Panel.
+
+\section{Inhibition and Abstention}
+\textbf{Trigger:} Nothing clears the activation floor, or everything retrieved is superseded.
+\textbf{System Logic:} Inhibit the results and inject \emph{nothing}. Abstaining is a correct outcome;
+injecting noise is not.

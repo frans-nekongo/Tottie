@@ -1,0 +1,26 @@
+\chapter{Process Flow: Reconsolidation on Access}
+
+\section{A Memory Is Retrieved}
+\textbf{Trigger:} Any recall that returns memory \texttt{M}.
+\textbf{Action / UI State:} The Panel subtly marks \texttt{M} as \emph{active} (a soft highlight).
+\textbf{System Logic:} The \textbf{Reconciler} marks \texttt{M} labile for the remainder of the turn,
+records \texttt{last\_access} and increments \texttt{access\_count}. Biologically, a retrieved memory
+returns to an unstable state and must be re-stabilised.
+\textbf{Data Flow \& Mutators:} A lightweight update of \texttt{access\_count} / \texttt{last\_access}.
+
+\section{The User Contradicts It}
+\textbf{Trigger:} The user says \emph{``actually, it's the 8th''} while \texttt{M} (``her birthday is
+the 7th'') is active.
+\textbf{Action / UI State:} The Panel shows a \texttt{SUPERSEDE} badge; the old value is struck through;
+the new value appears.
+\textbf{System Logic:} Because \texttt{M} is active, the write path takes the \emph{reconsolidation}
+route, not a blind append: the old row's \texttt{valid\_to} is set to \texttt{now()}, the new row is
+inserted with \texttt{supersedes = M.id}, and adjacent nodes are co-activated so the correction binds
+to the same context.
+\textbf{Data Flow \& Mutators:} Two row mutations, one supersede link, one \texttt{memory\_event}.
+
+\section{Why It Is Different}
+A passive store appends the correction and later returns both the old and the new fact, leaving the
+model to guess. A reconsolidating store resolves the conflict in the moment it is surfaced. This is
+the same behaviour the LongMemEval \emph{knowledge update} category and the MemoryAgentBench
+\emph{conflict resolution} category are designed to probe.

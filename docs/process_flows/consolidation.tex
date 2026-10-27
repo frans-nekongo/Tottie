@@ -1,0 +1,37 @@
+\chapter{Process Flow: Consolidation (the Sleep Job)}
+
+\section{The User Presses ``Sleep''}
+\textbf{Trigger:} The user clicks the \textbf{Sleep} button in the Memory Panel (or calls
+\texttt{POST /consolidate}, or the \texttt{memory.sleep} MCP tool).
+
+\textbf{Action / UI State:} The sprite enters a calm \texttt{remembering} state; the Panel shows a
+progress strip reading \emph{``replaying N episodes\ldots''}.
+
+\textbf{System Logic:} The \textbf{Consolidator} loads the recent episodic memories for the owner ---
+the analogue of hippocampal replay during sleep.
+
+\textbf{Data Flow \& Mutators:} A read of \texttt{tier='episodic'} rows within the replay window.
+
+\section{Semanticisation}
+\textbf{Trigger:} The replayed episode set.
+\textbf{Action / UI State:} The Panel shows generated semantic memories appearing one by one
+(e.g.\ \emph{``prefers X for Y''}).
+\textbf{System Logic:} An LLM pass extracts recurring structure across the episodes and writes
+\textbf{semantic} rows --- the same way repeated experiences are integrated into neocortical
+knowledge, losing their episodic detail and becoming general.
+\textbf{Data Flow \& Mutators:} \texttt{INSERT INTO memories (tier='knowledge', ...)} with links from
+the source episodes in \texttt{memory\_links} (relation \texttt{cooccur}).
+
+\section{Pruning and Scaling}
+\textbf{Trigger:} The end of the replay pass.
+\textbf{Action / UI State:} The Panel prints a summary: \emph{``12 episodic $\rightarrow$ 3 semantic;
+4 pruned''}.
+\textbf{System Logic:} Low-activation, rarely-accessed memories and links are decayed or archived, and
+link weights are normalised so total capacity stays bounded (the homeostatic-scaling / long-term
+depression analogue). Nothing user-visible is deleted without the number being reported.
+\textbf{Data Flow \& Mutators:} Weight decay on \texttt{memory\_links}; archival flag on stale rows.
+
+\section{Why This Beat Exists}
+No other memory tool demonstrated on stage shows \emph{generalisation} --- the move from ``I did this
+twelve times'' to ``I always do this''. It is short (about twelve seconds), deterministic because it
+is on demand, and it visibly rewards keeping Tottie running.

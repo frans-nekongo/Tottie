@@ -15,8 +15,8 @@ user: ``I'm vegetarian now''\\Tottie: ``Noted --- updating\ldots''\\[2mm]
 {[}Tottie ON $\vert$ OFF{]} $\leftarrow$ ablation};
 \node[lbl,below=0.15cm of panel.north,text width=5.6cm,align=left]{\textbf{-- LEARNING NOW --}\ \ turn 14 $\cdot$ Observer: KEEP 0.82\\``durable personal fact''\\[1.5mm]
 \textbf{-- MEMORIES FORMED --}\\$\bullet$ SUPERSEDE diet: meat $\rightarrow$ veg\\\ \ \ tier: identity $\cdot$ \#person/frans\\[1.5mm]
-\textbf{-- INSERTED WHERE --}\ \ identity $\triangleright$ +1\ \ \#person/frans\\[1.5mm]
-\textbf{-- CONTEXT INJECTED THIS TURN --}\\{[}MEMORY CARD $\cdot$ 3 hits{]}\ldots};
+\textbf{-- WHY THIS SURFACED --}\ \ cue=COMMAND $\rightarrow$ seed \#project/tottie\\\ \ \ $\rightarrow$ spread 1 hop (w=0.6) $\rightarrow$ convention\\[1.5mm]
+{[}Sleep{]}\ $\leftarrow$ consolidate episodic $\rightarrow$ semantic};
 \end{tikzpicture}
 \caption{The Memory Panel is the hero; the sprite is the reacting character.}
 \end{figure}
@@ -33,15 +33,23 @@ the four things that matter, in order:
   \item \textbf{Where it inserted them} --- the tier chip and the tag/room chips, plus a live
   \textbf{room map} that grows as new tags appear.
   \item \textbf{What it injected into context} --- the literal \textbf{Context Card} the Curator
-  built for that turn. This is what makes the invisible write-time decision visible on camera.
+  built for that turn, annotated with a \textbf{``why this surfaced''} line per hit
+  (\texttt{cue=COMMAND $\rightarrow$ seed \#project/tottie $\rightarrow$ spread 1 hop (w=0.6)}). This
+  is what makes the write-time \emph{and} the associative-retrieval decision visible on camera.
 \end{enumerate}
+
+\section{The Sleep Button}
+A single \textbf{Sleep} control runs the Consolidator on demand. During the run the Panel shows a
+progress strip (\emph{``replaying N episodes\ldots''}) and then a summary
+(\emph{``12 episodic $\rightarrow$ 3 semantic; 4 pruned''}). It is the only control that shows
+\emph{generalisation} happening. See \emph{Process Flows: Consolidation}.
 
 \section{Tottie Avatar --- Drop-In Sprite (frame sets per state)}
 \begin{itemize}
   \item \textbf{Built here:} a \texttt{TottieFace} component plus a state machine with five states
   --- \texttt{idle}, \texttt{listening}, \texttt{thinking}, \texttt{remembering}, \texttt{speaking}
-  --- driven by app events (streaming tokens $\rightarrow$ \texttt{speaking}; a write event
-  $\rightarrow$ \texttt{remembering}; a recall $\rightarrow$ \texttt{remembering}).
+  --- driven by app events (streaming tokens $\rightarrow$ \texttt{speaking}; a write event or a
+  recall $\rightarrow$ \texttt{remembering}; the Sleep job $\rightarrow$ \texttt{remembering}).
   \item \textbf{Provided by the Architect:} frame sets in \texttt{ui/public/tottie/<state>/}. Drop
   PNGs; \textbf{no code change required}.
   \item \textbf{Contract:} \texttt{TottieFace} reads \texttt{\{state, framesDir, fps\}}. A

@@ -34,18 +34,18 @@ Verdict & Keep $\cdot$ Improve $\cdot$ Cut $\cdot$ Add $\cdot$ Defer. \\
 \begin{enumerate}
   \item \textbf{Meta \& scope} --- event/dates; repo/branch/commit rule; decision log; scope note.
   \item \textbf{Strategy} --- thesis; positioning vs mem0/Zep/Letta; differentiators; problem statement.
-  \item \textbf{Demo design} --- three bodies; the money shot; video style.
-  \item \textbf{Architecture} --- four minds; tiers; write path; reconcile; tier routing; recall path; Context Card; probe/tags; concurrency.
-  \item \textbf{Data \& storage} --- \texttt{memories}; \texttt{memory\_events}; indexes; pgvector decision; embeddings; init; owner scoping.
-  \item \textbf{Intelligence layer} --- Observer; Scribe; Curator; providers; model choice/cost; sampling.
-  \item \textbf{Interfaces} --- HTTP surface; MCP tools; resources; prompt; SSE events; error/abstention.
-  \item \textbf{UI/UX} --- layout; panel blocks; sprite state machine; ablation; room map; typography.
-  \item \textbf{Evaluation} --- scenario set; ablation method; metrics; harness; rubric mapping.
+  \item \textbf{Demo design} --- three bodies; the money shot; video style; \textbf{the Sleep beat}.
+  \item \textbf{Architecture \& cognition} --- the ten components; tiers; write path; reconcile; tier routing; recall path; Context Card; probe/tags; concurrency; \textbf{cue classifier}; \textbf{activator}; \textbf{completer}; \textbf{consolidator}; \textbf{salience gate}; \textbf{reconsolidation}; \textbf{neuroscience basis}.
+  \item \textbf{Data \& storage} --- \texttt{memories}; \texttt{memory\_events}; indexes; pgvector decision; embeddings; init; owner scoping; \textbf{\texttt{memory\_links}}; \textbf{principle/arousal/access fields}.
+  \item \textbf{Intelligence layer} --- Observer; Scribe; Curator; providers; model choice/cost; sampling; \textbf{consolidation prompts}.
+  \item \textbf{Interfaces} --- HTTP surface (\texttt{/consolidate}); MCP tools (\texttt{memory.sleep}); resources; prompt; SSE events; error/abstention.
+  \item \textbf{UI/UX} --- layout; panel blocks; sprite state machine; ablation; room map; typography; \textbf{why-surfaced line + Sleep button}.
+  \item \textbf{Evaluation} --- scenario set; ablation method; metrics; harness; rubric mapping; \textbf{consolidation check}.
   \item \textbf{Execution plan} --- MUST/SHOULD/STRETCH; phase schedule; gating; mandates.
   \item \textbf{Media} --- shot list; deck; music/captions; viral plan.
-  \item \textbf{Repo \& tooling} --- tree; reuse map; orch/env; docs structure; build commands; gitignore/Makefile.
+  \item \textbf{Repo \& tooling} --- tree; reuse map; orch/env; docs structure; build commands; gitignore/Makefile; \textbf{cognition modules}.
   \item \textbf{Compliance} --- rules mapping; contribution ledger; prize targeting; banned-avoidance.
-  \item \textbf{Risk} --- register; live-demo mitigations.
+  \item \textbf{Risk} --- register; live-demo mitigations; \textbf{cognition scope-creep mitigations}.
   \item \textbf{Verification} --- test plan; dry-run checklist; orch checks.
   \item \textbf{Open items} --- sprite frames; Meta keys; sampling; name/branch.
   \item \textbf{Appendices} --- rules extract; glossary; sources.
@@ -53,4 +53,6 @@ Verdict & Keep $\cdot$ Improve $\cdot$ Cut $\cdot$ Add $\cdot$ Defer. \\
 
 \section{Audit Ledger}
 The per-item verdicts are maintained alongside this specification. Items are resolved to
-\texttt{Keep}/\texttt{Improve} before the spec is frozen for build.
+\texttt{Keep}/\texttt{Improve} before the spec is frozen for build. The cognition-model IDs added in
+v3 (\textbf{4.9--4.15, 5.7--5.8, 6.6, 8.6, 9.5, 3.6}) are recorded as \texttt{Add}, with the two
+open items resolved: the Consolidator is SHOULD/on-demand, and the Sleep beat enters the video.

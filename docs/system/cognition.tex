@@ -1,0 +1,155 @@
+\chapter{The Cognition Model: What to Remember, and How a Cue Recalls}
+
+This chapter is the intellectual core of Tottie. It answers two questions that a plain RAG pipeline
+never asks: \emph{what is worth remembering in the first place}, and \emph{how does the right memory
+come back when it is needed} --- including the case of an instruction like ``implement feature A'',
+which is not a question at all.
+
+\section{The Core Realisation: RAG Is One Leg, Not the Animal}
+Retrieval-augmented generation matches \textbf{text similarity}: embed the query, take the nearest
+neighbours. That assumption fails the moment the input is not a question. ``Implement feature A'' has
+no textually similar neighbour in memory, yet a competent human immediately surfaces the project's
+conventions, past decisions about A, and known pitfalls. A mind returns the right context anyway.
+So Tottie's retrieval is not one similarity search; it is a \textbf{staged, associative process}.
+
+\section{What Is Worth Remembering: The Salience Gate}
+The brain retains an experience when synaptic activity is strong \emph{and} neuromodulators
+(amygdala input, norepinephrine, dopamine) lower the threshold for durable long-term potentiation;
+weak activity produces long-term depression and is pruned. The Observer is that gate. Every candidate
+memory is scored:
+\begin{Verbatim}[breaklines=true,fontsize=\small]
+salience = w1*persistence      (still true next week?)
+         + w2*reusability      (applies beyond this one turn?)
+         + w3*consequence      (what breaks if we forget it?)
+         + w4*arousal          (emotional / task-critical in the moment?)
+\end{Verbatim}
+Below threshold $\rightarrow$ DISCARD. The weights are tuned by the evaluation harness.
+
+\section{The Taxonomy of Memory Kinds}
+\begin{longtable}{@{}p{0.30\textwidth}p{0.42\textwidth}p{0.16\textwidth}@{}}
+\toprule
+Kind & Example & Default tier \\
+\midrule
+Preference (style/tone/format) & ``Oxford comma; no em-dashes; open with a TL;DR.'' & identity \\
+Convention / rule & ``Always run tests before commit.'' & identity \\
+Binding / fact & ``Project A uses Postgres; Project B uses Mongo.'' & knowledge \\
+Decision (+ principle + rationale) & ``Chose pgvector for C: already running locally.'' & knowledge \\
+Constraint & ``The service container is 1 CPU / 1 GB.'' & knowledge \\
+Identity / persona & name, timezone, ``her birthday is Nov 7''. & identity \\
+Episodic event & ``On Oct 29 we decided X in session Y.'' & episodic \\
+Lesson / procedure & \texttt{mcp.server.fastmcp} import error $\rightarrow$ pin \texttt{mcp<2}. & procedural \\
+\bottomrule
+\end{longtable}
+
+\textbf{Per-persona emphasis:} a \emph{writer} needs preferences, conventions, and \emph{style
+exemplars} (so the agent imitates voice, not just obeys rules); a \emph{developer} needs bindings,
+conventions, decisions-with-principle, and lessons; a \emph{person} needs identity, preferences,
+dates, and relationships.
+
+\section{Memory Becomes Judgment: The \texttt{principle} Field}
+``For project C, use project A's database because it is better'' is \textbf{not recall} --- it is
+\emph{projecting a stored principle onto a new situation}. A decision is therefore stored as
+\texttt{decision + principle + rationale}, for example
+\texttt{principle: "prefer the database already running locally for small services"}. At recall time
+the Curator surfaces \textbf{principles} whenever the cue is a decision. This is the line between a
+memory store and something that behaves like judgment.
+
+\section{How a Cue Retrieves: Typing, Spreading, Completing}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.55cm,font=\sffamily\scriptsize]
+\node[databox] (turn) {turn};
+\node[syncbox,right=0.5cm of turn] (cue) {Cue Classifier};
+\node[syncbox,right=0.5cm of cue] (policy) {policy};
+\node[uibox,right=0.5cm of policy] (seed) {Seed\\semantic $\cup$ lexical $\cup$ associative};
+\node[uibox,right=0.5cm of seed] (spread) {Spread\\(1--2 hops, decay)};
+\node[uibox,right=0.5cm of spread] (complete) {Complete\\(cluster)};
+\node[syncbox,right=0.5cm of complete] (curator) {Curator $\rightarrow$ Card};
+\draw[flow] (turn) -- (cue); \draw[flow] (cue) -- (policy); \draw[flow] (policy) -- (seed);
+\draw[flow] (seed) -- (spread); \draw[flow] (spread) -- (complete); \draw[flow] (complete) -- (curator);
+\end{tikzpicture}
+\caption{Retrieval is staged: understand the cue, choose a policy, seed nodes, spread activation,
+complete the cluster, curate the card.}
+\end{figure}
+
+\subsection{Cue Typing --- ``What question is \texttt{implement feature A}?''}
+It is not a question. The turn is classified first, and the type selects the retrieval policy.
+\begin{longtable}{@{}p{0.20\textwidth}p{0.26\textwidth}p{0.46\textwidth}@{}}
+\toprule
+Cue type & Example & Retrieval policy \\
+\midrule
+QUESTION & ``When is her birthday?'' & entity facts $+$ identity $+$ knowledge \\
+\textbf{COMMAND / INTENT} & \textbf{``Implement feature A.''} & \textbf{project bindings $+$ conventions $+$ past decisions on A $+$ lessons $+$ constraints} \\
+STATEMENT (new info) & ``I moved to Windhoek.'' & write path; minimal recall \\
+CORRECTION & ``Actually, it is the 8th.'' & recall the contradicted memory $\rightarrow$ supersede \\
+REFERENCE & ``Use that DB we discussed.'' & resolve the referent from recent episodic memory \\
+CHITCHAT & ``thanks!'' & none (do not pollute) \\
+\bottomrule
+\end{longtable}
+
+\subsection{Spreading Activation and Pattern Completion}
+From the seeded nodes, activation propagates along the edges of \texttt{memory\_links}, decaying with
+each hop, and priming lowers the threshold for linked concepts. This is the mechanism behind the
+familiar experience of a memory from fifteen years ago surfacing the instant someone mentions a band:
+the band is a source node, activation crawls the old associative edges, and it clears the threshold at
+the target. The \textbf{Completer} then reconstructs the whole coherent cluster --- \emph{pattern
+completion} --- rather than returning three loose chunks.
+
+\subsection{Three Legs, Not One}
+Tottie runs \textbf{semantic} (embeddings), \textbf{lexical} (full-text), and \textbf{associative}
+(graph activation) retrieval in parallel and fuses them. RAG is retained --- it is simply no longer
+alone. If nothing clears the activation floor, Tottie \textbf{abstains} rather than injecting noise.
+
+\section{Consolidation: The Sleep Job}
+The brain replays the day during sleep (hippocampal sharp-wave ripples driving cortical replay),
+\textbf{semanticising} episodic traces into general knowledge and pruning what is never used. Tottie's
+\textbf{Consolidator} is an on-demand ``Sleep'' job that (1) replays recent episodic memories,
+(2) extracts recurring structure into \textbf{semantic} memories, and (3) prunes or decays unused links
+so capacity stays bounded. Running it on demand (rather than on a scheduler) makes the behaviour
+deterministic and demonstrable.
+
+\section{Reconsolidation: Updating on Access}
+When a memory is \emph{retrieved}, it is marked labile for the remainder of the turn. If the user then
+supplies contradictory information, the active trace is \textbf{patched} (superseded) rather than
+merely appended, and adjacent nodes are co-activated so the new association forms. Supersession is
+therefore \emph{retrieval-triggered}, not only write-triggered --- exactly the biological mechanism.
+
+\section{The Ten Minds}
+\begin{longtable}{@{}p{0.04\textwidth}p{0.24\textwidth}p{0.52\textwidth}p{0.14\textwidth}@{}}
+\toprule
+\# & Component & Job & Tier \\
+\midrule
+1 & Cue Classifier & intent type $+$ entity/project extraction $\rightarrow$ policy & MUST \\
+2 & Observer & is this worth remembering? & MUST \\
+3 & Salience Scorer & the worth-remembering rubric $+$ arousal tag & MUST \\
+4 & Scribe & structure, tag, embed, route, sparse-separate & MUST \\
+5 & Reconciler & reconsolidation: update the labile trace on contradiction & MUST \\
+6 & Retriever & seed $+$ hybrid $+$ graph activation & MUST \\
+7 & Activator & spreading activation over \texttt{memory\_links} (1--2 hops, decay) & MUST \\
+8 & Completer & pattern completion (cluster reconstruction) & SHOULD \\
+9 & Curator & assemble the Context Card $+$ ``why surfaced'' & MUST \\
+10 & Consolidator & ``Sleep'': replay $\rightarrow$ semanticise $\rightarrow$ prune & SHOULD \\
+\bottomrule
+\end{longtable}
+
+\section{Neuroscience Basis}
+\begin{longtable}{@{}p{0.38\textwidth}p{0.52\textwidth}@{}}
+\toprule
+Mechanism (verified) & Tottie realisation \\
+\midrule
+Encoding specificity (Tulving) & rich context tags stored at write time \\
+Spreading activation $+$ decay (Collins--Loftus) & the \textbf{Activator} \\
+Pattern completion, CA3 autoassociative & the \textbf{Completer} \\
+Pattern separation, dentate gyrus & sparse-separate on write (dedupe / orthogonalise) \\
+Complementary Learning Systems $+$ systems consolidation & the \textbf{Consolidator} (replay $\rightarrow$ semanticise) \\
+Reconsolidation (Nader) & the \textbf{Reconciler} (update on access) \\
+Salience / neuromodulation (amygdala, NE) & the \textbf{Salience Scorer} \\
+Engram sizing, LTD, pruning & capacity caps $+$ decay \\
+\bottomrule
+\end{longtable}
+
+\noindent\emph{Sources}: researched in the NotebookLM notebook ``META hackathon''
+(\texttt{248ae575-4f2d-4ef1-b75f-d6ce38bb514a}), sixteen sources covering hippocampal encoding,
+engram theory, synaptic plasticity and long-term potentiation, spreading activation, encoding
+specificity, memory consolidation, episodic and semantic memory, autoassociative memory,
+reconsolidation, and the complementary-learning-systems and hippocampal-indexing papers.

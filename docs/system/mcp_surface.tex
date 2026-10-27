@@ -5,15 +5,16 @@ The whole point is that the same memory mounts into any host: the Tottie chat, a
 agent, anything that speaks MCP.
 
 \section{Tools}
-\begin{longtable}{@{}p{0.30\textwidth}p{0.34\textwidth}p{0.28\textwidth}@{}}
+\begin{longtable}{@{}p{0.28\textwidth}p{0.34\textwidth}p{0.30\textwidth}@{}}
 \toprule
 Tool & Signature & Purpose \\
 \midrule
 \texttt{memory.remember} & \texttt{(text)} & Let the Scribe decide what to keep \\
 \texttt{memory.write} & \texttt{(tier, content, tags)} & Explicit write to a named tier \\
-\texttt{memory.recall} & \texttt{(query, tiers?, k?)} & Deliberate hybrid search \\
+\texttt{memory.recall} & \texttt{(query, tiers?, k?)} & Cue-typed associative retrieval \\
 \texttt{memory.probe} & \texttt{(tag|id)} & Walk into a ``room'' and read its memories \\
 \texttt{memory.identity} & \texttt{()} & Return the pinned identity facts \\
+\texttt{memory.sleep} & \texttt{()} & Run consolidation (replay $\rightarrow$ semanticise $\rightarrow$ prune) \\
 \texttt{memory.forget} & \texttt{(id)} & Right-to-be-forgotten \\
 \bottomrule
 \end{longtable}
@@ -37,3 +38,8 @@ it?'' Tottie does \textbf{both, deliberately}:
   \item \textbf{Deliberate path} --- the card carries \textbf{pointers} (tags/rooms); when the agent
   needs depth it calls \texttt{memory.probe(tag)} and reads that room.
 \end{enumerate}
+
+\section{Retrieval Is Cue-Typed, Not Just Similar}
+The \texttt{memory.recall} tool does not run a single similarity search. It classifies the cue,
+chooses a policy, seeds nodes, and spreads activation across \texttt{memory\_links}. See
+\emph{The Cognition Model} for the full specification.

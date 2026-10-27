@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS memories (
   tags        text[] NOT NULL DEFAULT '{}',
   salience    real NOT NULL DEFAULT 0.5,
   confidence  real NOT NULL DEFAULT 1.0,
+  principle   text,                          -- the reusable rule behind a decision (memory -> judgment)
+  arousal     real DEFAULT 0.0,              -- moment-of-encoding salience (amygdala analogue)
+  access_count int DEFAULT 0,                -- consolidation + decay
+  last_access timestamptz,                   -- decay
   source      jsonb,
   supersedes  uuid REFERENCES memories(id),
   valid_from  timestamptz NOT NULL DEFAULT now(),
@@ -31,10 +35,22 @@ CREATE TABLE IF NOT EXISTS memory_events (
   session_id       text,
   turn             int,
   utterance        text,
-  observer_verdict jsonb,
-  scribe_action    jsonb,
+  observer_verdict jsonb,                    -- {keep, salience, reason, candidates}
+  scribe_action    jsonb,                    -- {op, tier, kind, tags, memory_id}
+  cue              jsonb,                    -- {type, entities, policy} for recall events
   latency_ms       int,
   tokens           int
+);
+
+-- The associative index ("hippocampus"): the substrate the Activator walks.
+CREATE TABLE IF NOT EXISTS memory_links (
+  id       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner    text NOT NULL,
+  src      uuid NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  dst      uuid NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+  relation text NOT NULL,                    -- tag | entity | supersedes | temporal | cooccur
+  weight   real NOT NULL DEFAULT 1.0,
+  UNIQUE (owner, src, dst, relation)
 );
 
 CREATE INDEX IF NOT EXISTS memories_embedding_hnsw
@@ -47,3 +63,5 @@ CREATE INDEX IF NOT EXISTS memories_live_owner_tier
   ON memories (owner, tier) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS memory_events_session
   ON memory_events (session_id, ts);
+CREATE INDEX IF NOT EXISTS memory_links_src ON memory_links (owner, src);
+CREATE INDEX IF NOT EXISTS memory_links_dst ON memory_links (owner, dst);
