@@ -1,0 +1,71 @@
+\chapter{Process Flow: The Recall Path}
+This is the ``middle part'': what happens between the user's utterance and the context the agent
+receives. Tottie answers it with the \textbf{Context Card} (ambient) plus the \textbf{probe}
+(deliberate).
+
+\section{A New Turn Arrives}
+\textbf{Trigger:} The user sends \emph{``when is her birthday again?''} in the chat, or a fresh
+session opens and the agent needs context about the user.
+
+\textbf{Action / UI State:} The sprite enters \texttt{thinking}; the Panel prepares a ``CONTEXT
+INJECTED THIS TURN'' block.
+
+\textbf{System Logic:} The host calls \texttt{POST /recall} (or \texttt{memory.recall} over MCP).
+
+\textbf{Data Flow \& Mutators:} The utterance (and optionally the last assistant turn) is embedded
+with \texttt{bge-small-en-v1.5}.
+
+\section{The Identity Slice Is Always Included}
+\textbf{Trigger:} Any recall.
+\textbf{Action / UI State:} The Panel always shows the pinned identity line at the top of the card.
+\textbf{System Logic:} \texttt{SELECT ... WHERE tier='identity' AND valid\_to IS NULL}. This is
+unconditional and cheap --- identity has \emph{zero search overhead}.
+\textbf{Data Flow \& Mutators:} The identity facts are collected for the card header.
+
+\section{Hybrid Search}
+\textbf{Trigger:} The utterance embedding plus the owner scope.
+\textbf{Action / UI State:} Nothing yet --- the Panel shows a ``searching'' shimmer.
+\textbf{System Logic:}
+\begin{enumerate}
+  \item \textbf{Vector} leg: HNSW top-50 by cosine.
+  \item \textbf{Lexical} leg: full-text top-50.
+  \item \textbf{Filter}: \texttt{owner = ?} AND \texttt{valid\_to IS NULL} (and any tag filter).
+  \item \textbf{Fusion}: Reciprocal Rank Fusion, $k=60$, to top-8.
+  \item \textbf{Re-rank}: weight by salience $\cdot$ recency $\cdot$ confidence.
+\end{enumerate}
+\textbf{Data Flow \& Mutators:} A ranked hit list of \texttt{(id, tier, summary, tags, score)}.
+
+\section{The Procedural Slice}
+\textbf{Trigger:} The utterance resembles a previously-solved problem (an error signature or a
+similar embedding).
+\textbf{System Logic:} Match \texttt{kind='lesson'} rows; if a match clears the threshold, the
+solution is surfaced \emph{instantly} --- the ``autosave'' behaviour.
+\textbf{Data Flow \& Mutators:} Matched lessons are appended to the card.
+
+\section{The Curator Builds the Context Card}
+\textbf{Trigger:} Identity slice $+$ ranked hits $+$ procedural matches.
+\textbf{Action / UI State:} The Panel's ``CONTEXT INJECTED THIS TURN'' block shows the exact card.
+\textbf{System Logic:} The Curator assembles a compact card ($<$400 tokens) with one line per hit,
+its tier, its source, and its tags, plus a ``probe deeper'' pointer line:
+\begin{Verbatim}[breaklines=true,fontsize=\small]
+[MEMORY CARD - 3 hits]
+  IDENTITY (pinned)  user=Frans - tz=CAT - girlfriend birthday = Nov 7
+  EPISODIC 2026-10-29  decided: pgvector not Qdrant for Tottie    #tottie #decision
+  KNOWLEDGE (doc: telecom-arch.pdf p.7)  Server C sits behind A/B  #telecom #infra
+  -> probe deeper: memory.probe("#telecom") | memory.recall("server C topology")
+\end{Verbatim}
+\textbf{Data Flow \& Mutators:} The card text is returned to the host and injected into the prompt
+space; a recall \texttt{memory\_event} is written and streamed to the Panel.
+
+\section{The Deliberate Probe}
+\textbf{Trigger:} The agent decides it needs more depth than the card provides.
+\textbf{Action / UI State:} The Panel opens the targeted room and highlights the returned memories.
+\textbf{System Logic:} \texttt{memory.probe(tag)} (or \texttt{probe(id)}) returns the room's live
+memories.
+\textbf{Data Flow \& Mutators:} A read-only fetch scoped by owner and \texttt{valid\_to IS NULL}.
+
+\section{Ablation}
+\textbf{Trigger:} The Tottie ON/OFF toggle is set to OFF.
+\textbf{System Logic:} The recall step is skipped entirely --- no identity slice, no hits, no card.
+The base model answers with no memory. This is the control condition used in the demo and the eval
+harness.

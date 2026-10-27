@@ -1,0 +1,79 @@
+\chapter{Master Todo}
+
+\section{Phase 0 --- Scaffold}
+\begin{itemize}
+  \item[$\square$] Create repo tree; \texttt{git init}; branch \texttt{main}
+  \item[$\square$] \texttt{.gitignore}, \texttt{.env.example}, \texttt{orch.config.json}, \texttt{Makefile}
+  \item[$\square$] \texttt{README.md}, \texttt{GEMINI.md}, \texttt{.agents/orch-directive.md}
+  \item[$\square$] First commit dated 2026-10-27
+\end{itemize}
+
+\section{Phase 1 --- Documentation}
+\begin{itemize}
+  \item[$\square$] \texttt{master.tex} + every part \texttt{*.tex}
+  \item[$\square$] Compile \texttt{master.pdf} (\texttt{latexmk -xelatex}); zero undefined refs
+  \item[$\square$] \texttt{hackathon\_rules.tex}, \texttt{hackathon\_compliance.tex}
+\end{itemize}
+
+\section{Phase 2 --- Deck}
+\begin{itemize}
+  \item[$\square$] \texttt{presentation.tex} (Beamer, Madrid/whale, 16:9)
+  \item[$\square$] Compile \texttt{presentation.pdf} (\texttt{pdflatex} $\times$2)
+\end{itemize}
+
+\section{Phase 3 --- Core Engine}
+\begin{itemize}
+  \item[$\square$] \texttt{config.py}, \texttt{db.py}, \texttt{schema.sql}
+  \item[$\square$] \texttt{embeddings.py} (bge-small + labelled hash fallback)
+  \item[$\square$] \texttt{providers/} (base, meta, local, resolve)
+  \item[$\square$] \texttt{agents/observer.py}, \texttt{scribe.py}, \texttt{retriever.py}, \texttt{curator.py}
+  \item[$\square$] \texttt{tiers.py}
+\end{itemize}
+
+\section{Phase 4 --- MCP}
+\begin{itemize}
+  \item[$\square$] \texttt{mcp/server.py}: 6 tools + 2 resources + \texttt{tottie\_context\_card}
+  \item[$\square$] \texttt{--list-tools} prints the surface
+\end{itemize}
+
+\section{Phase 5 --- Round-Trip}
+\begin{itemize}
+  \item[$\square$] \texttt{POST /write} $\rightarrow$ store $\rightarrow$ \texttt{POST /recall} $\rightarrow$ Card
+  \item[$\square$] \texttt{GET /events} SSE stream for the Panel
+  \item[$\square$] Preflight test: write one fact, recall it
+\end{itemize}
+
+\section{Phase 6 --- UI}
+\begin{itemize}
+  \item[$\square$] \texttt{TottieFace} (5-state machine + frame-set contract + placeholders)
+  \item[$\square$] \texttt{ChatStream}, \texttt{MemoryPanel}, \texttt{RoomMap}, \texttt{AblationToggle}
+  \item[$\square$] Panel consumes SSE; renders the four blocks
+\end{itemize}
+
+\section{Phase 7 --- Reconcile / Tags / Identity / Lessons}
+\begin{itemize}
+  \item[$\square$] Temporal supersede with \texttt{valid\_to} / \texttt{supersedes}
+  \item[$\square$] Hierarchical tags / rooms; identity allowlist
+  \item[$\square$] \texttt{kind=lesson} autosave + recurrence match
+\end{itemize}
+
+\section{Phase 8 --- Integration + Eval}
+\begin{itemize}
+  \item[$\square$] Mount MCP in VS Code / Cursor (three bodies)
+  \item[$\square$] \texttt{eval/harness.py} + \texttt{scenarios.jsonl} (ON/OFF ablation)
+  \item[$\square$] All tests green
+\end{itemize}
+
+\section{Phase 9 --- Film}
+\begin{itemize}
+  \item[$\square$] 3-minute screen-capture video (captions + music)
+  \item[$\square$] README final; recompile docs; update compliance ledger
+\end{itemize}
+
+\section{Phase 10 --- Submit}
+\begin{itemize}
+  \item[$\square$] Make repo public
+  \item[$\square$] Video link accessible
+  \item[$\square$] Claim Meta credits (\textless Wed Nov 4, 9 PM ET)
+  \item[$\square$] Submit via the CV platform
+\end{itemize}

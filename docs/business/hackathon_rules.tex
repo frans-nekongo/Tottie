@@ -1,0 +1,79 @@
+\chapter{Hackathon Rules, Dates, and Judging}
+
+This chapter records the constraints we are optimising against. It is a working extract of the
+\textbf{Meta Global AI Developer Hackathon Participant Guide} so the team never loses sight of the
+rules.
+
+\section{Problem Statements}
+Every project must build toward one of two statements:
+\begin{itemize}
+  \item \textbf{Build for Your World} --- bring Meta's models into a domain you know firsthand.
+  \item \textbf{Push the Frontier} --- use Meta's models to give a machine a new capability.
+\end{itemize}
+\textbf{Tottie claims \emph{Build for Your World}}: an agent memory layer solves a problem the
+builder knows firsthand (agents that forget), and it generalises to everyone.
+
+\section{Mandatory Meta Tooling}
+Projects must incorporate Meta's models: the \emph{Muse Spark} series, \emph{Muse Wonder},
+\emph{Muse Image}, \emph{Muse Voice Transcribe}, and \emph{SAM 3.1} via the Meta Model API; run
+Meta open-weight models (\emph{Muse Glimmer}, \emph{Muse Spark Open}); or build faster with
+\emph{Muse Code}. Tottie routes its agents (Observer/Scribe/brain) through the Meta Model API, with
+a local fallback so the demo never dies.
+
+\section{Dates (all times Eastern)}
+\begin{longtable}{@{}ll@{}}
+\toprule
+When & What \\
+\midrule
+Mon Oct 26, 12:00 PM & Kickoff \\
+Tue Oct 27, 12:00--1:00 PM & Agents 101: Build a Multimodal AI Agent \\
+Wed Oct 28, 12:00--1:00 PM & Agents 102: Best Practices for Verifiable Agents \\
+Fri Oct 30, 12:00--1:00 PM & Specialised Intelligence on Fireworks (Muse Open) \\
+Tue Nov 3 & Last full day for submission questions \\
+Wed Nov 4, 9:00 PM & \textbf{Final office hours; submissions due} \\
+Thu Nov 5 -- Sun Nov 8 & Judging period \\
+Mon Nov 9, 12:00 PM & Closing ceremony; top 10 announced; winners revealed \\
+Mon Nov 16 & Community vote winner announced \\
+\bottomrule
+\end{longtable}
+Building period: \textbf{Oct 27 -- Nov 4}. Tottie's initial commit is dated \textbf{2026-10-27}.
+
+\section{Hard Rules}
+\begin{itemize}
+  \item \textbf{Open source:} repositories must be public.
+  \item \textbf{Team size:} max four; solo allowed.
+  \item \textbf{Demo requirements:} the demo must only highlight features, code, and functionality
+  \emph{built during the Hackathon}. Judges must be able to identify the original contributions.
+  Failure to do so can result in immediate disqualification.
+  \item \textbf{New work only:} what is presented must have been built during the event. Existing
+  codebases may be built on, but new work must be clearly identified.
+  \item \textbf{Banned:} projects that violate policy, or that use code/data/assets you lack the
+  rights to.
+\end{itemize}
+
+\section{Sample Anti-Projects (things to avoid resembling)}
+Basic RAG applications; simple image analysers; generic ``AI for education'' chatbots; AI job
+screeners; nutrition coaches; personality analysers; sports analysers; anything political or
+involving war; medical advice.
+
+\subsection{How Tottie differs from the banned ``Basic RAG Application''}
+Tottie is \emph{not} a read-time RAG app. It \textbf{flips RAG to write time}: the value is the
+ingestion-time curation decision, and the deliverable is an \textbf{MCP server} (infrastructure),
+not a document-chat UI. This distinction is stated explicitly on Slide 2 of the demo deck.
+
+\section{Judging Rubric (equally weighted, 0--10)}
+\begin{longtable}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Category & What it asks \\
+\midrule
+\textbf{Impact} & Real-world potential; who benefits; could people use it; does it fit a statement. \\
+\textbf{Use of Meta AI Tooling} & How creatively Meta's tooling is used --- beyond a basic integration. \\
+\textbf{Technical Depth \& Execution} & Is the engineering sound and thoughtfully refined; real craft. \\
+\textbf{Demo} & Is it working, impressive, live-safe, and genuinely cool to watch. \\
+\bottomrule
+\end{longtable}
+
+\section{Prizes We Target}
+Indie Developer track (\$400k pool: \$150k / \$100k / \$75k / \$50k / \$25k), plus bonus awards:
+\textbf{Best Agentic Use-Case} (\$5k), \textbf{Best Build on Meta Open-Weight Models} (\$10k),
+\textbf{Most Viral Project} (\$20k), \textbf{Community Vote} (\$10k).

@@ -1,0 +1,42 @@
+\chapter{Model Providers and the Intelligence Layer}
+
+\section{Provider Abstraction}
+All model calls go through one interface, so the demo can switch models without code changes:
+
+\begin{Verbatim}[breaklines=true,fontsize=\small]
+class LLMProvider:
+    async def complete(self, messages, json_schema=None) -> str: ...
+\end{Verbatim}
+
+\begin{itemize}
+  \item \textbf{MetaProvider} --- the Meta Model API (Muse Spark series). Configured by
+  \texttt{META\_API\_KEY}, \texttt{META\_BASE\_URL}, \texttt{META\_MODEL}.
+  \item \textbf{LocalProvider} --- an OpenAI-compatible local server (Ollama \texttt{:11434} or
+  llama.cpp \texttt{:8080}), configured by \texttt{LOCAL\_LLM\_URL}, \texttt{LOCAL\_LLM\_MODEL}.
+  \item \textbf{resolve\_provider()} --- uses Meta when a key is present and the endpoint is
+  healthy, otherwise falls back to local. \textbf{The demo never dies on a provider outage.}
+\end{itemize}
+
+\section{Component Model Choices}
+\begin{longtable}{@{}p{0.18\textwidth}p{0.30\textwidth}p{0.44\textwidth}@{}}
+\toprule
+Mind & Model class & Rationale \\
+\midrule
+Observer & small / fast & high-frequency; a cheap classifier wins \\
+Scribe & small / medium & structured extraction + reconcile; JSON output \\
+Retriever & embeddings only & no LLM in the hot path --- bge-small + RRF \\
+Curator & rules (+ optional small) & deterministic card assembly within a token budget \\
+Brain (the agent) & strongest available & the ``present thought''; quality matters here \\
+\bottomrule
+\end{longtable}
+
+\section{Cost Control}
+Tottie's whole argument is that write-time curation is cheaper than stuffing context. The eval
+harness measures \textbf{tokens per query} with memory ON vs OFF to make that claim falsifiable.
+
+\section{Optional: MCP Sampling (flagged, off by default)}
+MCP sampling (\texttt{ctx.session.create\_message}) would let the Observer/Scribe curate using the
+\emph{host's} model, with \textbf{no server-side API key} --- an elegant ``surprised even us''
+capability. Two caveats: it is \textbf{deprecated in the 2026-07-28 specification} (SEP-2577) in
+favour of Multi Round-Trip Requests, and many hosts do not declare the capability. It is therefore
+\textbf{flag-gated} (\texttt{TOTTIE\_USE\_SAMPLING=0} by default) and never the primary path.

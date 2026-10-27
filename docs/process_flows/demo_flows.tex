@@ -1,0 +1,53 @@
+\chapter{Process Flow: The Demo Click-Path}
+This is the exact physical sequence the presenter performs on stage and that the screen-capture
+video follows. Each beat is written so a second operator could run the demo cold.
+
+\section{Beat 1 --- Cold Open (Amnesia)}
+\textbf{Trigger:} A plain agent window with no memory.
+\textbf{Action / UI State:} The agent greets the user and does not know their name.
+\textbf{System Logic:} No Tottie in the loop.
+\textbf{Data Flow \& Mutators:} None.
+\textbf{On screen:} caption ``A year of conversations.''
+
+\section{Beat 2 --- Tottie Wakes (Identity Pinning)}
+\textbf{Trigger:} Open the Tottie chat.
+\textbf{Action / UI State:} The sprite enters \texttt{idle}; the Panel immediately shows the pinned
+Identity line: \texttt{girlfriend birthday = Nov 7}.
+\textbf{System Logic:} The Panel performs a recall; the Identity slice is returned with zero search.
+\textbf{Data Flow \& Mutators:} A read of \texttt{tier='identity'} rows.
+\textbf{On screen:} caption ``It just\ldots knows.''
+
+\section{Beat 3 --- Write-Time Magic (Supersede)}
+\textbf{Trigger:} Type \emph{``I'm vegetarian now''}.
+\textbf{Action / UI State:} The Panel shows \texttt{Observer: KEEP}, then a \texttt{SUPERSEDE} badge
+with the old value struck through; the room map gains a tag.
+\textbf{System Logic:} The full write path plus reconcile (see the Write Path and Reconcile flows).
+\textbf{Data Flow \& Mutators:} Old row closed; new row inserted; event streamed.
+
+\section{Beat 4 --- Three Bodies (Cross-Agent Recall)}
+\textbf{Trigger:} Switch to VS Code; ask the coding agent about the project's stack.
+\textbf{Action / UI State:} The coding agent answers with the database and architecture decisions it
+was never told in this session --- because they were written in the Tottie chat.
+\textbf{System Logic:} Same MCP server, same store, different host.
+\textbf{Data Flow \& Mutators:} A \texttt{memory.recall} over MCP from the IDE.
+\textbf{On screen:} the caption ``one brain, three bodies.''
+
+\section{Beat 5 --- Autosave a Mistake}
+\textbf{Trigger:} The coding agent hits a known error.
+\textbf{Action / UI State:} The Panel shows a \texttt{NEW} lesson being formed
+(problem $\rightarrow$ solution).
+\textbf{System Logic:} A \texttt{kind=lesson} memory is written under \texttt{tier=procedural}.
+\textbf{Data Flow \& Mutators:} Insert into \texttt{memories} with the error signature for matching.
+
+\section{Beat 6 --- Restart + Ablation}
+\textbf{Trigger:} Kill the session; reopen; ask a question answered 20 minutes ago.
+\textbf{Action / UI State:} It answers correctly. Flip \textbf{Tottie OFF}; the same question now
+returns ``I don't know''; flip \textbf{ON}; it answers again.
+\textbf{System Logic:} The OFF state skips the recall path entirely.
+\textbf{Data Flow \& Mutators:} With OFF, no card is injected.
+
+\section{Beat 7 --- The Joke and the Pitch}
+\textbf{Trigger:} Back in the chat.
+\textbf{On screen:} caption \emph{``\ldots everything I was mad at my girlfriend for --- and the one
+thing that matters: her birthday.''} Then the universal pitch: autosave for mistakes, a personal AI
+that knows you, and the company brain (Server C behind Server A and B).

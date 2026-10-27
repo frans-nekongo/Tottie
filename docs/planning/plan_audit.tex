@@ -1,0 +1,56 @@
+\chapter{Plan Audit (Numbered Outline and Method)}
+
+This chapter makes the plan \emph{auditable}. Every part of it carries a stable ID so a second
+reviewer (human or agent) can judge it section by section without asking for context.
+
+\section{Audit Method}
+For each numbered item we record one verdict against six fixed axes:
+\begin{longtable}{@{}p{0.16\textwidth}p{0.76\textwidth}@{}}
+\toprule
+Axis & Question \\
+\midrule
+Feasibility & Can one person build this Oct 27--Nov 4 alongside work and study? \\
+Dependency & What must exist first? Does it already exist (Reuse Map)? \\
+Risk & What breaks it --- live on stage, or under judge scrutiny? \\
+Rubric & Which judging column it serves (Impact / Meta tooling / Technical depth / Demo). \\
+Cost & Effort: S (hours) $\cdot$ M (a day) $\cdot$ L (multi-day). \\
+Verdict & Keep $\cdot$ Improve $\cdot$ Cut $\cdot$ Add $\cdot$ Defer. \\
+\bottomrule
+\end{longtable}
+
+\section{Independent-Review Questions (for third-party judges)}
+\begin{enumerate}
+  \item Does it satisfy the problem statement (\emph{Build for Your World} / \emph{Push the Frontier})?
+  \item Is Meta's tooling central, not decorative?
+  \item Is the engineering sound and thought through?
+  \item Is the demo compelling \emph{and live-safe}?
+  \item Is it clearly new work, distinguishable from reuse?
+  \item Is anything here a banned anti-project?
+  \item Are the claims measurable (not vibes)?
+  \item Is the scope honest for 9 solo days?
+\end{enumerate}
+
+\section{The Numbered Outline}
+\begin{enumerate}
+  \item \textbf{Meta \& scope} --- event/dates; repo/branch/commit rule; decision log; scope note.
+  \item \textbf{Strategy} --- thesis; positioning vs mem0/Zep/Letta; differentiators; problem statement.
+  \item \textbf{Demo design} --- three bodies; the money shot; video style.
+  \item \textbf{Architecture} --- four minds; tiers; write path; reconcile; tier routing; recall path; Context Card; probe/tags; concurrency.
+  \item \textbf{Data \& storage} --- \texttt{memories}; \texttt{memory\_events}; indexes; pgvector decision; embeddings; init; owner scoping.
+  \item \textbf{Intelligence layer} --- Observer; Scribe; Curator; providers; model choice/cost; sampling.
+  \item \textbf{Interfaces} --- HTTP surface; MCP tools; resources; prompt; SSE events; error/abstention.
+  \item \textbf{UI/UX} --- layout; panel blocks; sprite state machine; ablation; room map; typography.
+  \item \textbf{Evaluation} --- scenario set; ablation method; metrics; harness; rubric mapping.
+  \item \textbf{Execution plan} --- MUST/SHOULD/STRETCH; phase schedule; gating; mandates.
+  \item \textbf{Media} --- shot list; deck; music/captions; viral plan.
+  \item \textbf{Repo \& tooling} --- tree; reuse map; orch/env; docs structure; build commands; gitignore/Makefile.
+  \item \textbf{Compliance} --- rules mapping; contribution ledger; prize targeting; banned-avoidance.
+  \item \textbf{Risk} --- register; live-demo mitigations.
+  \item \textbf{Verification} --- test plan; dry-run checklist; orch checks.
+  \item \textbf{Open items} --- sprite frames; Meta keys; sampling; name/branch.
+  \item \textbf{Appendices} --- rules extract; glossary; sources.
+\end{enumerate}
+
+\section{Audit Ledger}
+The per-item verdicts are maintained alongside this specification. Items are resolved to
+\texttt{Keep}/\texttt{Improve} before the spec is frozen for build.

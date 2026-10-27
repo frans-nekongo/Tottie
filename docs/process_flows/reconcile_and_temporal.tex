@@ -1,0 +1,53 @@
+\chapter{Process Flow: Reconcile and Temporal Correctness}
+Reconciliation is what separates a real memory from a pile of embeddings. It is the moment a new
+fact meets an old one.
+
+\section{The Decision Table}
+\textbf{Trigger:} An embedded candidate arrives from the Scribe.
+
+\textbf{System Logic:} The reconciler searches for an existing memory for the same owner matching
+\texttt{(subject, predicate)} \emph{or} a cosine similarity above \texttt{TOTTIE\_RECONCILE\_COSINE}
+(default 0.86) within the same tags, then decides:
+
+\begin{longtable}{@{}p{0.16\textwidth}p{0.34\textwidth}p{0.42\textwidth}@{}}
+\toprule
+Operation & When & What happens \\
+\midrule
+\texttt{NEW} & No prior memory matches & Insert with \texttt{valid\_from = now()} \\
+\texttt{SKIP} & A matching memory already holds the same value & Bump confidence / salience; no new row \\
+\texttt{UPDATE} & A matching memory is enriched but not contradicted & Append detail; refresh summary \\
+\texttt{SUPERSEDE} & A matching memory holds a \emph{different} value & Set old \texttt{valid\_to = now()}; insert new with \texttt{supersedes = old.id} \\
+\bottomrule
+\end{longtable}
+
+\textbf{Data Flow \& Mutators:} Any insert or update is written to \texttt{memories}; the decision is
+written to \texttt{memory\_event.scribe\_action} and streamed to the Panel, where a superseded memory
+is rendered with a strikethrough.
+
+\section{Worked Example: ``I'm vegetarian now''}
+\textbf{Trigger:} The user says \emph{``actually, I'm vegetarian now''}.
+
+\textbf{Action / UI State:} The Panel's ``MEMORIES FORMED'' block shows a red-ish
+\texttt{SUPERSEDE} badge, the old value struck through (``diet: meat-eater''), and the new value
+(``diet: vegetarian'').
+
+\textbf{System Logic:}
+\begin{enumerate}
+  \item The Observer flags a durable preference change (salience high; \texttt{kind=preference}).
+  \item The Scribe embeds the candidate and finds the live fact \texttt{(subject=user,
+  predicate=diet, object=meat-eater)}.
+  \item The values differ, so the operation is \texttt{SUPERSEDE}.
+  \item The old row's \texttt{valid\_to} is set to \texttt{now()}; the new row is inserted with
+  \texttt{valid\_from = now()} and \texttt{supersedes = old.id}.
+\end{enumerate}
+
+\textbf{Data Flow \& Mutators:} Two row mutations and one event; retrieval now returns only
+``vegetarian'' because it filters \texttt{valid\_to IS NULL}. The agent never has to reconcile
+in-prompt, and it can never quote a stale fact.
+
+\section{Why This Is Hard and Why It Wins}
+Plain vector recall has \emph{no update semantics}: both the old and the new fact retrieve, and the
+model is left to guess which is current. Tottie resolves the conflict at write time, once, and
+records the temporal chain. This is precisely the capability that LongMemEval's \emph{knowledge
+update} category and MemoryAgentBench's \emph{selective forgetting / conflict resolution} category
+probe --- and it is a headline slide in the demo.

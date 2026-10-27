@@ -1,0 +1,80 @@
+\documentclass[11pt,oneside]{book}
+\usepackage[a4paper,margin=0.9in]{geometry}
+\usepackage{fontspec}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{fvextra}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{amssymb}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usepackage{float}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,backgrounds,matrix}
+\setmainfont{Arial}
+\setmonofont{Menlo}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\setlist{nosep,leftmargin=*}
+
+% ---- diagram palette (Tottie) ----
+\definecolor{uiBlue}{HTML}{004AAD}
+\definecolor{dataGreen}{HTML}{0F766E}
+\definecolor{syncAmber}{HTML}{B45309}
+\definecolor{riskRed}{HTML}{B91C1C}
+\definecolor{mutedGray}{HTML}{64748B}
+\definecolor{boxFill}{HTML}{F8FAFC}
+\definecolor{boxLine}{HTML}{CBD5E1}
+\tikzset{
+  box/.style={draw=boxLine,fill=boxFill,rounded corners=3pt,align=center,font=\sffamily\scriptsize,inner sep=5pt,minimum height=0.85cm},
+  uibox/.style={box,draw=uiBlue,fill=uiBlue!8},
+  databox/.style={box,draw=dataGreen,fill=dataGreen!8},
+  syncbox/.style={box,draw=syncAmber,fill=syncAmber!10},
+  riskbox/.style={box,draw=riskRed,fill=riskRed!8},
+  titlebox/.style={box,font=\sffamily\bfseries\small,fill=white,draw=uiBlue},
+  arrow/.style={-{Latex[length=2mm]},thick,mutedGray},
+  flow/.style={-{Latex[length=2.2mm]},very thick,uiBlue},
+  dataflow/.style={-{Latex[length=2.2mm]},very thick,dataGreen},
+  lbl/.style={font=\sffamily\tiny,text=mutedGray,align=center},
+}
+
+\title{Tottie Master Documentation}
+\author{NKNGO AI Labs}
+\date{\today}
+
+\begin{document}
+\frontmatter
+\maketitle
+\tableofcontents
+\mainmatter
+
+\part{Documentation Standards}
+\input{../../agent-guidelines}
+
+\part{Vision}
+\input{vision/why}
+
+\part{Business and Hackathon}
+\input{business/hackathon_rules}
+\input{business/hackathon_compliance}
+
+\part{System Architecture}
+\input{system/architecture}
+\input{system/data_model}
+\input{system/model_providers}
+\input{system/mcp_surface}
+\input{system/ui_panel}
+
+\part{Process Flows}
+\input{process_flows/write_path}
+\input{process_flows/recall_path}
+\input{process_flows/reconcile_and_temporal}
+\input{process_flows/demo_flows}
+
+\part{Planning}
+\input{planning/roadmap}
+\input{planning/todo}
+\input{planning/demo_script}
+\input{planning/plan_audit}
+
+\end{document}

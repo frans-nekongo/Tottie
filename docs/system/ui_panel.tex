@@ -1,0 +1,55 @@
+\chapter{Tottie UI and the Live Memory Panel}
+
+\section{Layout}
+A single screen, 16:9-safe for screen-capture: chat on the left, the live Memory Panel on the right.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.4cm]
+\node[uibox,minimum width=6.2cm,minimum height=5.2cm] (chat) {};
+\node[above=0.05cm of chat.north,font=\sffamily\bfseries\small]{TOTTIE (chat)};
+\node[uibox,minimum width=6.2cm,minimum height=5.2cm,right=0.5cm of chat] (panel) {};
+\node[above=0.05cm of panel.north,font=\sffamily\bfseries\small]{MEMORY PANEL $\cdot$ live};
+\node[lbl,below=0.15cm of chat.north,text width=5.6cm]{{[}sprite: idle / listening / thinking / remembering / speaking{]}\\[2mm]
+user: ``I'm vegetarian now''\\Tottie: ``Noted --- updating\ldots''\\[2mm]
+{[}Tottie ON $\vert$ OFF{]} $\leftarrow$ ablation};
+\node[lbl,below=0.15cm of panel.north,text width=5.6cm,align=left]{\textbf{-- LEARNING NOW --}\ \ turn 14 $\cdot$ Observer: KEEP 0.82\\``durable personal fact''\\[1.5mm]
+\textbf{-- MEMORIES FORMED --}\\$\bullet$ SUPERSEDE diet: meat $\rightarrow$ veg\\\ \ \ tier: identity $\cdot$ \#person/frans\\[1.5mm]
+\textbf{-- INSERTED WHERE --}\ \ identity $\triangleright$ +1\ \ \#person/frans\\[1.5mm]
+\textbf{-- CONTEXT INJECTED THIS TURN --}\\{[}MEMORY CARD $\cdot$ 3 hits{]}\ldots};
+\end{tikzpicture}
+\caption{The Memory Panel is the hero; the sprite is the reacting character.}
+\end{figure}
+
+\section{The Panel Is a Live Stream of \texttt{memory\_event}s}
+The UI subscribes to \texttt{GET /events?session\_id=} (Server-Sent Events). Each event card shows
+the four things that matter, in order:
+\begin{enumerate}
+  \item \textbf{What it is learning now} --- the turn plus the Observer verdict (KEEP/DISCARD,
+  salience, reason).
+  \item \textbf{What memories it is forming} --- the Scribe operation badge
+  (\texttt{NEW} / \texttt{UPDATE} / \textbf{\texttt{SUPERSEDE}} / \texttt{SKIP}) and the memory text
+  (superseded ones struck through).
+  \item \textbf{Where it inserted them} --- the tier chip and the tag/room chips, plus a live
+  \textbf{room map} that grows as new tags appear.
+  \item \textbf{What it injected into context} --- the literal \textbf{Context Card} the Curator
+  built for that turn. This is what makes the invisible write-time decision visible on camera.
+\end{enumerate}
+
+\section{Tottie Avatar --- Drop-In Sprite (frame sets per state)}
+\begin{itemize}
+  \item \textbf{Built here:} a \texttt{TottieFace} component plus a state machine with five states
+  --- \texttt{idle}, \texttt{listening}, \texttt{thinking}, \texttt{remembering}, \texttt{speaking}
+  --- driven by app events (streaming tokens $\rightarrow$ \texttt{speaking}; a write event
+  $\rightarrow$ \texttt{remembering}; a recall $\rightarrow$ \texttt{remembering}).
+  \item \textbf{Provided by the Architect:} frame sets in \texttt{ui/public/tottie/<state>/}. Drop
+  PNGs; \textbf{no code change required}.
+  \item \textbf{Contract:} \texttt{TottieFace} reads \texttt{\{state, framesDir, fps\}}. A
+  placeholder frame set ships so the app runs before the final art lands.
+  \item \textbf{No TTS / no lip-sync.} The sprite reacts to memory events; that is the whole job.
+\end{itemize}
+
+\section{Ablation Toggle}
+A single \textbf{Tottie ON/OFF} switch. OFF = no card injected and no writes (raw model). ON = full
+memory. Used live in the demo to prove that a correct answer \emph{depended on} memory rather than
+on the base model.

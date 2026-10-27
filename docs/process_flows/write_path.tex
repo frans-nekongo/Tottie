@@ -1,0 +1,71 @@
+\chapter{Process Flow: The Write Path}
+Every step below is what the \textbf{Memory Panel} renders in its ``LEARNING NOW'' block. This is
+the flow that proves the thesis: intelligence applied at write time.
+
+\section{The User Says Something Durable}
+\textbf{Trigger:} In the Tottie chat the user types \emph{``my girlfriend's birthday is on the 7th of
+November''} and presses enter. (Equivalently: an IDE agent turn completes and the host forwards it.)
+
+\textbf{Action / UI State:} The Tottie sprite leaves \texttt{idle}, enters \texttt{listening} for the
+duration of the send, then \texttt{thinking}. The Memory Panel prepends a new turn card with an empty
+``LEARNING NOW'' row and a subtle processing shimmer.
+
+\textbf{System Logic:} The host issues \texttt{POST /write} with
+\texttt{\{text, session\_id, turn, owner\}}. The core hands the turn to the \textbf{Observer}, which
+runs \emph{in parallel} with the agent's own response generation.
+
+\textbf{Data Flow \& Mutators:} The turn is not yet stored as memory; it exists only as an inbound
+request and a \texttt{memory\_event} row in \texttt{queued} state.
+
+\section{The Observer Decides}
+\textbf{Trigger:} The Observer receives the turn tuple.
+
+\textbf{Action / UI State:} The ``LEARNING NOW'' row fills in: \texttt{Observer: KEEP} (or
+\texttt{DISCARD}), a salience score (e.g.\ 0.82), and a short reason (``durable personal fact'').
+
+\textbf{System Logic:} The Observer calls the resolved LLM provider with a strict JSON contract and
+returns a verdict:
+\begin{Verbatim}[breaklines=true,fontsize=\small]
+{ "keep": true, "salience": 0.82, "reason": "durable personal fact",
+  "candidates": [ { "tier":"identity","kind":"fact","subject":"girlfriend",
+    "predicate":"birthday","object":"2026-11-07",
+    "content":"Girlfriend's birthday is 7 November",
+    "tags":["#person/girlfriend","#topic/birthday"] } ] }
+\end{Verbatim}
+
+\textbf{Data Flow \& Mutators:} The verdict JSON is written into the \texttt{observer\_verdict}
+column of the \texttt{memory\_event} and pushed to the Panel over SSE. If \texttt{keep} is false, the
+flow ends here and the Panel shows a greyed \texttt{DISCARD} chip.
+
+\section{The Scribe Structures and Embeds}
+\textbf{Trigger:} A non-empty candidate list from the Observer.
+
+\textbf{Action / UI State:} The Panel's ``MEMORIES FORMED'' block gains a row per candidate, showing
+the operation badge and the memory text.
+
+\textbf{System Logic:} For each candidate the Scribe (1) composes the human-readable memory, (2)
+computes its embedding with \texttt{bge-small-en-v1.5}, (3) assigns tags, and (4) hands the candidate
+to the reconciler (next chapter).
+
+\textbf{Data Flow \& Mutators:} An embedding vector (384 floats) is computed in memory; the
+candidate is held for the reconcile step.
+
+\section{Reconcile, Route, and Persist}
+\textbf{Trigger:} An embedded candidate.
+
+\textbf{Action / UI State:} The Panel shows the operation badge (\texttt{NEW} / \texttt{UPDATE} /
+\texttt{SUPERSEDE} / \texttt{SKIP}), the tier chip (e.g.\ \texttt{identity}), and the room chips
+(e.g.\ \texttt{\#person/girlfriend}).
+
+\textbf{System Logic:} See \emph{Process Flow: Reconcile and Temporal Correctness} for the full
+decision table. The routed tier is recorded, and the live row is inserted with
+\texttt{valid\_from = now()}.
+
+\textbf{Data Flow \& Mutators:} \texttt{INSERT INTO memories (...)}; the
+\texttt{memory\_event.scribe\_action} column is filled; the Panel's ``INSERTED WHERE'' block and the
+\textbf{room map} update; the new memory becomes immediately retrievable.
+
+\section{Why This Order Matters}
+Because the decision is made \emph{at write time}, no read-time query is ever needed to ``know''
+this fact. The next time the user asks anything related, the Retriever simply finds it --- the agent
+never had to remember to save it.

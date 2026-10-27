@@ -1,0 +1,46 @@
+\chapter{Why Tottie Exists}
+
+\section{The Problem: Agents Have Amnesia}
+Every agent on every platform wakes up stateless. It has no history, no user context, and no
+memory of yesterday. A year of conversations later, it still does not know who you are, what you
+build, or what you decided. All of that intelligence, yet it fails the baseline requirement of an
+actual mind: \textbf{continuity}.
+
+The naive fix is a bigger context window. That is not memory --- it is an expensive scratchpad. As
+input length grows, cost rises linearly, latency rises super-linearly, and accuracy \emph{drops}
+(the ``lost in the middle'' effect). Long context is a tax with diminishing returns.
+
+\section{The Thesis: Intelligence at Write Time}
+Standard retrieval-augmented generation (RAG) applies intelligence at \textbf{read time}: the agent
+searches when it needs something. Tottie flips that. It applies intelligence at \textbf{write time}:
+memory curates itself as you live, deciding what matters \emph{before} it is needed. The agent does
+not manage memory. It just remembers.
+
+\begin{itemize}
+  \item \textbf{Observer} runs in parallel and decides what is worth keeping.
+  \item \textbf{Scribe} structures, tags, embeds, and \emph{reconciles} what was kept.
+  \item \textbf{Retriever} runs on every turn and surfaces what is contextually relevant.
+  \item \textbf{Curator} writes the compact \emph{Context Card} the agent actually receives.
+\end{itemize}
+
+\section{Positioning Against the 2026 Field}
+The field has converged on a name for this pattern: \textbf{learned consolidation}. Live capture
+$\rightarrow$ LLM extraction of facts and decisions $\rightarrow$ reconciliation (update vs
+supersede) $\rightarrow$ episodic/semantic split $\rightarrow$ dual retrieval. mem0, Zep/Graphiti,
+and A-Mem all instantiate it. Published figures show why it matters: mem0 reports
+\textbf{91\% lower p95 latency} and \textbf{90\% fewer tokens} than full-context, for roughly a
+six-point J-score trade on LOCOMO.
+
+Tottie's two differentiators:
+\begin{enumerate}
+  \item \textbf{Write-time salience + reconciliation is the product}, not a bolt-on. The system is
+  judged on the decisions it makes at ingestion.
+  \item \textbf{It is transport-agnostic (MCP).} The same brain mounts into a chat client, an IDE,
+  or any MCP host. Memory is infrastructure, not an app feature.
+\end{enumerate}
+
+\section{Why It Matters (the human framing)}
+The best context is the context you can \emph{automatically} give an agent, and that context is
+almost always about the person using it. Tottie is one store that knows your life, your preferences,
+your decisions, and your infrastructure --- so a chat assistant remembers your partner's birthday
+and a coding agent already knows your stack and database choice before it writes a line.

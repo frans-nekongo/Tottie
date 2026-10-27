@@ -1,0 +1,39 @@
+\chapter{MCP Surface}
+
+Tottie ships as an MCP server over \textbf{stdio} (Python SDK, \texttt{mcp<2} with \texttt{FastMCP}).
+The whole point is that the same memory mounts into any host: the Tottie chat, a VS Code / Cursor
+agent, anything that speaks MCP.
+
+\section{Tools}
+\begin{longtable}{@{}p{0.30\textwidth}p{0.34\textwidth}p{0.28\textwidth}@{}}
+\toprule
+Tool & Signature & Purpose \\
+\midrule
+\texttt{memory.remember} & \texttt{(text)} & Let the Scribe decide what to keep \\
+\texttt{memory.write} & \texttt{(tier, content, tags)} & Explicit write to a named tier \\
+\texttt{memory.recall} & \texttt{(query, tiers?, k?)} & Deliberate hybrid search \\
+\texttt{memory.probe} & \texttt{(tag|id)} & Walk into a ``room'' and read its memories \\
+\texttt{memory.identity} & \texttt{()} & Return the pinned identity facts \\
+\texttt{memory.forget} & \texttt{(id)} & Right-to-be-forgotten \\
+\bottomrule
+\end{longtable}
+
+\section{Resources}
+\begin{itemize}
+  \item \texttt{memory://identity} --- the pinned persona/constraints.
+  \item \texttt{memory://tag/\{tag\}} --- the contents of a room, readable without a tool call.
+\end{itemize}
+
+\section{Prompt}
+\texttt{tottie\_context\_card} --- a reusable system-prompt fragment that teaches a host how to use
+the memory correctly (when to trust the card, when to probe, when to abstain).
+
+\section{Dual-Path Recall (the design answer)}
+A common question is: ``does the retriever hand context to the agent, or does the agent probe for
+it?'' Tottie does \textbf{both, deliberately}:
+\begin{enumerate}
+  \item \textbf{Ambient path} --- the Curator injects the Context Card automatically on every turn,
+  so the agent ``just knows'' without issuing a query.
+  \item \textbf{Deliberate path} --- the card carries \textbf{pointers} (tags/rooms); when the agent
+  needs depth it calls \texttt{memory.probe(tag)} and reads that room.
+\end{enumerate}

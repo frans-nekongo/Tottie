@@ -1,0 +1,80 @@
+{
+  "name": "Tottie",
+  "description": "Self-curating agent memory over MCP — memory engine + Tottie UI",
+  "versions": {
+    "Tottie Full Stack": [
+      {
+        "name": "CORE",
+        "command": "./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765",
+        "cwd": "./core",
+        "color": "green",
+        "ports": [8765],
+        "env": {
+          "TOTTIE_PORT": "8765",
+          "TOTTIE_OWNER": "owner_local",
+          "TOTTIE_DB_URL": "postgresql://localhost:5432/tottie",
+          "TOTTIE_EMBEDDER": "fastembed",
+          "TOTTIE_EMBED_MODEL": "BAAI/bge-small-en-v1.5",
+          "EMBEDDING_CACHE_DIR": "../../local LLMS",
+          "LOCAL_LLM_URL": "http://127.0.0.1:11434",
+          "LOCAL_LLM_MODEL": "nkngo-qwen-coder-3b"
+        }
+      },
+      {
+        "name": "UI",
+        "command": "npm run dev",
+        "cwd": "./ui",
+        "color": "blue",
+        "ports": [3055],
+        "env": {
+          "NEXT_PUBLIC_TOTTIE_CORE_URL": "http://127.0.0.1:8765",
+          "NEXT_PUBLIC_TOTTIE_OWNER": "owner_local"
+        }
+      }
+    ],
+    "Core Only": [
+      {
+        "name": "CORE",
+        "command": "./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765 --reload",
+        "cwd": "./core",
+        "color": "green",
+        "ports": [8765],
+        "env": {
+          "TOTTIE_PORT": "8765",
+          "TOTTIE_DB_URL": "postgresql://localhost:5432/tottie",
+          "TOTTIE_EMBEDDER": "fastembed",
+          "EMBEDDING_CACHE_DIR": "../../local LLMS"
+        }
+      }
+    ],
+    "Tottie + Local LLM": [
+      {
+        "name": "CORE",
+        "command": "./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765",
+        "cwd": "./core",
+        "color": "green",
+        "ports": [8765],
+        "env": {
+          "TOTTIE_PORT": "8765",
+          "TOTTIE_DB_URL": "postgresql://localhost:5432/tottie",
+          "LOCAL_LLM_URL": "http://127.0.0.1:11434"
+        }
+      },
+      {
+        "name": "UI",
+        "command": "npm run dev",
+        "cwd": "./ui",
+        "color": "blue",
+        "ports": [3055],
+        "env": {
+          "NEXT_PUBLIC_TOTTIE_CORE_URL": "http://127.0.0.1:8765"
+        }
+      }
+    ]
+  },
+  "tests": {
+    "command": "python3",
+    "args": ["-m", "pytest", "tests", "-q"],
+    "cwd": "./core"
+  }
+}

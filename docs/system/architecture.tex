@@ -1,0 +1,74 @@
+\chapter{System Architecture}
+
+\section{Overview}
+Tottie is a memory layer that any agent can mount. The \textbf{core engine} owns the memory
+lifecycle; the \textbf{MCP server} is the transport that exposes it; the \textbf{Tottie UI} and any
+\textbf{IDE coding agent} are consumers that share the same store.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.9cm]
+\node[uibox] (ui) {Tottie UI\\chat + live Memory Panel};
+\node[uibox,right=1.6cm of ui] (ide) {Coding agent\\(VS Code / Cursor)};
+\node[syncbox,below=1.1cm of ui] (mcp) {MCP server --- stdio\\tools $\cdot$ resources $\cdot$ prompt};
+\node[databox,below=0.9cm of mcp] (core) {Core engine (FastAPI :8765)\\Observer $\cdot$ Scribe $\cdot$ Retriever $\cdot$ Curator};
+\node[databox,below=0.9cm of core] (db) {Postgres + pgvector\\\texttt{memories} $\cdot$ \texttt{memory\_events}};
+\draw[flow] (ui) -- (mcp) node[lbl,midway,right]{remember / recall};
+\draw[flow] (ide) |- (mcp);
+\draw[flow] (mcp) -- (core);
+\draw[dataflow] (core) -- (db);
+\end{tikzpicture}
+\caption{Tottie: one brain, three bodies. The UI and any IDE agent mount the same MCP server and
+share one memory store.}
+\end{figure}
+
+\section{The Four Minds}
+Each component has exactly one job. The primary agent (the ``present thought'') is untouched --- it
+simply receives better context and can \emph{probe}.
+
+\begin{longtable}{@{}p{0.16\textwidth}p{0.40\textwidth}p{0.30\textwidth}@{}}
+\toprule
+Mind & Job & Output \\
+\midrule
+\textbf{Observer} & Runs \emph{in parallel} on every turn; decides ``is this worth remembering?'' & JSON verdict (keep, salience, reason, candidates) \\
+\textbf{Scribe} & Structure, tag, embed, \textbf{reconcile}, route to a tier & rows + a \texttt{memory\_event} \\
+\textbf{Retriever} & Runs on \emph{every} request; hybrid search across tiers & ranked hits \\
+\textbf{Curator} & Assemble the compact \textbf{Context Card} the agent receives & card text + pointers \\
+\bottomrule
+\end{longtable}
+
+\section{The Tier Model}
+\begin{itemize}
+  \item \textbf{Identity} --- persona and permanent constraints. Pinned \emph{raw} into the card,
+  zero search overhead. (Example: a partner's birthday.)
+  \item \textbf{Episodic} --- chronological decisions, state changes, and history.
+  \item \textbf{Knowledge} --- ingested documents, files, and references (semantic facts).
+  \item \textbf{Procedural (``Lessons'')} --- mistake $\rightarrow$ problem+solution pairs, surfaced
+  instantly on recurrence (``autosave'').
+\end{itemize}
+
+\section{Write Path (summary)}
+Observe $\rightarrow$ embed $\rightarrow$ reconcile $\rightarrow$ route tier $\rightarrow$ persist
+and emit an event. The live Memory Panel renders each step. Full granular flow in
+\emph{Process Flows: Write Path}.
+
+\section{Recall Path (summary)}
+Embed the utterance $\rightarrow$ always include the Identity slice $\rightarrow$ hybrid
+(vector $\cup$ full-text) with Reciprocal Rank Fusion $\rightarrow$ procedural slice $\rightarrow$
+Curator builds the Context Card $\rightarrow$ emit a recall event. \textbf{Dual-path recall:} the
+card is ambient (auto-injected), the probe is deliberate (on demand).
+
+\section{Reuse Map (patterns, not files)}
+\begin{longtable}{@{}p{0.42\textwidth}p{0.48\textwidth}@{}}
+\toprule
+Pattern reused & Source (author's own repo) \\
+\midrule
+Embedding load (FastEmbed bge-small) & \texttt{ask.nkngo/processor/utils/embeddings.py} \\
+pgvector + HNSW + RRF hybrid search & \texttt{ask.nkngo/processor/routers/retrieval.py} \\
+Incremental write + SHA-256 deltas & \texttt{ask.nkngo/processor/routers/sync.py} \\
+Relevance floors / abstention & \texttt{ask.nkngo/processor/utils/grounding.py} \\
+MCP stdio server scaffold & \texttt{Pattern/pattern-vscode-extension/src/mcp-server/index.ts} \\
+Beamer deck preamble & \texttt{Writer/Masters/presentation/.../presentation\_*.tex} \\
+docs/\texttt{master.tex} preamble & \texttt{Pattern/docs/master.tex} \\
+\bottomrule
+\end{longtable}

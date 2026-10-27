@@ -1,0 +1,10 @@
+{"id":"s01","category":"single-session-user","turns":["My name is Frans and I live in Windhoek."],"question":"Where do I live?","gold":"Windhoek"}
+{"id":"s02","category":"single-session-preference","turns":["I prefer dark mode and I hate unnecessary meetings."],"question":"How do I feel about meetings?","gold":"Dislikes them"}
+{"id":"s03","category":"knowledge-update","turns":["My girlfriend's birthday is 7 November.","Actually, let me correct that - it's the 8th."],"question":"When is my girlfriend's birthday?","gold":"8 November"}
+{"id":"s04","category":"knowledge-update","turns":["We're using Qdrant for the vector store.","Update: we switched to pgvector instead."],"question":"Which vector store is the project using?","gold":"pgvector"}
+{"id":"s05","category":"temporal-reasoning","turns":["Yesterday I decided to use a tiered memory model.","Today I added a procedural tier for lessons."],"question":"What did I decide yesterday, and what changed today?","gold":"Tiered model yesterday; added procedural/lessons tier today"}
+{"id":"s06","category":"multi-session","turns":["Session 1: Server C must sit behind Server A and Server B.","Session 2: What's our server topology?","Session 3: Remind me of the topology again."],"question":"Describe the server topology.","gold":"Server C behind Server A and Server B"}
+{"id":"s07","category":"contradiction-resolution","turns":["I'm vegetarian.","Actually no, I eat meat now."],"question":"What is my diet right now?","gold":"Eats meat"}
+{"id":"s08","category":"abstention","turns":["My favourite colour is blue."],"question":"What is my mother's maiden name?","gold":"UNKNOWN (must abstain, not hallucinate)"}
+{"id":"s09","category":"procedural-lesson","turns":["The build failed with 'ModuleNotFoundError: mcp.server.fastmcp'. Fix: pin mcp<2."],"question":"How do we fix the 'mcp.server.fastmcp' import error?","gold":"Pin mcp to below 2.0"}
+{"id":"s10","category":"single-session-assistant","turns":["Assistant previously recommended FastEmbed bge-small for embeddings."],"question":"Which embedding model did you recommend?","gold":"FastEmbed bge-small"}
