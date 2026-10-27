@@ -50,6 +50,10 @@ CREATE TABLE intentions (               -- prospective memory ("remind me to..."
   event_cue text, time_cue timestamptz,
   status text NOT NULL DEFAULT 'pending', created_at timestamptz, fired_at timestamptz
 );
+
+CREATE TABLE schema_migrations (      -- ledger: baseline + applied migrations
+  name text PRIMARY KEY, applied_at timestamptz DEFAULT now()
+);
 \end{Verbatim}
 
 \section{Indexes (and why each exists)}

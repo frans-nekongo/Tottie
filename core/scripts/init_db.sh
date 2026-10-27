@@ -19,4 +19,8 @@ psql -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -d postgres -tc \
 echo ">> applying schema: $SCHEMA"
 psql -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$SCHEMA"
 
+echo ">> recording baseline in schema_migrations"
+psql -h "$PGHOST" -p "$PGPORT" -U "$PG_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -c \
+  "INSERT INTO schema_migrations (name) VALUES ('000_baseline') ON CONFLICT (name) DO NOTHING"
+
 echo ">> done. TOTTIE_DB_URL=postgresql://$PG_USER@$PGHOST:$PGPORT/$DB_NAME"

@@ -36,6 +36,7 @@ coverage/
 *.safetensors
 *.onnx
 *.bin
+local LLMS/
 
 # ---- latex aux (keep the .pdf, drop the intermediates) ----
 *.aux

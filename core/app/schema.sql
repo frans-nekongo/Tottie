@@ -107,3 +107,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS memories_live_sp
 -- DO NOTHING requires this unique index; without it retries double-write.
 CREATE UNIQUE INDEX IF NOT EXISTS memories_idempotency
   ON memories (owner, hash) WHERE hash IS NOT NULL;
+
+-- Migrations ledger: every applier (init_db.sh, app boot) records here.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name       text PRIMARY KEY,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);

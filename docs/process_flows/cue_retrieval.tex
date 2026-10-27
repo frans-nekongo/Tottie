@@ -31,7 +31,9 @@ STATEMENT & default: anything carrying new information \\
 \bottomrule
 \end{longtable}
 A turn matching both CORRECTION and another type is a CORRECTION (the reconsolidation route
-depends on it). ``Remind me to\ldots'' is a COMMAND that additionally registers an intention
+depends on it). A STATEMENT matching loss/need patterns (\emph{lost, can't find, missing, need,
+where is/are}) takes the recall branch under QUESTION policy: the user is asking the store, not
+telling it (``I lost my keys'' wants the counter, not a new row). ``Remind me to\ldots'' is a COMMAND that additionally registers an intention
 (see \emph{The Recall Path}: the prospective check). Entities for seeding and event\_cue
 overlap come from rules only: \texttt{\#tags}, \texttt{@mentions}, and quoted strings. No NER
 model in the hackathon build.

@@ -1,7 +1,12 @@
-# Tottie CI — Joel #3 (daily builds). Red until W0 lands the first tests; that is honest.
-# Docs compile stays local (texlive too heavy for CI); everything else builds here.
+# Tottie CI — Joel #3 (daily builds). Skips docs-only pushes; code pushes build.
 name: ci
-on: [push]
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '**.tex'
+      - '*.md'
+      - '.agents/**'
 jobs:
   core:
     runs-on: ubuntu-latest
@@ -15,9 +20,9 @@ jobs:
           --health-interval 10s --health-timeout 5s --health-retries 5
         ports: ["5432:5432"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: {python-version: "3.12"}
       - run: python -m venv core/venv && core/venv/bin/pip install -r core/requirements.txt
       - run: ./core/scripts/init_db.sh
@@ -34,8 +39,8 @@ jobs:
   ui:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: {node-version: 22}
       - run: npm install && npm run build
         working-directory: ui

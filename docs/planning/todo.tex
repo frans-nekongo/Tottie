@@ -2,29 +2,29 @@
 
 \section{Phase 0 --- Scaffold}
 \begin{itemize}
-  \item[$\square$] Create repo tree; \texttt{git init}; branch \texttt{main}
-  \item[$\square$] \texttt{.gitignore}, \texttt{.env.example}, \texttt{orch.config.json}, \texttt{Makefile}
-  \item[$\square$] \texttt{README.md}, \texttt{GEMINI.md}, \texttt{.agents/orch-directive.md}
-  \item[$\square$] First commit dated 2026-10-27
-  \item[$\square$] CI workflow (\texttt{.github/workflows/ci.yml}: pytest + pgvector service + UI build)
+  \item[$\boxtimes$] Create repo tree; \texttt{git init}; branch \texttt{main}
+  \item[$\boxtimes$] \texttt{.gitignore}, \texttt{.env.example}, \texttt{orch.config.json}, \texttt{Makefile}
+  \item[$\boxtimes$] \texttt{README.md}, \texttt{GEMINI.md}, \texttt{.agents/orch-directive.md}
+  \item[$\boxtimes$] First commit dated 2026-10-27
+  \item[$\boxtimes$] CI workflow (\texttt{.github/workflows/ci.yml}: pytest + pgvector service + UI build)
 \end{itemize}
 
 \section{Phase 1 --- Documentation}
 \begin{itemize}
-  \item[$\square$] \texttt{master.tex} + every part \texttt{*.tex} (incl. the cognition model)
-  \item[$\square$] Compile \texttt{master.pdf} (\texttt{latexmk -xelatex}); zero undefined refs
+  \item[$\boxtimes$] \texttt{master.tex} + every part \texttt{*.tex} (incl. the cognition model)
+  \item[$\boxtimes$] Compile \texttt{master.pdf} (\texttt{latexmk -xelatex}); zero undefined refs
 \end{itemize}
 
 \section{Phase 2 --- Deck}
 \begin{itemize}
-  \item[$\square$] \texttt{presentation.tex} (Beamer, Madrid/whale, 16:9)
-  \item[$\square$] Compile \texttt{presentation.pdf} (\texttt{pdflatex} $\times$2)
+  \item[$\boxtimes$] \texttt{presentation.tex} (Beamer, Madrid/whale, 16:9)
+  \item[$\boxtimes$] Compile \texttt{presentation.pdf} (\texttt{pdflatex} $\times$2)
 \end{itemize}
 
 \section{Phase 3 --- Core Engine (the gate + the minds)}
 \begin{itemize}
-  \item[$\square$] \texttt{config.py}, \texttt{db.py}, \texttt{schema.sql} (memories, events, links, intentions)
-  \item[$\square$] \texttt{embeddings.py} (bge-small + labelled hash fallback)
+  \item[$\boxtimes$] \texttt{config.py}, \texttt{db.py}, \texttt{schema.sql} (memories, events, links, intentions)
+  \item[$\boxtimes$] \texttt{embeddings.py} (bge-small + labelled hash fallback)
   \item[$\square$] \texttt{providers/} (base, meta, local, resolve)
   \item[$\square$] \texttt{agents/gates.py} (attention + surprise + salience), \texttt{cue\_classifier.py} (rules-only)
   \item[$\square$] \texttt{agents/observer.py}, \texttt{scribe.py} (+sparse separation), \texttt{retriever.py}, \texttt{curator.py}

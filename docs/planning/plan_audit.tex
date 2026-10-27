@@ -137,3 +137,28 @@ F11 & CI lacked a postgres client for \texttt{init\_db.sh} & apt-install step in
 F12 & Brain graph placement unspecified & Panel tabs Timeline/Graph in \emph{Tottie UI} \\
 \bottomrule
 \end{longtable}
+
+\section{v10 Incident Ledger (the YOLO false-block, 2026-10-27)}
+A real failure from this build: the agent insisted for minutes that escalation was blocked
+while YOLO mode was on the entire time. Dogfooded as Gallery row 11 and scenario s23.
+\begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
+\toprule
+ID & Finding & Fix (where) \\
+\midrule
+G1 & Agent repeated a false self-model across turns; nothing persists the correction & Gallery row 11 in \emph{Why} (dogfood story for the demo) \\
+G2 & No regression test for lesson persistence & s23 procedural-lesson scenario \\
+G3 & Honest scope: memory makes it a once-ever failure, not a never-error & recorded here; inference errors in-run are out of scope \\
+\bottomrule
+\end{longtable}
+
+\section{v11 Build Ledger (Meta live + keys cascade + W0 green, 2026-10-27)}
+\begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
+\toprule
+ID & Finding & Fix (where) \\
+\midrule
+H1 & Meta endpoint unproven; key unverified & live call OK (5.3~s); base/model in env; reasoning notes in \emph{Providers} \\
+H2 & ``I lost my keys'' needs recall but parses as STATEMENT & loss/need patterns take QUESTION policy (\emph{Cue Retrieval}) + s24 \\
+H3 & Vague-cue cascade unmapped to components & reinstate $\rightarrow$ compound probe, converge $\rightarrow$ Activator, complete $\rightarrow$ Completer (this row) \\
+H4 & W0 built: 7/7 pytest, TCP boot OK, 2 missing deps found & code in \texttt{core/}; P0--P2 boxes checked in \emph{Todo} \\
+\bottomrule
+\end{longtable}
