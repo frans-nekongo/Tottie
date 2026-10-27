@@ -10,9 +10,8 @@
 
 \section{Phase 1 --- Documentation}
 \begin{itemize}
-  \item[$\square$] \texttt{master.tex} + every part \texttt{*.tex}
+  \item[$\square$] \texttt{master.tex} + every part \texttt{*.tex} (incl. the cognition model)
   \item[$\square$] Compile \texttt{master.pdf} (\texttt{latexmk -xelatex}); zero undefined refs
-  \item[$\square$] \texttt{hackathon\_rules.tex}, \texttt{hackathon\_compliance.tex}
 \end{itemize}
 
 \section{Phase 2 --- Deck}
@@ -21,59 +20,59 @@
   \item[$\square$] Compile \texttt{presentation.pdf} (\texttt{pdflatex} $\times$2)
 \end{itemize}
 
-\section{Phase 3 --- Core Engine}
+\section{Phase 3 --- Core Engine (the gate + the minds)}
 \begin{itemize}
-  \item[$\square$] \texttt{config.py}, \texttt{db.py}, \texttt{schema.sql}
+  \item[$\square$] \texttt{config.py}, \texttt{db.py}, \texttt{schema.sql} (memories, events, links, intentions)
   \item[$\square$] \texttt{embeddings.py} (bge-small + labelled hash fallback)
   \item[$\square$] \texttt{providers/} (base, meta, local, resolve)
-  \item[$\square$] \texttt{agents/observer.py}, \texttt{scribe.py}, \texttt{retriever.py}, \texttt{curator.py}
-  \item[$\square$] \texttt{tiers.py}
+  \item[$\square$] \texttt{agents/attention.py}, \texttt{surprise.py}, \texttt{salience.py}, \texttt{cue\_classifier.py}
+  \item[$\square$] \texttt{agents/observer.py}, \texttt{scribe.py} (+sparse separation), \texttt{retriever.py}, \texttt{curator.py}
 \end{itemize}
 
 \section{Phase 4 --- MCP}
 \begin{itemize}
-  \item[$\square$] \texttt{mcp/server.py}: 6 tools + 2 resources + \texttt{tottie\_context\_card}
+  \item[$\square$] \texttt{mcp/server.py}: 8 tools + 2 resources + \texttt{tottie\_context\_card}
   \item[$\square$] \texttt{--list-tools} prints the surface
 \end{itemize}
 
 \section{Phase 5 --- Round-Trip}
 \begin{itemize}
-  \item[$\square$] \texttt{POST /write} $\rightarrow$ store $\rightarrow$ \texttt{POST /recall} $\rightarrow$ Card
+  \item[$\square$] \texttt{POST /write} $\rightarrow$ gated store $\rightarrow$ \texttt{POST /recall} $\rightarrow$ Card + confidence
   \item[$\square$] \texttt{GET /events} SSE stream for the Panel
-  \item[$\square$] Preflight test: write one fact, recall it
 \end{itemize}
 
 \section{Phase 6 --- UI}
 \begin{itemize}
   \item[$\square$] \texttt{TottieFace} (5-state machine + frame-set contract + placeholders)
-  \item[$\square$] \texttt{ChatStream}, \texttt{MemoryPanel}, \texttt{RoomMap}, \texttt{AblationToggle}
-  \item[$\square$] Panel consumes SSE; renders the four blocks
+  \item[$\square$] \texttt{ChatStream}, \texttt{MemoryPanel}, \texttt{RoomMap}, \texttt{AblationToggle}, why-surfaced line, Sleep button
 \end{itemize}
 
-\section{Phase 7 --- Reconcile / Tags / Identity / Lessons}
+\section{Phase 7 --- Reconcile / Tags / Identity / Links / Decay}
 \begin{itemize}
-  \item[$\square$] Temporal supersede with \texttt{valid\_to} / \texttt{supersedes}
+  \item[$\square$] Reconsolidation (\texttt{valid\_to} / \texttt{supersedes}); labile-on-access
   \item[$\square$] Hierarchical tags / rooms; identity allowlist
-  \item[$\square$] \texttt{kind=lesson} autosave + recurrence match
+  \item[$\square$] \texttt{memory\_links} written on tag/entity/supersede events
+  \item[$\square$] Decayer: utility decay + pruning; access boosts utility (testing effect)
 \end{itemize}
 
-\section{Phase 8 --- Integration + Eval}
+\section{Phase 8 --- Cognition + Integration + Eval}
 \begin{itemize}
+  \item[$\square$] Activator (spreading activation, priming, decay) + Completer (pattern completion)
+  \item[$\square$] Metacognitive Evaluator (confidence) + Prospective Queue (\texttt{memory.intend})
+  \item[$\square$] Consolidator (on-demand Sleep: replay $\rightarrow$ semanticise $\rightarrow$ prune)
   \item[$\square$] Mount MCP in VS Code / Cursor (three bodies)
-  \item[$\square$] \texttt{eval/harness.py} + \texttt{scenarios.jsonl} (ON/OFF ablation)
-  \item[$\square$] All tests green
+  \item[$\square$] \texttt{eval/harness.py} + \texttt{scenarios.jsonl} (ON/OFF ablation + consolidation check)
 \end{itemize}
 
 \section{Phase 9 --- Film}
 \begin{itemize}
-  \item[$\square$] 3-minute screen-capture video (captions + music)
-  \item[$\square$] README final; recompile docs; update compliance ledger
+  \item[$\square$] 3-minute screen-capture video (captions + music), incl. the Sleep beat
+  \item[$\square$] README final; recompile docs; update the compliance ledger
 \end{itemize}
 
 \section{Phase 10 --- Submit}
 \begin{itemize}
-  \item[$\square$] Make repo public
-  \item[$\square$] Video link accessible
-  \item[$\square$] Claim Meta credits (\textless Wed Nov 4, 9 PM ET)
+  \item[$\square$] Make repo public; video link accessible
+  \item[$\square$] Claim Meta credits ($<$ Wed Nov 4, 9 PM ET)
   \item[$\square$] Submit via the CV platform
 \end{itemize}

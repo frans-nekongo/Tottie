@@ -5,7 +5,7 @@ The whole point is that the same memory mounts into any host: the Tottie chat, a
 agent, anything that speaks MCP.
 
 \section{Tools}
-\begin{longtable}{@{}p{0.28\textwidth}p{0.34\textwidth}p{0.30\textwidth}@{}}
+\begin{longtable}{@{}p{0.26\textwidth}p{0.34\textwidth}p{0.32\textwidth}@{}}
 \toprule
 Tool & Signature & Purpose \\
 \midrule
@@ -14,8 +14,9 @@ Tool & Signature & Purpose \\
 \texttt{memory.recall} & \texttt{(query, tiers?, k?)} & Cue-typed associative retrieval \\
 \texttt{memory.probe} & \texttt{(tag|id)} & Walk into a ``room'' and read its memories \\
 \texttt{memory.identity} & \texttt{()} & Return the pinned identity facts \\
-\texttt{memory.sleep} & \texttt{()} & Run consolidation (replay $\rightarrow$ semanticise $\rightarrow$ prune) \\
-\texttt{memory.forget} & \texttt{(id)} & Right-to-be-forgotten \\
+\texttt{memory.intend} & \texttt{(content, event\_cue?, time\_cue?)} & Register a prospective intention \\
+\texttt{memory.sleep} & \texttt{()} & Consolidation (replay $\rightarrow$ semanticise $\rightarrow$ prune) \\
+\texttt{memory.forget} & \texttt{(id)} & Right-to-be-forgotten (hard delete) \\
 \bottomrule
 \end{longtable}
 
@@ -43,3 +44,8 @@ it?'' Tottie does \textbf{both, deliberately}:
 The \texttt{memory.recall} tool does not run a single similarity search. It classifies the cue,
 chooses a policy, seeds nodes, and spreads activation across \texttt{memory\_links}. See
 \emph{The Cognition Model} for the full specification.
+
+\section{Confidence in the Response}
+Alongside the card, \texttt{memory.recall} returns a \textbf{confidence} derived from the retrieval
+margin. A low-confidence result is an instruction to the host to verify or abstain rather than
+assert --- the metacognitive gate.

@@ -12,8 +12,8 @@ in the preceding part, \emph{The Cognition Model}.
 \node[uibox] (ui) {Tottie UI\\chat + live Memory Panel};
 \node[uibox,right=1.6cm of ui] (ide) {Coding agent\\(VS Code / Cursor)};
 \node[syncbox,below=1.1cm of ui] (mcp) {MCP server --- stdio\\tools $\cdot$ resources $\cdot$ prompt};
-\node[databox,below=0.9cm of mcp] (core) {Core engine (FastAPI :8765)\\ten components (see below)};
-\node[databox,below=0.9cm of core] (db) {Postgres + pgvector\\\texttt{memories} $\cdot$ \texttt{memory\_events} $\cdot$ \texttt{memory\_links}};
+\node[databox,below=0.9cm of mcp] (core) {Core engine (FastAPI :8765)\\sixteen components (see below)};
+\node[databox,below=0.9cm of core] (db) {Postgres + pgvector\\\texttt{memories} $\cdot$ \texttt{memory\_events} $\cdot$ \texttt{memory\_links} $\cdot$ \texttt{intentions}};
 \draw[flow] (ui) -- (mcp) node[lbl,midway,right]{remember / recall};
 \draw[flow] (ide) |- (mcp);
 \draw[flow] (mcp) -- (core);
@@ -23,24 +23,30 @@ in the preceding part, \emph{The Cognition Model}.
 share one memory store.}
 \end{figure}
 
-\section{The Ten Components}
+\section{The Component Roster}
 Each component has exactly one job. The primary agent (the ``present thought'') is untouched --- it
 receives better context and can \emph{probe}.
 
-\begin{longtable}{@{}p{0.04\textwidth}p{0.24\textwidth}p{0.50\textwidth}p{0.14\textwidth}@{}}
+\begin{longtable}{@{}p{0.26\textwidth}p{0.62\textwidth}p{0.10\textwidth}@{}}
 \toprule
-\# & Component & Job & Tier \\
+Component & Job & Tier \\
 \midrule
-1 & Cue Classifier & intent type $+$ entity/project extraction $\rightarrow$ retrieval policy & MUST \\
-2 & Observer & is this worth remembering? & MUST \\
-3 & Salience Scorer & the worth-remembering rubric $+$ arousal tag & MUST \\
-4 & Scribe & structure, tag, embed, route, sparse-separate & MUST \\
-5 & Reconciler & reconsolidation: update the labile trace on contradiction & MUST \\
-6 & Retriever & seed $+$ hybrid $+$ graph activation & MUST \\
-7 & Activator & spreading activation over \texttt{memory\_links} (1--2 hops, decay) & MUST \\
-8 & Completer & pattern completion (cluster reconstruction) & SHOULD \\
-9 & Curator & assemble the Context Card $+$ ``why surfaced'' & MUST \\
-10 & Consolidator & ``Sleep'': replay $\rightarrow$ semanticise $\rightarrow$ prune & SHOULD \\
+Attention Gate & filter incoming turns before storage & MUST \\
+Surprise Gate & prediction-error score; encode only the unexpected & MUST \\
+Cue Classifier & intent type $+$ entities $\rightarrow$ retrieval policy & MUST \\
+Observer & is this worth remembering? & MUST \\
+Salience Scorer & the rubric, with surprise as a multiplier & MUST \\
+Scribe & structure, tag, embed, route, sparse-separate & MUST \\
+Reconciler & reconsolidation: patch the labile trace & MUST \\
+Retriever & seed $+$ hybrid $+$ graph activation & MUST \\
+Activator & spreading activation, priming, decay & MUST \\
+Curator & assemble the Context Card $+$ ``why surfaced'' & MUST \\
+Completer & pattern completion (cluster reconstruction) & SHOULD \\
+Decayer & adaptive forgetting, utility decay, pruning & SHOULD \\
+Metacognitive Evaluator & confidence from the retrieval margin; gate assertions & SHOULD \\
+Prospective Queue & event/time-triggered intentions & SHOULD \\
+Consolidator & sleep: replay $\rightarrow$ semanticise $\rightarrow$ space $\rightarrow$ prune & SHOULD \\
+Transactive Directory & route to where knowledge lives & STRETCH \\
 \bottomrule
 \end{longtable}
 
@@ -52,19 +58,21 @@ receives better context and can \emph{probe}.
   \item \textbf{Knowledge} --- ingested documents, files, and references (semantic facts).
   \item \textbf{Procedural (``Lessons'')} --- mistake $\rightarrow$ problem+solution pairs, surfaced
   instantly on recurrence (``autosave'').
+  \item \textbf{Prospective} --- intentions with an event or time cue (see the Prospective Queue).
 \end{itemize}
 
 \section{Write Path (summary)}
-Observe and score salience $\rightarrow$ embed and sparse-separate $\rightarrow$ reconcile
+Attention gate $\rightarrow$ surprise gate $\rightarrow$ observe and score salience $\rightarrow$
+embed and sparse-separate $\rightarrow$ reconcile
 \texttt{NEW}/\texttt{SKIP}/\texttt{UPDATE}/\texttt{SUPERSEDE} $\rightarrow$ route tier $\rightarrow$
 persist, write links, and emit an event. Full granular flow in \emph{Process Flows: Write Path}.
 
 \section{Recall Path (summary)}
 Classify the cue $\rightarrow$ choose the policy $\rightarrow$ seed nodes $\rightarrow$ run the three
 legs (semantic $\cup$ lexical $\cup$ associative) $\rightarrow$ spread activation with decay
-$\rightarrow$ complete the cluster $\rightarrow$ curate the Context Card $\rightarrow$ emit a recall
-event. Full granular flow in \emph{Process Flows: Cue Typing, Spreading Activation, and Pattern
-Completion}.
+$\rightarrow$ complete the cluster $\rightarrow$ score confidence (metacognition) $\rightarrow$ curate
+the Context Card $\rightarrow$ emit a recall event. Full granular flow in \emph{Process Flows: Cue
+Typing, Spreading Activation, and Pattern Completion}.
 
 \section{Reuse Map (patterns, not files)}
 \begin{longtable}{@{}p{0.42\textwidth}p{0.48\textwidth}@{}}

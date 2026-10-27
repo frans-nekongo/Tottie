@@ -105,14 +105,14 @@
 \end{frame}
 
 % ---------- 5. The minds ----------
-\begin{frame}{Ten small minds, each with one job}
+\begin{frame}{We did not invent the design. We copied it.}
   \begin{figure}
     \centering
     \begin{tikzpicture}[node distance=0.7cm]
       \node[bx] (ui) {Tottie UI\\chat + panel};
       \node[bx,right=1.3cm of ui] (ide) {Coding agent\\(VS Code)};
       \node[pbox,below=0.7cm of ui] (mcp) {MCP server};
-      \node[abx,below=0.7cm of mcp] (core) {Cue Classifier $\cdot$ Salience $\cdot$ Scribe $\cdot$ Activator $\cdot$ Curator $\cdot$ Consolidator};
+      \node[abx,below=0.7cm of mcp] (core) {Surprise Gate $\cdot$ Salience $\cdot$ Scribe $\cdot$ Activator $\cdot$ Decayer $\cdot$ Consolidator};
       \node[abx,below=0.7cm of core] (db) {Postgres + pgvector + links};
       \draw[ar] (ui) -- (mcp);
       \draw[ar] (ide) |- (mcp);
@@ -121,9 +121,9 @@
     \end{tikzpicture}
   \end{figure}
   \begin{itemize}
-    \item \textbf{Salience} --- is this worth remembering at all?
-    \item \textbf{Scribe} --- structure, tag, embed, \textbf{reconcile}.
-    \item \textbf{Activator} --- spread activation over the memory graph.
+    \item \textbf{Surprise Gate} --- predictive coding: encode only what we did not expect.
+    \item \textbf{Activator} --- spreading activation, priming, decay.
+    \item \textbf{Decayer} --- forgetting as a feature.
     \item \textbf{Consolidator} --- sleep: generalise episodes into lessons.
   \end{itemize}
 \end{frame}
@@ -138,19 +138,19 @@
     Episodic & Chronological decisions, state changes, history. \\
     Knowledge & Ingested docs, files, references (semantic). \\
     Procedural (``Lessons'') & Mistake $\rightarrow$ solution pairs. Autosave. \\
+    Prospective & Intentions with an event or time cue. \\
     \bottomrule
   \end{tabularx}
   \vfill
   \begin{block}{Why tiers beat a flat vector store}
     Identity needs no search at all; episodic needs time; knowledge needs semantics; lessons need an
-    error signature. One store, four retrieval policies.
+    error signature. One store, five retrieval policies.
   \end{block}
 \end{frame}
 
 % ---------- 7. The middle (card + probe) ----------
 \begin{frame}{The part everyone leaves out: what reaches the model?}
-  \textbf{Dual-path recall}: a card that is handed over automatically, plus a probe the agent can
-  choose to run.
+  \textbf{Dual-path recall}: a card handed over automatically, plus a probe the agent can run.
   \begin{block}{The Context Card (injected every turn)}
     \ttfamily\scriptsize
     [MEMORY CARD - 3 hits]\\[1mm]
@@ -196,7 +196,23 @@
   \centering\itshape RAG is one leg. This is the whole animal.
 \end{frame}
 
-% ---------- 10. Consolidation ----------
+% ---------- 10. Surprise + forgetting ----------
+\begin{frame}{It only remembers the surprising --- and it forgets on purpose.}
+  \begin{block}{Surprise gating (predictive coding)}
+    The brain encodes the \emph{prediction error}, not the input. Tottie computes a surprise score and
+    refuses to store the routine: \emph{only the unexpected is written}.
+  \end{block}
+  \begin{block}{Adaptive forgetting}
+    \ttfamily\scriptsize utility = exp(-ln2*age/half\_life) * (1 + log(1+access\_count))
+  \end{block}
+  \begin{itemize}
+    \item Unused memories \textbf{fade}; used ones strengthen (the testing effect).
+    \item Recalling one memory \textbf{suppresses} its competitors.
+    \item \emph{Forgetting is the feature, not the bug.}
+  \end{itemize}
+\end{frame}
+
+% ---------- 11. Consolidation ----------
 \begin{frame}{Then it sleeps --- and generalises.}
   \begin{block}{The Consolidator (``Sleep'')}
     Replays recent episodic memories, extracts the recurring structure into \textbf{semantic}
@@ -209,7 +225,28 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 11. Three bodies ----------
+% ---------- 12. Prospective + metacognition ----------
+\begin{frame}{It remembers the future, and it knows what it doesn't know.}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Prospective memory}
+        Intentions with an \textbf{event} or \textbf{time} cue fire proactively ---
+        ``remind me to ask about the deploy on Friday.''
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Metacognition}
+        A \textbf{confidence} score from the retrieval margin. Low confidence $\rightarrow$ verify,
+        ask, or abstain. The agent knows when it does not know.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \vfill
+  \centering A memory store returns facts. A mind returns the right facts, at the right time, with a
+  sense of how sure it is.
+\end{frame}
+
+% ---------- 13. Three bodies ----------
 \begin{frame}{One brain. Three bodies.}
   \begin{columns}
     \begin{column}{0.33\textwidth}
@@ -233,14 +270,14 @@
   \textbf{The money shot:} add a fact in the chat, then ask your coding agent --- it already knows.
 \end{frame}
 
-% ---------- 12. The panel ----------
+% ---------- 14. The panel ----------
 \begin{frame}{The Memory Panel: the invisible, made visible}
   Real time, four blocks:
   \begin{enumerate}
-    \item \textbf{Learning now} --- the turn + Observer verdict (KEEP/DISCARD, salience, reason).
+    \item \textbf{Learning now} --- Observer verdict (KEEP/DISCARD, salience, \textbf{surprise}).
     \item \textbf{Memories formed} --- \texttt{NEW} / \texttt{UPDATE} / \texttt{SUPERSEDE} / \texttt{SKIP}, with the text.
     \item \textbf{Where it inserted them} --- tier chip + tag/room chips + a growing room map.
-    \item \textbf{Why this surfaced} --- \texttt{cue=COMMAND $\rightarrow$ seed $\rightarrow$ spread 1 hop}, plus the exact card the model received.
+    \item \textbf{Why this surfaced} --- \texttt{cue=COMMAND $\rightarrow$ seed $\rightarrow$ spread 1 hop}, plus the exact card received.
   \end{enumerate}
   \vfill
   \begin{block}{Why this is the hero}
@@ -248,7 +285,7 @@
   \end{block}
 \end{frame}
 
-% ---------- 13. Proof ----------
+% ---------- 15. Proof ----------
 \begin{frame}{We do not ask you to trust it. We measure it.}
   \begin{itemize}
     \item A \textbf{$\sim$40-item} suite across LongMemEval's categories (knowledge update, temporal,
@@ -263,14 +300,14 @@
   \end{alertblock}
 \end{frame}
 
-% ---------- 14. What we built ----------
+% ---------- 16. What we built ----------
 \begin{frame}{What was built during the Hackathon (Oct 27 -- Nov 4)}
   \begin{tabularx}{\textwidth}{@{}l X@{}}
     \toprule
     Component & \\
     \midrule
-    \texttt{core/} & Engine: Cue Classifier, Salience, Scribe, Activator, Completer, Consolidator, Reconciler \\
-    \texttt{mcp/} & MCP server: 7 tools, 2 resources, the context-card prompt \\
+    \texttt{core/} & Engine: Surprise Gate, Salience, Scribe, Activator, Decayer, Consolidator, Reconciler, Prospective Queue \\
+    \texttt{mcp/} & MCP server: 8 tools, 2 resources, the context-card prompt \\
     \texttt{ui/} & Tottie chat, sprite state machine, live Memory Panel, why-surfaced, Sleep, ablation \\
     \texttt{eval/} & ON/OFF ablation harness + consolidation check \\
     \texttt{docs/} & Cognition model + architecture + flows + this deck (LaTeX $\rightarrow$ PDF) \\
@@ -281,7 +318,7 @@
   \texttt{docs/business/hackathon\_compliance}.
 \end{frame}
 
-% ---------- 15. The joke + pitch ----------
+% ---------- 17. The joke + pitch ----------
 \begin{frame}{So what did I actually build it for?}
   \begin{center}
     \Large ``Everything I was mad at my girlfriend for ---\\ and the one thing that matters: her birthday.''
@@ -294,7 +331,7 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 16. Close ----------
+% ---------- 18. Close ----------
 \begin{frame}[plain]
   \begin{center}
     \Huge Tottie\\[3mm]
