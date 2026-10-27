@@ -1,31 +1,83 @@
 \chapter{The Cognition Model: What to Remember, and How a Cue Recalls}
 
 This chapter is the intellectual core of Tottie. It answers two questions a plain RAG pipeline never
-asks: \emph{what is worth remembering}, and \emph{how the right memory comes back} --- including an
-instruction like ``implement feature A'', which is not a question at all. It then records the
-mechanisms the first draft \emph{missed}, because the whole point is to copy how the mind works.
+asks: \emph{what is worth remembering}, and \emph{how the right memory comes back}. It also records
+which mechanisms we \textbf{copy} from the brain, which we \textbf{refuse} to copy, and where we
+\textbf{improve on} the brain because we are not bounded the way it is.
 
 \section{The Core Realisation: RAG Is One Leg, Not the Animal}
-Retrieval-augmented generation matches \textbf{text similarity}: embed the query, take the nearest
-neighbours. That fails the moment the input is not a question. ``Implement feature A'' has no
-textually similar neighbour in memory, yet a competent human immediately surfaces the project's
-conventions, past decisions about A, and known pitfalls. Tottie's retrieval is therefore a
-\textbf{staged, associative process}, not one similarity search.
+Retrieval-augmented generation matches \textbf{text similarity}. That fails the moment the input is
+not a question. ``Implement feature A'' has no textually similar neighbour, yet a competent human
+immediately surfaces the project's conventions, past decisions, and pitfalls. Tottie's retrieval is
+therefore a \textbf{staged, associative process}, not one similarity search.
 
-\section{What the First Draft Missed}
-A brain-inspired audit surfaced six families of mechanism absent from a plain store:
+\section{The Governing Principle: Simulate the Solutions, Never the Constraints}
+This is the single most important design rule in the project.
+\begin{quote}
+The brain forgets because it is \textbf{bounded} --- finite neurons, metabolic cost, lossy
+reconstructive storage. Those are \textbf{constraints, not features}. We are not bounded. Storage is
+nearly free, search is exhaustive, and we have full control. Blindly copying Ebbinghaus decay would be
+copying a limitation to solve a solution problem. \textbf{Simulate the brain's solutions; never
+simulate its constraints.}
+\end{quote}
+
+\begin{longtable}{@{}p{0.36\textwidth}p{0.54\textwidth}@{}}
+\toprule
+Biological \textbf{constraint} (do NOT copy) & Functional \textbf{solution} (DO copy) \\
+\midrule
+Bounded capacity and metabolic cost & Spreading activation over an associative graph \\
+Passive trace decay & Complementary fast/slow consolidation \\
+Lossy reconstruction and confabulation & Autoassociative pattern completion \\
+Interference and blending & Surprise / prediction-error gating \\
+Tip-of-the-tongue blocking & Reconsolidation and dynamic patching \\
+Human working-memory span (7 $\pm$ 2) & Salience and importance tagging \\
+\bottomrule
+\end{longtable}
+
+\noindent Concretely, Tottie \textbf{refuses} to copy: uncontrolled time-based decay of raw records;
+reconstructive guessing inside the store; retrieval blocking; and an artificially small working set.
+It \textbf{does} copy: spreading activation, consolidation, pattern completion, surprise gating,
+reconsolidation, and salience.
+
+\section{Availability vs Accessibility: Redefining Forgetting}
+Tulving and Pearlstone separated two states of stored information:
+\begin{itemize}
+  \item \textbf{Availability} --- the trace was encoded and still exists.
+  \item \textbf{Accessibility} --- the trace can be retrieved \emph{right now}, which depends on
+  whether the current cues match the encoding.
+\end{itemize}
+\textbf{Retrieval failure} (cue-dependent forgetting) is an available-but-inaccessible memory. The
+\textbf{tip-of-the-tongue} state is its poster child: you know the name is in there, you can feel its
+shape, and you still cannot produce it.
+
+For a machine, \textbf{forgetting should not mean deletion at all}. It should mean \textbf{control of
+accessibility}. Everything stays \emph{available} (stored, recoverable with the right cue); only the
+cued subset is \emph{accessible} at any moment. The tip-of-the-tongue feeling is a \emph{bug}; we keep
+the mechanism and drop the bug --- the cue always works.
+
+\begin{longtable}{@{}p{0.42\textwidth}p{0.48\textwidth}@{}}
+\toprule
+Traditional deletion (human / legacy stores) & Accessibility control (Tottie) \\
+\midrule
+Hard physical erasure & Lower the memory's retrieval ranking \\
+Irreversible loss of raw data & Filter it out of the attention window \\
+``Prevents clutter'' by destroying evidence & Compress it into an abstract schema \\
+\bottomrule
+\end{longtable}
+
+So ``forgetting'' in Tottie is three operations, none of which is a shredder:
 \begin{enumerate}
-  \item \textbf{Surprise gating} --- the brain encodes what it did \emph{not} predict.
-  \item \textbf{Forgetting as a feature} --- adaptive decay, interference control, and
-  retrieval-induced forgetting.
-  \item \textbf{Retrieval practice} --- recalling strengthens a memory; it is not a passive read.
-  \item \textbf{Spacing} --- distributed rehearsal beats massed ingestion.
-  \item \textbf{Prospective memory} --- remembering \emph{intentions}, not only facts.
-  \item \textbf{Metacognition} --- a feeling-of-knowing that gates what may be asserted.
+  \item \textbf{Ranking / salience modulation} --- a utility factor lowers a stale memory's search
+  weight, so it drops below the surface threshold but stays in the store.
+  \item \textbf{Attention gating} --- the item is kept out of the active context window.
+  \item \textbf{Consolidation / compression} --- a detailed episode is summarised into a durable
+  semantic node, with the raw episode retained behind it.
 \end{enumerate}
+The \textbf{Decayer} is therefore really a \textbf{Ranker $+$ Compressor}, not a shredder. Hard
+deletion happens in exactly one case: an explicit right-to-be-forgotten request.
 
 \section{Worth Remembering I: The Salience Gate}
-The brain retains an experience when activity is strong \emph{and} neuromodulators (amygdala input,
+The brain retains an experience when activity is strong \emph{and} neuromodulators (amygdala,
 norepinephrine, dopamine) lower the threshold for durable long-term potentiation; weak activity
 produces long-term depression and is pruned. The Observer is that gate:
 \begin{Verbatim}[breaklines=true,fontsize=\small]
@@ -34,18 +86,16 @@ salience = surprise * (w1*persistence + w2*reusability + w3*consequence + w4*aro
 Below threshold $\rightarrow$ DISCARD. The weights are tuned by the evaluation harness.
 
 \section{Worth Remembering II: Surprise (Prediction Error)}
-\textbf{Predictive coding} holds that the brain continuously predicts its input and encodes only the
-\emph{prediction error}. Expected input is suppressed (repetition suppression); unexpected input
-drives plasticity. Concretely, Tottie computes a \textbf{surprise score} for each turn before storing
-it:
+Under \textbf{predictive coding} the brain encodes only the \emph{prediction error}; expected input is
+suppressed (repetition suppression). Tottie computes a \textbf{surprise score} before storing:
 \begin{Verbatim}[breaklines=true,fontsize=\small]
-prediction_error = 1 - cos(turn_embedding, predicted_embedding)   # the observer's expectation
+prediction_error = 1 - cos(turn_embedding, predicted_embedding)
 encode only if prediction_error >= SURPRISE_FLOOR
 \end{Verbatim}
-Routine turns are suppressed; surprising ones are encoded. A second signal, \textbf{reward prediction
-error}, tags corrections, explicit feedback, and surprising successes or failures for immediate
-consolidation. Surprise is the \emph{multiplicative} term in the salience equation above --- it is the
-single most important mechanism the first draft lacked.
+Routine turns are suppressed; surprising ones are encoded. \textbf{Reward prediction error} tags
+corrections, feedback, and surprising successes or failures for immediate consolidation. Surprise is
+the \emph{multiplicative} term in the salience equation --- the most important mechanism the first
+draft lacked.
 
 \section{Worth Remembering III: The Content Taxonomy}
 \begin{longtable}{@{}p{0.30\textwidth}p{0.42\textwidth}p{0.16\textwidth}@{}}
@@ -65,17 +115,14 @@ Intention (prospective) & ``Remind me to ask about the deploy on Friday.'' & pro
 \end{longtable}
 
 \noindent\textbf{Per-persona emphasis:} a \emph{writer} needs preferences, conventions, and style
-exemplars (so the agent imitates voice, not just obeys rules); a \emph{developer} needs bindings,
-conventions, decisions-with-principle, and lessons; a \emph{person} needs identity, preferences,
-dates, and relationships.
+exemplars; a \emph{developer} needs bindings, conventions, decisions-with-principle, and lessons; a
+\emph{person} needs identity, preferences, dates, and relationships.
 
 \section{Memory Becomes Judgment: The \texttt{principle} Field}
 ``For project C, use project A's database because it is better'' is \textbf{not recall} --- it is
-\emph{projecting a stored principle onto a new situation}. A decision is therefore stored as
-\texttt{decision + principle + rationale}, for example
-\texttt{principle: "prefer the database already running locally for small services"}. At recall time
-the Curator surfaces \textbf{principles} whenever the cue is a decision. This is the line between a
-memory store and something that behaves like judgment.
+projecting a stored principle onto a new situation. Decisions are stored as
+\texttt{decision + principle + rationale}, and the Curator surfaces \textbf{principles} whenever the
+cue is a decision.
 
 \section{How a Cue Retrieves: Typing, Spreading, Completing}
 \begin{figure}[H]
@@ -111,10 +158,9 @@ CHITCHAT & ``thanks!'' & none (do not pollute) \\
 
 \subsection{Spreading Activation, Priming, and Pattern Completion}
 From the seeded nodes, activation propagates along the edges of \texttt{memory\_links}, decaying with
-each hop, and priming lowers the threshold for linked concepts. This is the mechanism behind the
-familiar experience of a memory from fifteen years ago surfacing the instant someone mentions a band.
-The \textbf{Completer} then reconstructs the whole coherent cluster (\textbf{pattern completion})
-rather than returning three loose chunks.
+each hop, and priming lowers the threshold for linked concepts --- why a memory from fifteen years ago
+surfaces the instant someone mentions a band. The \textbf{Completer} then reconstructs the whole
+coherent cluster (\textbf{pattern completion}) rather than three loose chunks.
 
 \subsection{Three Legs, Not One}
 Tottie runs \textbf{semantic} (embeddings), \textbf{lexical} (full-text), and \textbf{associative}
@@ -123,72 +169,59 @@ alone. If nothing clears the activation floor, Tottie \textbf{abstains} rather t
 
 \section{Retrieval Is Not a Passive Read}
 \begin{itemize}
-  \item \textbf{Testing effect (retrieval practice):} actively recalling a memory strengthens it far
-  more than passively re-reading. In Tottie, a successful recall \emph{increments the memory's
-  utility} --- the act of remembering makes it more likely to be remembered again.
-  \item \textbf{Retrieval-induced forgetting:} recalling one memory \emph{suppresses} competing
-  memories in the same category. In Tottie, a recall \emph{down-weights the near-duplicate competitors}
-  it passed over, sharpening subsequent searches.
-  \item \textbf{Spacing effect:} distributed rehearsal beats massed rehearsal. Tottie schedules
-  \textbf{spaced reviews} of durable memories at expanding intervals rather than trusting one write.
+  \item \textbf{Testing effect:} a successful recall \emph{increments utility} --- remembering makes a
+  memory more likely to be remembered again.
+  \item \textbf{Retrieval-induced forgetting:} a recall \emph{down-weights the near-duplicate
+  competitors} it passed over, sharpening subsequent searches.
+  \item \textbf{Spacing effect:} Tottie schedules \textbf{spaced reviews} at expanding intervals
+  rather than trusting one write.
 \end{itemize}
 
-\section{Forgetting as a Feature}
-Forgetting is not failure; it is what keeps a memory system usable. Tottie implements three
-mechanisms:
-\begin{enumerate}
-  \item \textbf{Adaptive decay (Ebbinghaus):} a memory's \emph{utility} decays with age but rises
-  with use:
-  \begin{Verbatim}[breaklines=true,fontsize=\small]
-  utility = exp(-ln2 * age / half_life) * (1 + log(1 + access_count))
-  # archive when utility < MIN_UTILITY
-  \end{Verbatim}
-  \item \textbf{Interference control:} proactive and retroactive interference are the brain's version
-  of overlapping embeddings polluting retrieval. Tottie counters with \textbf{sparse pattern
-  separation} on write and \textbf{category / namespace filtering} on read.
-  \item \textbf{Retrieval-induced forgetting} (above), which prunes competitors by using them.
-\end{enumerate}
-Nothing is hard-deleted without the pruned count being reported (see the Sleep summary).
+\section{The Ranking Model (``Forgetting'')}
+A memory's \textbf{utility} --- a \emph{ranking} signal, never a delete signal --- decays with age and
+rises with use:
+\begin{Verbatim}[breaklines=true,fontsize=\small]
+utility = exp(-ln2 * age / half_life) * (1 + log(1 + access_count))
+archive (deprioritise) when utility < MIN_UTILITY   # NOT delete
+\end{Verbatim}
+Low-utility memories remain \textbf{available} and simply fall out of the accessible set until a cue
+revives them. \textbf{Interference control} (sparse pattern separation on write, category filtering on
+read) keeps overlapping memories from blending, and \textbf{retrieval-induced forgetting} prunes
+competitors by using them.
 
 \section{Consolidation: The Sleep Job}
 The brain replays the day during sleep (hippocampal sharp-wave ripples driving cortical replay),
-semanticising episodic traces into general knowledge and pruning what is never used. Tottie's
-\textbf{Consolidator} is an on-demand ``Sleep'' job that (1) replays recent episodic memories,
-(2) extracts recurring structure into \textbf{semantic} memories, (3) schedules \textbf{spaced
-reviews}, and (4) prunes low-utility links. It can also \textbf{self-test} --- generating questions
-over its own store to reinforce important paths and surface gaps before a user asks.
+semanticising episodic traces into general knowledge. Tottie's \textbf{Consolidator} is an on-demand
+``Sleep'' job that (1) replays recent episodic memories, (2) extracts recurring structure into
+\textbf{semantic} memories, (3) schedules \textbf{spaced reviews}, and (4) compresses low-utility
+detail --- \emph{retaining} the raw episodes behind the summary. It can also \textbf{self-test}.
 
 \section{Reconsolidation: Updating on Access}
-When a memory is \emph{retrieved}, it is marked labile for the remainder of the turn. If the user then
-supplies contradictory information, the active trace is \textbf{patched} (superseded) rather than
-merely appended, and adjacent nodes are co-activated so the new association forms. Supersession is
-therefore \emph{retrieval-triggered}, not only write-triggered.
+When a memory is retrieved it is marked labile for the remainder of the turn. If the user then
+contradicts it, the active trace is \textbf{patched} (superseded) rather than merely appended, and
+adjacent nodes are co-activated. Supersession is \emph{retrieval-triggered}, not only write-triggered.
+\textbf{Unlike the brain, nothing is lost:} the superseded version is kept and versioned --- we
+non-destructively reconsolidate.
 
 \section{Prospective Memory: Remembering Intentions}
-Human memory stores not only facts but \emph{intentions}. Tottie adds a \textbf{Prospective Queue}:
-intentions carry an \textbf{event cue} (``when we discuss the deploy'') or a \textbf{time cue}
-(``Friday'') and fire \emph{proactively} when the cue occurs. This is a genuine product feature
-(``remind me to\ldots''), not a garnish.
+Tottie adds a \textbf{Prospective Queue}: intentions carry an \textbf{event cue} or a \textbf{time
+cue} and fire \emph{proactively} when the cue occurs --- a genuine product feature (``remind me
+to\ldots'').
 
 \section{Metacognition and Confidence}
-Before asserting anything, the agent should know whether it \emph{knows}. A \textbf{Metacognitive
-Evaluator} computes a \textbf{confidence} from the retrieval margin (top score minus the next best,
-plus coverage) and selects an action: \emph{HIGH} $\rightarrow$ generate; \emph{LOW} $\rightarrow$
-verify, ask, or abstain. This is the difference between an agent that hallucinates and one that says
-``I don't have that.''
+A \textbf{Metacognitive Evaluator} computes \textbf{confidence} from the retrieval margin and selects
+an action: \emph{HIGH} $\rightarrow$ generate; \emph{LOW} $\rightarrow$ verify, ask, or abstain. This
+is the difference between an agent that hallucinates and one that says ``I don't have that.''
 
 \section{Transactive Memory: Knowing Where}
-Wegner's \emph{transactive memory} is memory for \emph{who knows what}: a directory rather than
-contents. Tottie keeps a \textbf{Transactive Directory} mapping capabilities to where the knowledge
-lives (a tool, a document, an external system), so it can route a question instead of hoarding
-everything locally.
+Wegner's \emph{transactive memory} is memory for \emph{who knows what}. Tottie keeps a
+\textbf{Transactive Directory} mapping capabilities to where the knowledge lives (a tool, a document,
+an external system), so it routes questions instead of hoarding everything locally.
 
 \section{Working Memory and Attention Gating}
-Baddeley's model separates a limited \textbf{working memory} (a central executive plus modal buffers
-and an \textbf{episodic buffer} that binds modalities) from long-term storage. Two consequences for
-Tottie: an \textbf{attention gate} filters incoming turns before the Observer even sees them, and the
-\emph{present thought} is modelled as a bounded working set that writes to long-term memory through a
-binding step (the episodic-buffer analogue).
+Baddeley's model separates a limited \textbf{working memory} from long-term storage. Tottie keeps the
+\emph{solution} --- an \textbf{attention gate} and a binding step --- but \textbf{refuses the span
+limit}: we do not constrain the active set to 7 $\pm$ 2 items.
 
 \section{The Full Memory Taxonomy, Mapped}
 \begin{longtable}{@{}p{0.26\textwidth}p{0.38\textwidth}p{0.28\textwidth}@{}}
@@ -201,7 +234,7 @@ Autobiographical & episodic $+$ personal semantic & identity $+$ episodic \\
 Procedural (non-decl.) & skills, habits, how-to & \textbf{procedural} (Lessons) tier \\
 Priming (non-decl.) & lowered thresholds after exposure & \textbf{Activator} priming \\
 Conditioning (non-decl.) & stimulus--response associations & \texttt{memory\_links} \\
-Working memory & bounded active workspace & the present thought $+$ attention gate \\
+Working memory & bounded active workspace & the present thought $+$ attention gate \emph{(unbounded)} \\
 Prospective & future intentions & \textbf{Prospective Queue} \\
 Transactive & directory of who knows what & \textbf{Transactive Directory} \\
 \bottomrule
@@ -218,23 +251,23 @@ Cue Classifier & intent type $+$ entities $\rightarrow$ retrieval policy & MUST 
 Observer & is this worth remembering? & MUST \\
 Salience Scorer & the rubric, with surprise as a multiplier & MUST \\
 Scribe & structure, tag, embed, route, sparse-separate & MUST \\
-Reconciler & reconsolidation: patch the labile trace & MUST \\
+Reconciler & reconsolidation: patch the labile trace (non-destructive) & MUST \\
 Retriever & seed $+$ hybrid $+$ graph activation & MUST \\
 Activator & spreading activation, priming, decay & MUST \\
 Curator & assemble the Context Card $+$ ``why surfaced'' & MUST \\
 Completer & pattern completion (cluster reconstruction) & SHOULD \\
-Decayer & adaptive forgetting, utility decay, pruning & SHOULD \\
+Ranker $+$ Compressor (``Decayer'') & deprioritise $+$ compress --- \textbf{never} shred & SHOULD \\
 Metacognitive Evaluator & confidence from the retrieval margin; gate assertions & SHOULD \\
 Prospective Queue & event/time-triggered intentions & SHOULD \\
-Consolidator & sleep: replay $\rightarrow$ semanticise $\rightarrow$ space $\rightarrow$ prune & SHOULD \\
+Consolidator & sleep: replay $\rightarrow$ semanticise $\rightarrow$ space $\rightarrow$ compress & SHOULD \\
 Transactive Directory & route to where knowledge lives & STRETCH \\
 \bottomrule
 \end{longtable}
 
-\section{Neuroscience Basis}
+\section{Neuroscience Basis, and Where We Improve On It}
 \begin{longtable}{@{}p{0.42\textwidth}p{0.48\textwidth}@{}}
 \toprule
-Mechanism (verified) & Tottie realisation \\
+Mechanism & Tottie \\
 \midrule
 Encoding specificity (Tulving) & rich context tags stored at write time \\
 Spreading activation $+$ decay (Collins--Loftus) & the \textbf{Activator} \\
@@ -242,20 +275,28 @@ Pattern completion, CA3 autoassociative & the \textbf{Completer} \\
 Pattern separation, dentate gyrus & sparse-separate on write \\
 Predictive coding $+$ reward prediction error & the \textbf{Surprise Gate} \\
 Complementary Learning Systems $+$ replay & the \textbf{Consolidator} \\
-Reconsolidation (Nader) & the \textbf{Reconciler} \\
+Reconsolidation (Nader) & the \textbf{Reconciler}, made non-destructive \\
 Salience / neuromodulation (amygdala, NE) & the \textbf{Salience Scorer} \\
-Ebbinghaus curve, decay, interference & the \textbf{Decayer} \\
+Ebbinghaus curve, interference & the \textbf{Ranker} (availability vs accessibility) \\
 Testing effect, spacing, retrieval-induced forgetting & utility boost $+$ spaced review $+$ competitor suppression \\
 Prospective memory & the \textbf{Prospective Queue} \\
 Metacognition / feeling of knowing & the \textbf{Metacognitive Evaluator} \\
 Transactive memory (Wegner) & the \textbf{Transactive Directory} \\
-Working memory (Baddeley) & attention gate $+$ bounded working set \\
+Working memory (Baddeley) & attention gate, \emph{without the span limit} \\
+\midrule
+\textbf{Human constraint we improve on} & \textbf{Tottie advantage} \\
+Bounded capacity & unbounded storage \\
+Trace decay / permanent loss & deprioritise, never destroy \\
+Lossy reconstruction & exact, verbatim retention \\
+Tip-of-the-tongue blocking & the cue always works \\
+Forgetting is involuntary & forgetting is a tunable knob we own \\
 \bottomrule
 \end{longtable}
 
 \noindent\emph{Sources}: the NotebookLM notebook ``META hackathon''
-(\texttt{248ae575-4f2d-4ef1-b75f-d6ce38bb514a}), now 28 sources covering hippocampal encoding and
+(\texttt{248ae575-4f2d-4ef1-b75f-d6ce38bb514a}), now over 35 sources covering hippocampal encoding and
 engram theory, LTP and plasticity, spreading activation, encoding specificity, consolidation,
-episodic/semantic/autoassociative memory, reconsolidation, forgetting, spaced repetition, the testing
-effect, interference, predictive coding, working memory, prospective and transactive memory, chunking,
-and metacognition.
+episodic/semantic/autoassociative memory, reconsolidation, forgetting and the forgetting curve, spaced
+repetition, the testing effect, interference, predictive coding, working memory, prospective and
+transactive memory, chunking, metacognition, reconstructive memory, retrieval failure, and
+availability versus accessibility.

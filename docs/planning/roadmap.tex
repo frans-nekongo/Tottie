@@ -6,7 +6,7 @@
 Tier & Contents \\
 \midrule
 \textbf{MUST} & Attention Gate $\cdot$ \textbf{Surprise Gate} $\cdot$ Salience Scorer $\cdot$ Cue Classifier $\cdot$ Scribe (+sparse separation) $\cdot$ Reconciler $\cdot$ Retriever $\cdot$ Activator $\cdot$ Curator $\cdot$ MCP server $\cdot$ Context Card + probe $\cdot$ Tottie UI $\cdot$ ON/OFF ablation $\cdot$ eval harness $\cdot$ 3-minute video $\cdot$ docs + deck \\
-\textbf{SHOULD} & \textbf{Decayer} (adaptive forgetting) $\cdot$ \textbf{Metacognitive Evaluator} $\cdot$ \textbf{Prospective Queue} $\cdot$ Completer $\cdot$ Consolidator (on-demand ``Sleep'') $\cdot$ coding-agent MCP integration $\cdot$ Autosave/Lessons $\cdot$ \texttt{memory\_links} graph \\
+\textbf{SHOULD} & \textbf{Ranker + Compressor} (adaptive forgetting) $\cdot$ \textbf{Metacognitive Evaluator} $\cdot$ \textbf{Prospective Queue} $\cdot$ Completer $\cdot$ Consolidator (on-demand ``Sleep'') $\cdot$ coding-agent MCP integration $\cdot$ Autosave/Lessons $\cdot$ \texttt{memory\_links} graph \\
 \textbf{STRETCH} & \textbf{Transactive Directory} $\cdot$ self-testing during idle $\cdot$ spaced-review scheduler $\cdot$ full relation extraction $\cdot$ autoassociative reconstruction $\cdot$ MCP-sampling curation $\cdot$ X/viral push \\
 \bottomrule
 \end{longtable}
@@ -23,7 +23,7 @@ P3 & Oct 28--29 & Core: engine + schema + providers + attention/surprise/salienc
 P4 & Oct 29 & MCP: server tools/resources wired \\
 P5 & Oct 30 & End-to-end memory round-trip \\
 P6 & Oct 30--31 & UI: chat + sprite + live Memory Panel + ablation + why-surfaced \\
-P7 & Oct 31--Nov 1 & Reconciler/reconsolidation, tag rooms, identity pinning, Lessons, \texttt{memory\_links}, Decayer \\
+P7 & Oct 31--Nov 1 & Reconciler/reconsolidation, tag rooms, identity pinning, Lessons, \texttt{memory\_links}, Ranker + Compressor \\
 P8 & Nov 1--2 & Activator + Completer $\cdot$ Metacognitive Evaluator $\cdot$ Prospective Queue $\cdot$ Consolidator $\cdot$ MCP-in-IDE $\cdot$ eval harness \\
 P9 & Nov 3 & 3-minute video, README, recompile docs, compliance ledger \\
 P10 & Nov 4 & Repo public, video link, credits claimed, submit by 9 PM ET \\
@@ -33,7 +33,7 @@ P10 & Nov 4 & Repo public, video link, credits claimed, submit by 9 PM ET \\
 \section{Gating}
 A phase does not begin until the prior phase's \textbf{docs} are written and its tests (where
 applicable) pass. If time runs short, cut in this order: STRETCH $\rightarrow$ Completer $\rightarrow$
-Consolidator (degrades to a summary stub) $\rightarrow$ Prospective Queue $\rightarrow$ Decayer.
+Consolidator (degrades to a summary stub) $\rightarrow$ Prospective Queue $\rightarrow$ Ranker + Compressor.
 \textbf{Never cut the Surprise Gate, the eval harness, or the demo video.}
 
 \section{Mandates Honoured During the Build}

@@ -112,7 +112,7 @@
       \node[bx] (ui) {Tottie UI\\chat + panel};
       \node[bx,right=1.3cm of ui] (ide) {Coding agent\\(VS Code)};
       \node[pbox,below=0.7cm of ui] (mcp) {MCP server};
-      \node[abx,below=0.7cm of mcp] (core) {Surprise Gate $\cdot$ Salience $\cdot$ Scribe $\cdot$ Activator $\cdot$ Decayer $\cdot$ Consolidator};
+      \node[abx,below=0.7cm of mcp] (core) {Surprise Gate $\cdot$ Salience $\cdot$ Scribe $\cdot$ Activator $\cdot$ Ranker $\cdot$ Consolidator};
       \node[abx,below=0.7cm of core] (db) {Postgres + pgvector + links};
       \draw[ar] (ui) -- (mcp);
       \draw[ar] (ide) |- (mcp);
@@ -123,7 +123,7 @@
   \begin{itemize}
     \item \textbf{Surprise Gate} --- predictive coding: encode only what we did not expect.
     \item \textbf{Activator} --- spreading activation, priming, decay.
-    \item \textbf{Decayer} --- forgetting as a feature.
+    \item \textbf{Ranker} --- we do not forget; we re-rank.
     \item \textbf{Consolidator} --- sleep: generalise episodes into lessons.
   \end{itemize}
 \end{frame}
@@ -174,8 +174,8 @@
   \begin{itemize}
     \item Retrieval filters \texttt{valid\_to IS NULL}, so a stale fact can never surface.
     \item A retrieved memory becomes \emph{labile} --- contradict it now and it is \textbf{rewritten}
-    (reconsolidation).
-    \item This is exactly LongMemEval's \emph{knowledge update} and MemoryAgentBench's \emph{conflict resolution}.
+    (reconsolidation) --- but \textbf{nothing is lost}: the old version is kept and versioned.
+    \item Exactly LongMemEval's \emph{knowledge update} and MemoryAgentBench's \emph{conflict resolution}.
   \end{itemize}
 \end{frame}
 
@@ -196,27 +196,67 @@
   \centering\itshape RAG is one leg. This is the whole animal.
 \end{frame}
 
-% ---------- 10. Surprise + forgetting ----------
-\begin{frame}{It only remembers the surprising --- and it forgets on purpose.}
+% ---------- 10. Constraint we refused ----------
+\begin{frame}{The constraint we refused}
+  \begin{block}{Simulate the brain's solutions. Never simulate its constraints.}
+    The brain forgets because it is \textbf{bounded} --- finite neurons, metabolic cost, lossy
+    reconstructive storage. Those are \emph{constraints, not features}. We are not bounded: storage is
+    nearly free and search is exhaustive.
+  \end{block}
+  \begin{itemize}
+    \item We \textbf{copy} the solutions: spreading activation, consolidation, pattern completion,
+    surprise gating, reconsolidation, salience.
+    \item We \textbf{refuse} the constraints: passive decay, lossy recall, retrieval blocking, a 7-item
+    scratchpad.
+  \end{itemize}
+  \vfill
+  \centering\itshape Copying Ebbinghaus decay would be copying a limitation to solve a solution problem.
+\end{frame}
+
+% ---------- 11. Availability vs accessibility ----------
+\begin{frame}{But what about forgetting? It is ranking, not deletion.}
+  \begin{block}{Availability $\neq$ accessibility (Tulving \& Pearlstone)}
+    \textbf{Available} = stored. \textbf{Accessible} = retrievable \emph{right now}, and that depends on
+    whether the cue matches the encoding. Tip-of-the-tongue is a failure of accessibility.
+  \end{block}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Human}
+        Memory fades, the cue fails, and it is gone. The feeling of knowing is a \emph{bug}.
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{alertblock}{Tottie}
+        Everything stays \emph{available}; only the cued subset is \emph{accessible}. We keep the
+        mechanism and drop the bug --- \textbf{the cue always works}.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+  \vfill
+  \centering So we renamed it: the Decayer is a \textbf{Ranker + Compressor}, not a shredder.
+\end{frame}
+
+% ---------- 12. Surprise + ranking ----------
+\begin{frame}{It only remembers the surprising --- and it never shreds.}
   \begin{block}{Surprise gating (predictive coding)}
     The brain encodes the \emph{prediction error}, not the input. Tottie computes a surprise score and
     refuses to store the routine: \emph{only the unexpected is written}.
   \end{block}
-  \begin{block}{Adaptive forgetting}
+  \begin{block}{Ranking (``forgetting'')}
     \ttfamily\scriptsize utility = exp(-ln2*age/half\_life) * (1 + log(1+access\_count))
   \end{block}
   \begin{itemize}
-    \item Unused memories \textbf{fade}; used ones strengthen (the testing effect).
-    \item Recalling one memory \textbf{suppresses} its competitors.
-    \item \emph{Forgetting is the feature, not the bug.}
+    \item Unused memories leave the \emph{active set}; used ones strengthen (the testing effect).
+    \item Nothing is destroyed. A deprioritised memory returns the instant the right cue arrives.
+    \item \emph{Forgetting is the feature. Deletion is not.}
   \end{itemize}
 \end{frame}
 
-% ---------- 11. Consolidation ----------
+% ---------- 13. Consolidation ----------
 \begin{frame}{Then it sleeps --- and generalises.}
   \begin{block}{The Consolidator (``Sleep'')}
     Replays recent episodic memories, extracts the recurring structure into \textbf{semantic}
-    knowledge, and prunes what is never used. \emph{12 episodic $\rightarrow$ 3 semantic; 4 pruned.}
+    knowledge, and compresses what is never used. \emph{12 episodic $\rightarrow$ 3 semantic; 4 ranked out.}
   \end{block}
   \begin{itemize}
     \item The neurological analogue: hippocampal replay during sleep builds neocortical knowledge.
@@ -225,7 +265,7 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 12. Prospective + metacognition ----------
+% ---------- 14. Prospective + metacognition ----------
 \begin{frame}{It remembers the future, and it knows what it doesn't know.}
   \begin{columns}
     \begin{column}{0.48\textwidth}
@@ -246,7 +286,7 @@
   sense of how sure it is.
 \end{frame}
 
-% ---------- 13. Three bodies ----------
+% ---------- 15. Three bodies ----------
 \begin{frame}{One brain. Three bodies.}
   \begin{columns}
     \begin{column}{0.33\textwidth}
@@ -270,7 +310,7 @@
   \textbf{The money shot:} add a fact in the chat, then ask your coding agent --- it already knows.
 \end{frame}
 
-% ---------- 14. The panel ----------
+% ---------- 16. The panel ----------
 \begin{frame}{The Memory Panel: the invisible, made visible}
   Real time, four blocks:
   \begin{enumerate}
@@ -285,7 +325,7 @@
   \end{block}
 \end{frame}
 
-% ---------- 15. Proof ----------
+% ---------- 17. Proof ----------
 \begin{frame}{We do not ask you to trust it. We measure it.}
   \begin{itemize}
     \item A \textbf{$\sim$40-item} suite across LongMemEval's categories (knowledge update, temporal,
@@ -300,13 +340,13 @@
   \end{alertblock}
 \end{frame}
 
-% ---------- 16. What we built ----------
+% ---------- 18. What we built ----------
 \begin{frame}{What was built during the Hackathon (Oct 27 -- Nov 4)}
   \begin{tabularx}{\textwidth}{@{}l X@{}}
     \toprule
     Component & \\
     \midrule
-    \texttt{core/} & Engine: Surprise Gate, Salience, Scribe, Activator, Decayer, Consolidator, Reconciler, Prospective Queue \\
+    \texttt{core/} & Engine: Surprise Gate, Salience, Scribe, Activator, Ranker, Consolidator, Reconciler, Prospective Queue \\
     \texttt{mcp/} & MCP server: 8 tools, 2 resources, the context-card prompt \\
     \texttt{ui/} & Tottie chat, sprite state machine, live Memory Panel, why-surfaced, Sleep, ablation \\
     \texttt{eval/} & ON/OFF ablation harness + consolidation check \\
@@ -318,7 +358,7 @@
   \texttt{docs/business/hackathon\_compliance}.
 \end{frame}
 
-% ---------- 17. The joke + pitch ----------
+% ---------- 19. The joke + pitch ----------
 \begin{frame}{So what did I actually build it for?}
   \begin{center}
     \Large ``Everything I was mad at my girlfriend for ---\\ and the one thing that matters: her birthday.''
@@ -331,7 +371,7 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 18. Close ----------
+% ---------- 20. Close ----------
 \begin{frame}[plain]
   \begin{center}
     \Huge Tottie\\[3mm]

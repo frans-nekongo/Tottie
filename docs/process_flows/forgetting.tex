@@ -1,4 +1,4 @@
-\chapter{Process Flow: Surprise Gating and Adaptive Forgetting}
+\chapter{Process Flow: Surprise Gating and Ranking (``Forgetting'')}
 
 \section{The Attention and Surprise Gate}
 \textbf{Trigger:} Any inbound turn, before it reaches the Observer.
@@ -7,38 +7,49 @@ dimmed ``surprise 0.12 $\rightarrow$ skipped'' chip, while a surprising one ligh
 \textbf{System Logic:} The \textbf{Attention Gate} discards noise (tool heartbeats, acknowledgements),
 and the \textbf{Surprise Gate} computes a prediction error --- the cosine distance between the turn's
 embedding and the observer's expectation. Turns below \texttt{SURPRISE\_FLOOR} are not encoded.
-\textbf{Data Flow \& Mutators:} A suppressed turn produces no \texttt{memories} row; a \texttt{memory\_event}
-records the decision so the panel and the eval ledger can show \emph{why} nothing was stored.
+\textbf{Data Flow \& Mutators:} A suppressed turn produces no \texttt{memories} row; a
+\texttt{memory\_event} records the decision so the panel and the eval ledger can show \emph{why}
+nothing was stored.
 
 \section{A Surprising Turn Is Encoded}
 \textbf{Trigger:} A turn whose surprise clears the floor.
-\textbf{Action / UI State:} The Panel shows the surprise score alongside the Observer verdict, and the
-memory text that was formed.
-\textbf{System Logic:} Surprise is carried into the salience equation as a multiplier, so an
-unexpected fact outranks a routine one at equal persistence and consequence. A user \emph{correction}
-triggers the reward-prediction-error path and is consolidated immediately.
+\textbf{Action / UI State:} The Panel shows the surprise score alongside the Observer verdict.
+\textbf{System Logic:} Surprise enters the salience equation as a multiplier, so an unexpected fact
+outranks a routine one at equal persistence and consequence. A user \emph{correction} triggers the
+reward-prediction-error path and is consolidated immediately.
 \textbf{Data Flow \& Mutators:} \texttt{memories.surprise} is set; the row enters the write path with
 elevated salience.
 
-\section{Adaptive Forgetting}
-\textbf{Trigger:} The Decayer runs (on consolidation, or periodically).
-\textbf{Action / UI State:} The Panel reports the pruning count in the Sleep summary; individual
-prunes are listed (``archived: 4 low-utility memories'').
+\section{Ranking, Not Deleting}
+\textbf{Trigger:} The Ranker runs (on consolidation, or periodically).
+\textbf{Action / UI State:} The Panel reports the ranking summary (``4 memories dropped out of the
+active set''), and each can be clicked to prove it is \emph{still there}.
 \textbf{System Logic:} Each memory's \texttt{utility} is recomputed:
 \begin{Verbatim}[breaklines=true,fontsize=\small]
 utility = exp(-ln2 * age / half_life) * (1 + log(1 + access_count))
+# low utility -> lower retrieval rank + leave the attention window (STILL AVAILABLE)
 \end{Verbatim}
-Rows below \texttt{MIN\_UTILITY} are \textbf{archived}, not hard-deleted. Access raises utility, so
-memories that are used survive and ones that are not fade --- exactly the Ebbinghaus curve, with the
-testing effect layered on top.
-\textbf{Data Flow \& Mutators:} \texttt{memories.utility} updated; stale rows flagged archived; the
-pruned count written to the \texttt{memory\_event}.
+\emph{Crucially, nothing is destroyed.} A deprioritised memory is available but not accessible; the
+moment a matching cue arrives, the Activator revives it and it surfaces again. Hard deletion happens
+only on an explicit right-to-be-forgotten request.
+\textbf{Data Flow \& Mutators:} \texttt{memories.utility} updated; the memory's \emph{rank} changes,
+not its existence.
+
+\section{The Cue Always Works}
+\textbf{Trigger:} A later turn whose cue overlaps a deprioritised memory.
+\textbf{Action / UI State:} The Panel shows the memory returning with a ``revived (utility 0.08
+$\rightarrow$ served)'' note.
+\textbf{System Logic:} This is the deliberate inversion of the human tip-of-the-tongue failure. Human
+memory fails because a weak cue cannot cross the access threshold; Tottie's search is exhaustive, so
+the right cue always retrieves. The memory was never lost --- it was waiting.
+\textbf{Data Flow \& Mutators:} A read; \texttt{access\_count} increments, which raises utility and
+promotes the memory back into the active set (the testing effect).
 
 \section{Interference Control}
 \textbf{Trigger:} Two memories with overlapping embeddings.
-\textbf{System Logic:} On write, \textbf{sparse pattern separation} (a normalising projection plus a
-dedupe check) decorrelates near-identical representations; on read, category/namespace filters keep
-unrelated domains from polluting each other. This is the artificial analogue of proactive and
-retroactive interference control.
+\textbf{System Logic:} On write, \textbf{sparse pattern separation} decorrelates near-identical
+representations; on read, category/namespace filters keep unrelated domains from polluting each other.
+This is the artificial analogue of proactive and retroactive interference control --- and unlike the
+brain, it is a deliberate, tunable design choice.
 \textbf{Data Flow \& Mutators:} A separation key or namespace is recorded on the row; conflicting
 rows are merged or superseded rather than stacked.
