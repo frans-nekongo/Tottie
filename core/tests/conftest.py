@@ -73,8 +73,8 @@ async def db(_test_db, _clean_tables, monkeypatch):
 
 
 @pytest_asyncio.fixture
-async def client(_test_db, _clean_tables, monkeypatch):
-    """Full app (lifespan: pool + real embedder) over in-process ASGI."""
+async def booted_app(_test_db, _clean_tables, monkeypatch):
+    """Full app (lifespan: pool + real embedder), yielded raw for direct ASGI."""
     monkeypatch.setenv("TOTTIE_DB_URL", TEST_DB_URL)
     monkeypatch.setenv("TOTTIE_API_TOKEN", TEST_TOKEN)
     monkeypatch.setenv("EMBEDDING_CACHE_DIR", TEST_CACHE_DIR)
@@ -83,8 +83,12 @@ async def client(_test_db, _clean_tables, monkeypatch):
 
     app = create_app()
     async with LifespanManager(app):
-        transport = ASGITransport(app=app)
-        async with AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as c:
-            yield c
+        yield app
+
+
+@pytest_asyncio.fixture
+async def client(booted_app):
+    """Full app over in-process ASGI (httpx transport: finite responses only)."""
+    transport = ASGITransport(app=booted_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c

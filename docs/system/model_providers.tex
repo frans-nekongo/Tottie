@@ -47,7 +47,20 @@ formats also accepted), Bearer-key auth. Three findings constrain the provider i
 with \texttt{finish\_reason: length}; the provider must send \texttt{max\_completion\_tokens};
 (2) a trivial ``OK'' burned \textbf{116 reasoning tokens} ($\approx$5.3~s), so Observer/Scribe
 extraction calls want the lowest reasoning effort the API allows or every write pays the tax;
-(3) \texttt{temperature: 0} is accepted and stays mandatory for all curation calls.
+(3) \texttt{temperature: 0} is accepted and stays mandatory for all curation calls;
+(4) there is a \textbf{reasoning budget floor} --- \texttt{max\_completion\_tokens=64} ends
+\texttt{finish=length} with empty content because hidden reasoning eats the whole budget (a
+one-word reply costs $\approx$150 completion tokens). Budgets below $\approx$256 are unusable;
+the smoke test pins 512 and the Observer uses 1024. The provider's empty-content error names
+the cause so a too-small budget fails loud instead of looking like an outage.
+
+\section{The Provider Switch (W1, verified)}
+\texttt{TOTTIE\_PROVIDER=auto|meta|local} is read fresh on every resolve, so flipping the
+variable switches the brain \textbf{with no restart}. \texttt{auto} probes Meta then local and
+takes the first healthy one; pinned modes skip the probe and fail loud at use time; typos raise.
+\texttt{GET /health} reports both the requested \texttt{mode} and the probe-verified
+\texttt{active} provider --- a pin to a downed Ollama shows \texttt{mode=local, active=null},
+never a fake ``local''.
 
 \section{Cost Control}
 Tottie's whole argument is that write-time curation is cheaper than stuffing context. The eval

@@ -1,4 +1,8 @@
-"""Tottie core: FastAPI app, lifespan, auth, CORS, route wiring."""
+"""Tottie core: FastAPI app, lifespan, auth, CORS, route wiring.
+
+Auth pattern: require_auth lives here (module map) and is attached per-router
+via dependencies=[...] — routes never import main, so no import cycle.
+"""
 import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -10,7 +14,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from .config import Settings, get_settings
 from .db import Database
 from .embeddings import Embedder, EmbedderUnavailable
-from .routes import health
+from .queue import WriteQueue
+from .routes import events, health, write
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -43,7 +48,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # needing embeddings answer 503. A missing model must be VISIBLE.
             app.state.embedder = None
         app.state.settings = settings
+        queue = WriteQueue(settings, db=db, embedder=app.state.embedder)
+        if not settings.inline_write:
+            await queue.start()
+        app.state.queue = queue
         yield
+        await queue.stop()
         await db.close()
 
     app = FastAPI(title="Tottie core", lifespan=lifespan)
@@ -54,6 +64,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    # /events does its own ?token= auth (EventSource cannot set headers).
+    app.include_router(events.router)
+    app.include_router(write.router, dependencies=[Depends(require_auth)])
     return app
 
 

@@ -81,7 +81,12 @@ starve the result below $k$. Two defences, in order: (1) the session sets
 pgvector ($\geq$ 0.8) keep walking the graph until enough rows pass the filter; (2) retrieval
 still \textbf{over-fetches} the top 50 per leg before filtering by owner, validity, and trust,
 as belt-and-braces for older servers. The harness asserts recall@k on a filtered fixture so a
-regression here fails loudly instead of silently returning short lists.
+regression here fails loudly instead of silently returning short lists. Partial-index trap,
+verified W1: the idempotency index carries \texttt{WHERE hash IS NOT NULL}, and Postgres only
+matches \texttt{ON CONFLICT (owner, hash)} against it when the statement repeats the predicate
+--- without it every write dies with ``no unique or exclusion constraint matching the ON
+CONFLICT specification''. The Scribe's insert therefore spells out the full
+\texttt{ON CONFLICT (owner, hash) WHERE hash IS NOT NULL DO NOTHING}.
 
 \section{The Field Semantics That Matter}
 \begin{itemize}

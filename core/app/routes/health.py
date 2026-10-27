@@ -16,13 +16,28 @@ async def get_health(request: Request) -> dict:
         stats = {}
         pool_open = False
     loaded = embedder is not None
+    from ..providers.resolve import resolve_provider
+
+    try:
+        provider = await resolve_provider()
+        # Pinned modes skip the probe by design (fail loud at use); health
+        # must not echo an unverified pin. Verify before reporting.
+        active: str | None = (
+            provider.name if await provider.healthy() else None
+        )
+        await provider.close()
+    except Exception:
+        active = None
+    queue = getattr(request.app.state, "queue", None)
     return {
         "status": "ok" if (pool_open and loaded) else "degraded",
         "pool": {"open": pool_open, "stats": stats},
-        "queue_depth": None,  # W1 owns the write queue
+        "queue_depth": queue.depth if queue is not None else None,
         "embedder": {"loaded": loaded, "model": settings.embed_model},
         "providers": {
+            "mode": (settings.provider or "auto").strip().lower(),
             "meta": {"configured": bool(settings.meta_api_key)},
             "local": {"configured": bool(settings.local_llm_url)},
+            "active": active,
         },
     }

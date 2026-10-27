@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     ui_origin: str = Field(
         default="http://127.0.0.1:3055", alias="TOTTIE_UI_ORIGIN"
     )
+    # auto|meta|local. Read fresh per resolve() call: flip with no restart.
+    provider: str = Field(default="auto", alias="TOTTIE_PROVIDER")
 
     # ---- embeddings ----
     embedder: str = Field(default="fastembed", alias="TOTTIE_EMBEDDER")

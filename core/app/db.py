@@ -118,3 +118,10 @@ class Database:
         async with self.pool.connection() as conn:
             await conn.execute(query, params)
             await conn.commit()
+
+    async def execute_returning(self, query: str, params: tuple = ()) -> dict | None:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(query, params)
+            row = await cur.fetchone()
+            await conn.commit()
+            return row
