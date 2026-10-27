@@ -18,6 +18,7 @@ Endpoint & Purpose & Status \\
 \texttt{POST /memories/\{id\}/confirm} & confirm a quarantined memory & 200 \\
 \texttt{POST /forget} & hard delete (right-to-be-forgotten) + audit row & 200 \\
 \texttt{GET /events} & SSE stream with resume & 200 \\
+\texttt{GET /graph} & graph nodes + links for the brain view & 200 \\
 \texttt{GET /health} & pool, queue, embedder, provider status (no auth) & 200 \\
 \bottomrule
 \end{longtable}
@@ -48,12 +49,21 @@ memories, most salient first, subject to the same token budget as the card.
 \texttt{POST /forget}: \texttt{\{id|query, owner\}} $\rightarrow$ hard-deletes the rows,
 their links, and their events payload, then writes an audit row proving it happened.
 
+\texttt{GET /graph}: \texttt{?owner=\&session\_id?(\&tiers?)} $\rightarrow$
+\texttt{\{nodes:[\{id, label, tier, tags, salience, created\}], links:[\{source, target,
+relation, weight\}]\}}, capped at $\approx$300 nodes (most salient first). The recall response
+additionally carries \texttt{path:[ids]} --- the ordered node ids of the retrieval chain --- plus
+\texttt{candidates\_matched} and the distinctiveness margin, so the Panel can narrate the story
+and the brain graph can light the path.
+
 \section{The Event Stream}
-\texttt{GET /events?session\_id=\&last\_event\_id=} streams \texttt{memory\_event} rows as
-Server-Sent Events with the row's monotonic \texttt{id} as the event id. A reconnecting Panel
-passes \texttt{Last-Event-ID} (or the query param) and the server replays everything after it,
-so no step is ever missed. The server assigns \texttt{turn\_id}; chat and Panel both render
-from it, so they can never disagree.
+\texttt{GET /events?session\_id=\&last\_event\_id=\&token=} streams \texttt{memory\_event}
+rows as Server-Sent Events with the row's monotonic \texttt{id} as the event id. EventSource
+cannot set headers, so \texttt{/events} takes the bearer token as a query param (localhost demo;
+the token is never logged). A reconnecting Panel passes \texttt{Last-Event-ID} (or the query
+param) and the server replays everything after it, so no step is ever missed. The server assigns
+the monotonic \texttt{event\_id} (the client's \texttt{turn} is echoed for correlation only);
+chat and Panel both render from it, so they can never disagree.
 
 \section{Errors}
 \texttt{401} without (or with a wrong) token. \texttt{422} on schema violations (with the

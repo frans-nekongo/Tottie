@@ -2,7 +2,8 @@
 
 Tottie ships as an MCP server over \textbf{stdio} (Python SDK, \texttt{mcp<2} with \texttt{FastMCP}).
 The whole point is that the same memory mounts into any host: the Tottie chat, a VS Code / Cursor
-agent, anything that speaks MCP.
+agent, anything that speaks MCP. It imports the core in-process (no HTTP hop) and inherits
+the core's auth: no token in env, no start (see \emph{Security}).
 
 \section{Tools}
 \begin{longtable}{@{}p{0.26\textwidth}p{0.34\textwidth}p{0.32\textwidth}@{}}

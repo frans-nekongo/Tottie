@@ -67,6 +67,21 @@ turn's entities fires now. Fired intentions ride along in the recall response
 on fire. A time-cue can only fire late by (at most) the gap between turns --- acceptable for a
 demo, documented for honesty.
 
+\section{The Retrieval Story (3-stage chain)}
+\textbf{Trigger:} Any recall whose hits are shown to the user.
+\textbf{Action / UI State:} The Panel narrates the story line while the brain graph lights the
+path: \emph{``food $\rightarrow$ 1,420 candidates $\rightarrow$ narrowed by T-3d + restaurant
+context $\rightarrow$ Bistro Visit (+0.34 over Home Lunch) $\rightarrow$ then: seated, ordered,
+paid.''}
+\textbf{System Logic:} The backend reports the chain in three stages, transferred from the
+notebook research (cue overload, compound context probe, distinctiveness selection + contiguity
+unroll): (1) the raw cue plus candidates-matched (overload); (2) the context features that joined
+the probe (time, session, entities); (3) the winner plus its \textbf{distinctiveness margin} over
+the runner-up (the confidence numerator, already computed) plus temporal neighbours unrolled by
+contiguity. The ordered node ids ride in the response as \texttt{path:[ids]}.
+\textbf{Data Flow \& Mutators:} Read-only; the story is rendered from the recall event, which
+already carries cue, hits, scores, and confidence.
+
 \section{The Deliberate Probe}
 \textbf{Trigger:} The agent decides it needs more depth than the card provides.
 \textbf{System Logic:} \texttt{memory.probe(tag)} returns the room's live, non-quarantined memories,

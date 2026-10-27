@@ -1,0 +1,65 @@
+\chapter{Runtime: Where Tottie Lives and What Drives It}
+
+\section{The Question}
+Four sub-questions decide what the system \emph{is}: does it run on a server or on the laptop?
+Do agents reach it over stdio or HTTP? Is the chat an agent we hijack (Muse, VS~Code) or our own
+thin client? Is Tottie a wrapper API around a model, or memory infrastructure any brain can mount?
+This chapter answers all four from research, not taste.
+
+\section{What the Rules Actually Require}
+The submission is a \textbf{public repo} plus a \textbf{3-minute pre-recorded video}. There is no
+live-demo requirement, no hosted-URL requirement, and no judge-operated console. The judges watch
+the video and inspect the repo. Anything that does not make the video more convincing or the repo
+more real is, for the hackathon, pure cost.
+
+\section{Option A: Local-First (the decision)}
+Core (\texttt{:8765}) + Postgres + UI (\texttt{:3055}) on the demo laptop; MCP over \textbf{stdio};
+local embedder; the \textbf{Meta Model API is the only network dependency}. The video is screen
+capture of this stack. Failure surface, exhaustively: (1) Meta API down $\rightarrow$ local
+fallback + \texttt{INLINE\_WRITE} + pre-seeded DB; (2) local crash $\rightarrow$ re-take (it is a
+recording, not a stage). Nothing else can fail because nothing else is remote.
+
+\section{Option B: Hosted (rejected for the hackathon)}
+A VPS (Render/Fly) + managed pgvector (Neon/Supabase free tiers both ship it) + \textbf{Streamable
+HTTP} + OAuth bearer hardening + cold-start babysitting (serverless Postgres scales to zero).
+That is days of deploy work buying \emph{nothing the rubric pays for}: no judge clicks a URL, and
+every remote hop is another demo-god. Revisited post-event (see below), not before.
+
+\section{Option C: The Brain Question --- Own Chat, Hijacked Agent, or Both?}
+\textbf{Both, staged.} The primary filming body is our own thin chat: it calls the Meta API, gets
+the Context Card injected, and shares one frame with the sprite and the Panel --- deterministic,
+controllable, and the only way to film memory visibly working. The second body is the hijack: an
+existing agent (Muse, VS~Code/Cursor) mounting the same MCP server over stdio, proving
+transport-agnosticism with the cross-agent money shot (``add a fact in chat, the IDE already
+knows''). Neither alone suffices: hijack-only cannot hold the frame; custom-only cannot prove
+``infrastructure, not an app''. Tottie is not a wrapper API around a model --- the brain is
+interchangeable; the memory is the product.
+
+\section{The Research Consensus}
+Three findings, all pointing the same way. (1) \textbf{Transport is a deployment decision, not a
+protocol decision}: stdio when one client spawns the server on the same machine; Streamable HTTP
+only when the server must be reachable over a network or serve many clients --- the messages stay
+the same. (2) \textbf{Going remote drags auth with it}: token validation, HTTPS, origin checks;
+the hardest part of remote MCP is not authentication, it is everything after it. (3)
+\textbf{Demo reliability}: pre-record, rehearse one golden path, never debug live, never trust
+venue Wi-Fi --- and for this event the recording \emph{is} the deliverable, so a re-take costs
+minutes, not reputation.
+
+\section{What Films Where}
+\begin{longtable}{@{}p{0.34\textwidth}p{0.56\textwidth}@{}}
+\toprule
+Beat & Runtime \\
+\midrule
+Amnesia cold open & plain model, no Tottie (contrast) \\
+Reveal / write-time magic / SUPERSEDE & own chat + Panel, local core, Meta brain \\
+``It associates'' + constraint-refused & same frame (why-surfaced lines are the proof) \\
+Three bodies / autosave lesson & VS~Code agent over MCP stdio, same store \\
+Sleep / restart / ablation & own chat + Panel; OFF flips the card off \\
+Joke + pitch & captions over the same local frame \\
+\bottomrule
+\end{longtable}
+
+\section{Post-Hackathon Path}
+Docker image + Streamable HTTP transport + managed pgvector + OAuth: a transport swap only ---
+tools, resources, and the prompt stay identical, which is precisely why MCP was chosen. Nothing
+in this chapter forecloses it; nothing in the build pays for it early.

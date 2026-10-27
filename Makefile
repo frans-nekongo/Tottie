@@ -20,9 +20,9 @@ core-install:
 core:
 	cd core && ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765
 
-# ---------- MCP ----------
+# ---------- MCP (imports core in-process; needs venv python + core on the path) ----------
 mcp:
-	cd mcp && python3 server.py
+	cd mcp && PYTHONPATH=../core ../core/venv/bin/python server.py
 
 # ---------- UI ----------
 ui-install:
@@ -31,9 +31,10 @@ ui-install:
 ui:
 	cd ui && npm run dev
 
-# ---------- verification ----------
+# ---------- verification (one command, Joel #2; fails loud, never || true) ----------
 verify: docs deck
-	cd core && ./venv/bin/python -m pytest tests -q || true
+	cd ui && npm run build
+	cd core && ./venv/bin/python -m pytest tests -q
 
 clean:
 	cd docs && latexmk -C master.tex

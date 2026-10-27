@@ -214,9 +214,10 @@ an action: \emph{HIGH} $\rightarrow$ generate; \emph{LOW} $\rightarrow$ verify, 
 is the difference between an agent that hallucinates and one that says ``I don't have that.''
 
 \section{Transactive Memory: Knowing Where}
-Wegner's \emph{transactive memory} is memory for \emph{who knows what}. Tottie keeps a
+Wegner's \emph{transactive memory} is memory for \emph{who knows what}. The design calls for a
 \textbf{Transactive Directory} mapping capabilities to where the knowledge lives (a tool, a document,
-an external system), so it routes questions instead of hoarding everything locally.
+an external system), so it routes questions instead of hoarding everything locally. It is
+\textbf{cut for the hackathon} (documented, not built); the shared MCP store covers the demo need.
 
 \section{Working Memory and Attention Gating}
 Baddeley's model separates a limited \textbf{working memory} from long-term storage. Tottie keeps the
@@ -260,7 +261,7 @@ Ranker $+$ Compressor (``Decayer'') & deprioritise $+$ compress --- \textbf{neve
 Metacognitive Evaluator & confidence from the retrieval margin; gate assertions & SHOULD \\
 Prospective Queue & event/time-triggered intentions & SHOULD \\
 Consolidator & sleep: replay $\rightarrow$ semanticise $\rightarrow$ space $\rightarrow$ compress & SHOULD \\
-Transactive Directory & route to where knowledge lives & STRETCH \\
+Transactive Directory & route to where knowledge lives & CUT (hackathon) \\
 \bottomrule
 \end{longtable}
 

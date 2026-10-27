@@ -2,6 +2,8 @@
 
 \section{Layout}
 A single screen, 16:9-safe for screen-capture: chat on the left, the live Memory Panel on the right.
+The Panel has two tabs, \textbf{Timeline} (the event stream) and \textbf{Graph} (the 3D brain);
+Timeline is the default, Graph is one click, and both are filmable.
 
 \begin{figure}[H]
 \centering
@@ -37,6 +39,31 @@ the four things that matter, in order:
   (\texttt{cue=COMMAND $\rightarrow$ seed \#project/tottie $\rightarrow$ spread 1 hop (w=0.6)}). This
   is what makes the write-time \emph{and} the associative-retrieval decision visible on camera.
 \end{enumerate}
+
+\section{The Brain Graph (3D)}
+The Panel's second hero: a rotatable 3D force graph of the memory store --- the ``brain'' the demo
+is named for. Built on \textbf{react-force-graph-3d} (pinned version, dynamic import with
+\texttt{ssr:false}; Three.js/WebGL rendering, d3-force-3d physics). Rotate, zoom, and node-drag
+are built in; the physics loop runs outside React's render cycle and the UI only pushes data.
+\begin{itemize}
+  \item \textbf{Data:} \texttt{GET /graph} serves \texttt{\{nodes, links\}} from \texttt{memories} +
+  \texttt{memory\_links} (cap $\approx$300 nodes, tier filter). SSE \texttt{NEW} events append a
+  node live with a pulse; \texttt{SUPERSEDE} re-links the branch.
+  \item \textbf{Mapping:} node colour by tier (identity gold, episodic cyan, knowledge violet,
+  procedural green, prospective amber); node size by salience; link colour/width by relation and
+  weight; curved links; hover shows a label sprite, click opens the memory detail.
+  \item \textbf{The firing path:} each recall response carries ordered \texttt{path:[ids]}; the graph
+  lights that chain and runs travelling particles along it (\texttt{linkDirectionalParticles} /
+  \texttt{emitParticle}) while the story line narrates it.
+  \item \textbf{The look:} bounded dark sphere, bloom via \texttt{postProcessingComposer}
+  (UnrealBloomPass), dimmed non-path elements during a highlight. A glowing force-sphere with
+  firing paths --- no literal brain mesh.
+  \item \textbf{Fallback:} the 2D sibling shares the identical interface; if 3D misbehaves on film
+  day the swap is one line, same data. No \texttt{@types} package exists for the graph
+  library, so W4 ships a \texttt{ui/types/force-graph.d.ts} shim.
+  \item \textbf{Build gates:} follows the web3d process inside W4 (test list, headless
+  \texttt{check\_page} runs, screenshots, fresh-player critique) before it is allowed on camera.
+\end{itemize}
 
 \section{The Sleep Button}
 A single \textbf{Sleep} control runs the Consolidator on demand. During the run the Panel shows a

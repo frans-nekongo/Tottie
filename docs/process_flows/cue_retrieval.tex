@@ -32,7 +32,9 @@ STATEMENT & default: anything carrying new information \\
 \end{longtable}
 A turn matching both CORRECTION and another type is a CORRECTION (the reconsolidation route
 depends on it). ``Remind me to\ldots'' is a COMMAND that additionally registers an intention
-(see \emph{The Recall Path}: the prospective check).
+(see \emph{The Recall Path}: the prospective check). Entities for seeding and event\_cue
+overlap come from rules only: \texttt{\#tags}, \texttt{@mentions}, and quoted strings. No NER
+model in the hackathon build.
 
 \section{Seeding the Associative Network}
 \textbf{Trigger:} The classified cue.

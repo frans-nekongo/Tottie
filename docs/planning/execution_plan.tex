@@ -1,0 +1,93 @@
+\chapter{Execution Plan: Waves, Gates, and Proof}
+
+\section{Objective and Constraints}
+Solo, part-time, Oct 27--Nov 4 ($\approx$ 35~hours). The plan builds \textbf{vertical slices},
+not horizontal layers: write $\rightarrow$ recall $\rightarrow$ card first (the thesis, demoable
+by day~3), then correctness, visibility, depth, and ship. Three \textbf{revision gates} interrupt
+the build to demo the real slice, judge direction, fix errors, calibrate, sync docs, and commit.
+
+\section{The Waves}
+\begin{longtable}{@{}p{0.08\textwidth}p{0.30\textwidth}p{0.30\textwidth}p{0.22\textwidth}@{}}
+\toprule
+Wave & Builds & Proves & Done when \\
+\midrule
+W0 skeleton & config, db pool + migrations, embedder, main, auth, CORS, /health, conftest & /health green; 401s; pytest runs on \texttt{tottie\_test} & boots clean \\
+W1 write & providers (Meta first), queue + workers, gates, Observer+Scribe one call, /write 202, SSE & 202 $<$ 20~ms; idempotent; raw fallback on dead provider & turn in $\rightarrow$ row + event out \\
+W2 recall & cue rules + temporal scope, RRF + BFS + confidence, Curator card, /recall /identity /probe & command $\rightarrow$ conventions; ``where were we'' $\rightarrow$ ordered replay; honest abstain; p95 $<$ 300~ms & it just knows \\
+W3 reconcile + trust & NEW/UPDATE/SUPERSEDE/SKIP, labile-on-access, confirm, forget + audit, quarantine, links & vegetarian chain; poison visible-not-injected; one live row under concurrency; true delete & correct + safe \\
+W4 MCP + UI + seed & server.py 9/2/1, chat + Panel + 3D brain graph (web3d gates) + ablation + pending strip + sprite placeholders, offline seed & list-tools matches; UI builds + streams; graph nodes pulse + path lights; OFF $\neq$ ON & three bodies visible \\
+W5 cognition + eval & Sleep, ranker SQL, prospective, rule Completer, harness, 22 $\rightarrow$ 40 scenarios & harness green incl. revival, surprise, consolidation, quarantine & brain + proof \\
+W6 ship & rate limits, logs, backup tested, dry-run, video, README, ledger, public, submit & every shot-list beat filmed; submitted by Nov~4 9~PM ET & done \\
+\bottomrule
+\end{longtable}
+
+\section{Wave-to-Phase Map}
+W0+W1 = P3 (core); W2 = P3/P5 (recall, round-trip); W3 = P7 (reconcile); W4 = P4/P6 (MCP, UI);
+W5 = P8 (cognition, eval); W6 = P9/P10 (film, submit). The roadmap phases say \emph{when}; the
+waves say \emph{in what dependency order, with what proof}.
+
+\section{Revision Gates}
+\begin{longtable}{@{}p{0.08\textwidth}p{0.10\textwidth}p{0.52\textwidth}p{0.20\textwidth}@{}}
+\toprule
+Gate & After & Activities & Freezes \\
+\midrule
+R1 light & W1 & Inspect real rows (tags? principles? surprise sane?); fix prompts + schema while cheap; set initial floors from $\approx$20 probe turns & nothing yet \\
+R2 full & W3 & Live-demo write $\rightarrow$ recall $\rightarrow$ reconcile $\rightarrow$ abstain; keep/cut/defer with rubric justification & schema (migrations only) \\
+R3 rubric & W5 & Read harness numbers as a judge; final cuts + calibration; sync deck numbers to actuals & code (bugfix only) \\
+\bottomrule
+\end{longtable}
+Every gate runs the same protocol: (1) demo the slice \emph{live}, never from test output;
+(2) write the bug list, then fix it; (3) make the direction call out loud; (4) record
+calibration deltas in \texttt{.env.example}; (5) sync \texttt{.tex} + rebuild PDFs; (6) commit.
+
+\section{Coverage and Estimation Discipline}
+\textbf{The Joel Test} (notebook audit: 6/11, five gaps closed here): one-step build
+(\texttt{make verify}), CI on every push (\texttt{.github/workflows/ci.yml}: pytest on a pgvector
+service + UI build), bug database (GitHub Issues --- the repo stays LaTeX-pure --- plus the
+per-gate bug lists), testers (the harness + web3d critique gate), and a 5-minute hallway usability
+test in P9 before filming. Bugs-before-features and the schedule were already passes via the
+gates and waves.
+\textbf{Estimation:} single-point hours sit at the wide end of the Cone of Uncertainty (up to 4x
+on the high side), so the 35-hour capacity is split honestly: 27 in waves (W0 3, W1 4, W2 4,
+W3 4, W4 5, W5 4, W6 3), 4 in revision gates (R1 1, R2 1.5, R3 1.5), and 4 explicit buffer for
+debugging, test maintenance, and filming overruns. Remaining work is re-estimated at each gate
+(progressive elaboration). \textbf{Circuit breaker:} if the write/recall/MCP pipe is not working
+by hour 25, freeze features and spend the rest on cleanup, tests, and film.
+
+\section{Test Strategy}
+A real \texttt{tottie\_test} database (same \texttt{schema.sql}, truncated per test).
+Deterministic tests always run: cue rules, surprise/confidence math on fixed vectors, SQL
+behaviour on fixtures. LLM-touching tests run against the configured provider and
+skip-with-reason when no provider is up --- an honest skip, documented, never a mocked pass.
+The retrieval path is never mocked: faking it would test nothing.
+
+\section{Validation Commands}
+\begin{Verbatim}[breaklines=true,fontsize=\small]
+pytest -q                                   # every wave, real DB
+curl -s -o /dev/null -w '%{time_total}\n' -X POST localhost:8765/write -d '{"text":"..."}'
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8765/recall     # 401, no token
+hey -n 200 -c 10 -m POST -d '{"query":"..."}' localhost:8765/recall  # p95 < 0.3
+cd mcp && python3 server.py --list-tools      # 9 tools, 2 resources, 1 prompt
+curl -s 'localhost:8765/graph?owner=demo' | head -c 200  # nodes+links for the brain
+cd ui && npm run build && npm run dev         # Panel streams live events
+python3 eval/harness.py --on --off            # accuracy, hit@k, tokens, p50/p95
+\end{Verbatim}
+
+\section{Risks and Relief Valves}
+\begin{longtable}{@{}p{0.08\textwidth}p{0.34\textwidth}p{0.24\textwidth}p{0.24\textwidth}@{}}
+\toprule
+ID & Threat & Trigger & Response \\
+\midrule
+R1 & 3D graph time-sink & $>$2~h stuck on camera/layout/canvas & fall back to 2D (one line, same data) \\
+R2 & Meta API unavailable & keys missing or $>$1.5~h API friction in W1 & local fallback + INLINE\_WRITE + pre-seeded DB \\
+R3 & MCP stdio stalls & blocking/parse errors at W4 integration & tools stay thin wrappers; test over stdio first \\
+R4 & Reconcile edge cases & UNIQUE violations / lost updates in tests & in-place sync patch under the partial unique index \\
+R5 & Eval grab-bag expands & hour 25 without exit criteria & pre-shaped: harness + 4 checks + 40 (min 22) scenarios \\
+R6 & Film squeeze & hour 29 with unstable UI/queries & hour-25 breaker; re-takes are cheap \\
+\bottomrule
+\end{longtable}
+Relief order if the buffer burns: scenarios stay at 22, UI polish cut, prospective time-cues
+deferred, Completer stubbed; R2 enforces it. Ollama (install vs Meta-only) is decided in W1.
+Rejected notebook advice, on record: cutting the 3D hero (guts the Demo column), cutting the
+local fallback (raises demo risk), a 2-tool MCP (wrappers cost minutes), renaming 7 vertical
+waves into 4 slices (same work, new labels).

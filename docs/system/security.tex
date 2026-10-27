@@ -43,7 +43,7 @@ content from a low-trust source is neutralised.
 \begin{itemize}
   \item Every HTTP route requires a bearer token (\texttt{TOTTIE\_API\_TOKEN}, wired in both \texttt{.env.example} and
   \texttt{orch.config.json}); unauthenticated calls return \texttt{401}.
-  \item The MCP server is stdio-local by design, but still validates its caller.
+  \item The MCP server is stdio-local: it refuses to start without \texttt{TOTTIE\_API\_TOKEN} set (fail-loud), and the spawning host process is the authenticated party (local-process boundary --- honest for a demo; Streamable HTTP later needs real OAuth).
   \item A per-owner write rate limit (\textbf{60 writes/min}) and a daily row cap (\textbf{2000
   rows/day}) bound cost runaway and growth; past either, the API returns \texttt{429}.
 \end{itemize}

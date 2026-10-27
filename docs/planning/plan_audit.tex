@@ -82,3 +82,58 @@ A16 & No compliant demo seed path (auto-seeding banned) & offline \texttt{seed\_
 A17 & No local Postgres/pgvector; Python 3.9; no Ollama & P3 setup: brew python, postgres, pgvector \\
 \bottomrule
 \end{longtable}
+
+\section{v7 Research Ledger (3D brain graph + retrieval story, 2026-10-27)}
+Notebook grew to 44 sources (context-dependent memory, free recall, source-monitoring error,
+mem0 paper); two answered queries designed the story feature. Library verdict:
+\texttt{react-force-graph-3d} (props verified against the README), 2D sibling as film-day
+fallback, literal brain mesh cut as scope creep.
+\begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
+\toprule
+ID & Finding & Fix (where) \\
+\midrule
+B1 & Memory formation invisible on camera & Brain Graph spec in \emph{Tottie UI} (live nodes, firing path) \\
+B2 & No graph data API; recall has no path ids & \texttt{GET /graph} + \texttt{path:[ids]} in \emph{HTTP API} \\
+B3 & ``Why did this pop?'' unanswered & 3-stage story chain in \emph{Recall Path} (overload $\rightarrow$ context $\rightarrow$ margin + unroll) \\
+B4 & No filming discipline for takes & Filming Protocol in \emph{Demo Script} (shot cards, take log, same-evening review) \\
+B5 & W4 missing the graph build & wave row + validation updated in \emph{Execution Plan}; web3d gates required \\
+\bottomrule
+\end{longtable}
+
+\section{v8 Planning Ledger (Joel + Shape Up + WBS + risk audits, 2026-10-27)}
+Four notebook queries audited the execution plan against the new planning literature (50
+sources). Real gaps filled; over-simplified advice overruled on record.
+\begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
+\toprule
+ID & Finding & Fix (where) \\
+\midrule
+C1 & No one-step build; \texttt{verify} swallowed failures (\texttt{|| true}) & Makefile: docs+deck+UI+pytest, fails loud \\
+C2 & No CI & \texttt{.github/workflows/ci.yml} (pytest + pgvector service, UI build) \\
+C3 & No bug database & GitHub Issues (repo stays LaTeX-pure) + per-gate bug lists \\
+C4 & No hallway usability test & 5-minute test in P9, before filming \\
+C5 & 35~h single-point, no buffer, no re-estimation & 27 waves + 4 gates + 4 buffer; re-estimate at gates; hour-25 breaker \\
+C6 & Risks implicit, untriggered & R1--R6 register with triggers in \emph{Execution Plan} \\
+C7 & Eval wave unshaped (grab-bag) & pre-shaped exit: harness + 4 checks + 40 (min 22) scenarios \\
+\bottomrule
+\end{longtable}
+
+\section{v9 Final Ledger (pre-development consistency sweep, 2026-10-27)}
+Full cross-read of the spec the night before code. (F-series: D is taken by locked decisions.)
+\begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
+\toprule
+ID & Finding & Fix (where) \\
+\midrule
+F1 & Suite count stale (``ships 20'', is 22) & corrected in \emph{Roadmap} \\
+F2 & Transactive CUT in roadmap, STRETCH in two roster tables + prose & marked CUT in \emph{Architecture}, \emph{Cognition} \\
+F3 & Graph libs missing from UI deps; three-duplication + TS-shim risks & pinned in \texttt{package.json} (verified ranges); shim specced \\
+F4 & \texttt{make mcp} used system python, no core path & venv python + PYTHONPATH \\
+F5 & MCP auth was ``validates its caller'' (no mechanism) & fail-loud token + local-process boundary in \emph{Security}, \emph{MCP} \\
+F6 & SSE auth impossible (EventSource has no headers) & \texttt{?token=} on \texttt{/events} in \emph{HTTP API} \\
+F7 & \texttt{turn\_id} vs \texttt{event\_id} conflated & server assigns \texttt{event\_id}; turn echoed \\
+F8 & Entity extraction unspecified & rules-only: tags, @mentions, quotes (\emph{Cue Retrieval}) \\
+F9 & Budget math inconsistent (28+7 vs wave sum) & 27 waves + 4 gates + 4 buffer = 35, per-wave hours stated \\
+F10 & Deck numbers could go stale vs harness & R3 + P9 sync deck to measured actuals \\
+F11 & CI lacked a postgres client for \texttt{init\_db.sh} & apt-install step in workflow \\
+F12 & Brain graph placement unspecified & Panel tabs Timeline/Graph in \emph{Tottie UI} \\
+\bottomrule
+\end{longtable}
