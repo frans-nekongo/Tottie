@@ -8,7 +8,10 @@ Rules, from the v6 audit:
   identically with zero setup state.
 - Session GUCs (iterative scan, ef_search) ride in the conninfo ``options`` so
   they apply to every connection the pool ever opens, not just the first ones.
+- Multi-statement mutations (reconcile) run inside ``transaction()``: one
+  connection, FOR UPDATE locks that actually hold, atomic commit/rollback.
 """
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from psycopg.rows import dict_row
@@ -125,3 +128,14 @@ class Database:
             row = await cur.fetchone()
             await conn.commit()
             return row
+
+    @asynccontextmanager
+    async def transaction(self):
+        """One pooled connection, explicit commit, rollback on any error."""
+        async with self.pool.connection() as conn:
+            try:
+                yield conn
+                await conn.commit()
+            except Exception:
+                await conn.rollback()
+                raise

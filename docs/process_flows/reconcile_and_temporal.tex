@@ -5,9 +5,16 @@ fact meets an old one.
 \section{The Decision Table}
 \textbf{Trigger:} An embedded candidate arrives from the Scribe.
 
-\textbf{System Logic:} The reconciler searches for an existing memory for the same owner matching
-\texttt{(subject, predicate)} \emph{or} a cosine similarity above \texttt{TOTTIE\_RECONCILE\_COSINE}
-(default 0.86) within the same tags, then decides:
+\textbf{System Logic:} The reconciler searches live memories in the same owner, kind, and
+quarantine partition (quarantined candidates match quarantined rows only, so poison can never
+supersede a user fact) for \texttt{(subject, predicate)} equality \emph{or} cosine above
+\texttt{TOTTIE\_RECONCILE\_COSINE} (0.86) with an anchor (shared tag or SP-partial; mutual
+\texttt{NULL}s are not an anchor). Event-kind candidates skip matching (episodes accumulate).
+Match rows are \texttt{FOR UPDATE} locked inside the turn's transaction; the per-partition live-SP
+unique index backstops races and the Scribe retries the turn on violation (verified: four
+concurrent twins converge to one live row with a 3-link chain). Every \texttt{NEW} also writes
+\texttt{tag} links (capped at 3, same partition), and every \texttt{SUPERSEDE} writes a
+\texttt{supersedes} link, so the graph substrate grows with the store. Then it decides:
 
 \begin{longtable}{@{}p{0.16\textwidth}p{0.34\textwidth}p{0.42\textwidth}@{}}
 \toprule

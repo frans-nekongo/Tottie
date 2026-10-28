@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     # ---- curation tuning (initial values; harness calibrates) ----
     identity_salience: float = Field(default=0.90, alias="TOTTIE_IDENTITY_SALIENCE")
     reconcile_cosine: float = Field(default=0.86, alias="TOTTIE_RECONCILE_COSINE")
+    active_cosine: float = Field(default=0.60, alias="TOTTIE_ACTIVE_COSINE")
     recall_k: int = Field(default=8, alias="TOTTIE_RECALL_K")
     surprise_floor: float = Field(default=0.25, alias="TOTTIE_SURPRISE_FLOOR")
     utility_half_life_days: int = Field(

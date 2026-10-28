@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from ..db import pgvector_literal
-from . import cues
+from . import cues, reconcile
 
 RRF_K = 60
 OVERFETCH = 50
@@ -89,7 +89,9 @@ async def check_intentions(db, owner: str, entities: list[str]) -> list[dict]:
 
 
 async def _bfs(db, owner: str, seeds: list[str], deadline: float) -> dict[str, dict]:
-    """2-hop walk over memory_links. Returns {id: {act, via}} for linked rows."""
+    """2-hop walk over memory_links, both directions (one row per
+    association). Quarantined/superseded rows are never entered: the join
+    filters them before traversal, so links cannot leak poison into hits."""
     act = {s: 1.0 for s in seeds}
     found: dict[str, dict] = {}
     frontier = list(seeds)
@@ -97,19 +99,31 @@ async def _bfs(db, owner: str, seeds: list[str], deadline: float) -> dict[str, d
         if not frontier or time.monotonic() > deadline:
             break
         rows = await db.fetch(
-            "SELECT src, dst, relation, weight FROM memory_links "
-            "WHERE owner = %s AND src = ANY(%s::uuid[])",
-            (owner, frontier),
+            "SELECT l.src, l.dst, l.relation, l.weight, "
+            "ms.valid_to AS s_valid, ms.quarantined AS s_quar, "
+            "md.valid_to AS d_valid, md.quarantined AS d_quar "
+            "FROM memory_links l "
+            "JOIN memories ms ON ms.id = l.src "
+            "JOIN memories md ON md.id = l.dst "
+            "WHERE l.owner = %s "
+            "AND (l.src = ANY(%s::uuid[]) OR l.dst = ANY(%s::uuid[]))",
+            (owner, frontier, frontier),
         )
         frontier = []
         for r in rows:
-            dst = str(r["dst"])
-            if dst in act:
-                continue  # cycle guard
-            a = act[str(r["src"])] * BFS_DECAY * float(r["weight"] or 1.0)
-            act[dst] = a
-            found[dst] = {"act": a, "via": r["relation"], "from": str(r["src"])}
-            frontier.append(dst)
+            src, dst = str(r["src"]), str(r["dst"])
+            if src in act and dst not in act:
+                known, other, valid, quar = src, dst, r["d_valid"], r["d_quar"]
+            elif dst in act and src not in act:
+                known, other, valid, quar = dst, src, r["s_valid"], r["s_quar"]
+            else:
+                continue  # cycle guard (both ends already visited)
+            if valid is not None or quar:
+                continue  # never traverse into dead or quarantined rows
+            a = act[known] * BFS_DECAY * float(r["weight"] or 1.0)
+            act[other] = a
+            found[other] = {"act": a, "via": r["relation"], "from": known}
+            frontier.append(other)
             if len(act) >= BFS_NODES + len(seeds):
                 break
     return found
@@ -257,6 +271,7 @@ async def recall(*, db, embedder, owner: str, query: str, session_id: str,
     out["fired_intentions"] = fired
     out["registered_intention"] = registered
     out["cue"] = {"type": cue.type, "entities": cue.entities, "policy": cue.policy}
+    reconcile.note_active(owner, session_id, [h["id"] for h in out["hits"]])
     latency_ms = int((time.monotonic() - t0) * 1000)
     out["latency_ms"] = latency_ms
     await _recall_event(db, session_id, query, cue, out["mode"],

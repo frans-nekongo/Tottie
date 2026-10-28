@@ -52,6 +52,8 @@ memories, most salient first (a read, so \texttt{GET} like \texttt{/identity}).
 
 \texttt{POST /forget}: \texttt{\{id|query, owner\}} $\rightarrow$ hard-deletes the rows,
 their links, and their event rows, then writes an audit row proving it happened.
+By query it deletes the top-1 hit only when recall does not abstain; a vague query
+\texttt{404}s rather than risk an innocent row.
 
 \texttt{GET /graph}: \texttt{?owner=\&session\_id?(\&tiers?)} $\rightarrow$
 \texttt{\{nodes:[\{id, label, tier, tags, salience, created\}], links:[\{source, target,

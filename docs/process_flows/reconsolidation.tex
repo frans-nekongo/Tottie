@@ -14,9 +14,13 @@ the 7th'') is active.
 \textbf{Action / UI State:} The Panel shows a \texttt{SUPERSEDE} badge; the old value is struck through;
 the new value appears.
 \textbf{System Logic:} Because \texttt{M} is active, the write path takes the \emph{reconsolidation}
-route, not a blind append: the old row's \texttt{valid\_to} is set to \texttt{now()}, the new row is
-inserted with \texttt{supersedes = M.id}, and adjacent nodes are co-activated so the correction binds
-to the same context.
+route, not a blind append: a \texttt{CORRECTION} turn first matches just-recalled rows at the lower
+active floor (\texttt{TOTTIE\_ACTIVE\_COSINE}, 0.60) with no anchor, falling back to the general
+path when nothing labile matches. The floor is measured, not guessed: single-token numeric edits
+score 0.73--0.90 while unrelated pairs score 0.44--0.51 (10 pairs), so 0.60 separates them and the
+general 0.86 floor would never fire on a date correction. The old row's \texttt{valid\_to} is set
+to \texttt{now()}, the new row is inserted with \texttt{supersedes = M.id}, and a
+\texttt{supersedes} link binds the correction to the same context.
 \textbf{Data Flow \& Mutators:} Two row mutations, one supersede link, one \texttt{memory\_event}.
 
 \section{Why It Is Different}

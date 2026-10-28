@@ -1,0 +1,254 @@
+"""Reconciler: the moment a new fact meets an old one. NEW/SKIP/UPDATE/SUPERSEDE.
+
+Match (same owner + kind + quarantine partition, live rows only):
+  SP-equal (both non-null) OR (cosine >= floor AND an anchor: shared tag or
+  SP-partial). Event-kind candidates skip matching (episodes accumulate).
+Labile route (CORRECTION turns only): just-recalled rows match at the lower
+active floor (0.60) with no anchor — single-token numeric edits score ~0.73
+and would otherwise never reconcile (measured over 10 pairs).
+Value compare on the winner: equal objects -> SKIP (bump old); differing
+non-null objects -> SUPERSEDE (chain via supersedes + link); null on either
+side -> UPDATE (append/refresh).
+Safety: quarantined candidates match quarantined rows only (poison can never
+supersede a user fact). Concurrency: match rows are FOR UPDATE locked inside
+the turn's transaction; the live-SP unique index backstops SP races and the
+Scribe retries once on violation.
+Labile-on-access: recall registers served ids here (10-min TTL); CORRECTION
+turns prefer active matches (reconsolidation route).
+"""
+import hashlib
+import time
+
+from psycopg.types.json import Json
+
+from ..db import pgvector_literal
+
+
+def row_hash(session_id: str, turn: int, content: str) -> str:
+    return hashlib.sha256(
+        f"{session_id}:{turn}:{content}".encode()
+    ).hexdigest()[:32]
+
+QUARANTINE_TRUSTS = {"tool", "web", "model_inferred"}
+# Every claim-kind quarantines; only raw event perception flows unquarantined
+# (the agent loop needs its own observations; it must not inherit beliefs).
+QUARANTINE_KINDS = {"identity", "convention", "decision", "lesson", "preference", "fact"}
+ACTIVE_TTL_S = 600.0
+TAG_LINK_CAP = 3
+
+_ACTIVE: dict[tuple[str, str], tuple[set[str], float]] = {}
+
+
+def note_active(owner: str, session_id: str, ids: list[str]) -> None:
+    now = time.monotonic()
+    expired = [k for k, (_, ts) in _ACTIVE.items() if now - ts > ACTIVE_TTL_S]
+    for k in expired:
+        del _ACTIVE[k]
+    if ids:
+        _ACTIVE[(owner, session_id)] = (set(ids), now)
+
+
+def get_active(owner: str, session_id: str) -> set[str]:
+    hit = _ACTIVE.get((owner, session_id))
+    if hit is None:
+        return set()
+    ids, ts = hit
+    if time.monotonic() - ts > ACTIVE_TTL_S:
+        del _ACTIVE[(owner, session_id)]
+        return set()
+    return set(ids)
+
+
+def is_quarantined(trust: str, kind: str) -> bool:
+    return trust in QUARANTINE_TRUSTS and kind in QUARANTINE_KINDS
+
+
+def _norm(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return " ".join(value.split()).lower()
+
+
+async def _find_matches(conn, *, owner, kind, quarantined, cand, vec, floor):
+    cur = await conn.execute(
+        "SELECT id, kind, subject, predicate, object, content, tags, "
+        "salience, valid_to, embedding <=> %s::vector AS dist "
+        "FROM memories WHERE owner = %s AND valid_to IS NULL AND kind = %s "
+        "AND quarantined = %s AND ("
+        "  (subject IS NOT DISTINCT FROM %s AND predicate IS NOT DISTINCT FROM %s "
+        "   AND %s::text IS NOT NULL AND %s::text IS NOT NULL)"
+        "  OR (embedding <=> %s::vector <= %s AND (tags && %s "
+        "   OR (subject = %s AND %s::text IS NOT NULL) "
+        "   OR (predicate = %s AND %s::text IS NOT NULL)))"
+        ") ORDER BY dist LIMIT 5 FOR UPDATE",
+        (
+            pgvector_literal(vec), owner, kind, quarantined,
+            cand["subject"], cand["predicate"], cand["subject"], cand["predicate"],
+            pgvector_literal(vec), 1.0 - floor, cand["tags"] or [],
+            cand["subject"], cand["subject"], cand["predicate"], cand["predicate"],
+        ),
+    )
+    return await cur.fetchall()
+
+
+async def _find_active(conn, *, owner, kind, quarantined, cand, vec, floor,
+                     active: set[str]):
+    """Labile route: SP-equal or cosine >= active floor among just-recalled
+    rows. No tag anchor: active rows are already context-bound to this turn."""
+    cur = await conn.execute(
+        "SELECT id, kind, subject, predicate, object, content, tags, "
+        "salience, valid_to, embedding <=> %s::vector AS dist "
+        "FROM memories WHERE owner = %s AND valid_to IS NULL AND kind = %s "
+        "AND quarantined = %s AND id = ANY(%s::uuid[]) AND ("
+        "  (subject IS NOT DISTINCT FROM %s AND predicate IS NOT DISTINCT FROM %s "
+        "   AND %s::text IS NOT NULL AND %s::text IS NOT NULL)"
+        "  OR embedding <=> %s::vector <= %s"
+        ") ORDER BY dist LIMIT 5 FOR UPDATE",
+        (
+            pgvector_literal(vec), owner, kind, quarantined, sorted(active),
+            cand["subject"], cand["predicate"], cand["subject"], cand["predicate"],
+            pgvector_literal(vec), 1.0 - floor,
+        ),
+    )
+    return await cur.fetchall()
+
+
+def _pick(matches: list[dict], active: set[str]) -> dict | None:
+    live = [m for m in matches if m["valid_to"] is None]
+    if not live:
+        return None
+    live.sort(key=lambda m: (str(m["id"]) not in active, m["dist"]))
+    return live[0]
+
+
+async def _tag_links(conn, *, owner, quarantined, new_id, tags):
+    if not tags:
+        return
+    cur = await conn.execute(
+        "SELECT id FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "AND quarantined = %s AND id <> %s::uuid AND tags && %s "
+        "ORDER BY salience DESC LIMIT %s",
+        (owner, quarantined, new_id, tags, TAG_LINK_CAP),
+    )
+    for r in await cur.fetchall():
+        await conn.execute(
+            "INSERT INTO memory_links (owner, src, dst, relation, weight) "
+            "VALUES (%s, %s::uuid, %s::uuid, 'tag', 1.0) "
+            "ON CONFLICT (owner, src, dst, relation) DO NOTHING",
+            (owner, new_id, str(r["id"])),
+        )
+
+
+async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
+                      supersedes: str | None = None) -> str:
+    cur = await conn.execute(
+        'INSERT INTO memories (owner, tier, kind, subject, predicate, "object", '
+        "content, tags, principle, salience, surprise, trust, source, "
+        "embedding, embedding_model, hash, quarantined, needs_curation, "
+        "supersedes) VALUES "
+        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s,%s) "
+        "ON CONFLICT (owner, hash) WHERE hash IS NOT NULL "
+        "DO NOTHING RETURNING id",
+        (
+            turn.owner, cand["tier"], cand["kind"], cand["subject"],
+            cand["predicate"], cand["object"], cand["content"], cand["tags"],
+            cand["principle"], obs.salience, obs.surprise, turn.trust,
+            Json({
+                "session": turn.session_id, "turn": turn.turn,
+                "origin": turn.origin, "client_event_id": turn.client_event_id,
+            }),
+            pgvector_literal(vec), model,
+            row_hash(turn.session_id, turn.turn, cand["content"]),
+            quarantined, obs.raw_fallback,
+            supersedes,
+        ),
+    )
+    row = await cur.fetchone()
+    if row is None:  # lost a race with our own retry: look up the winner
+        cur = await conn.execute(
+            "SELECT id FROM memories WHERE owner = %s AND hash = %s",
+            (turn.owner, row_hash(turn.session_id, turn.turn, cand["content"])),
+        )
+        row = await cur.fetchone()
+    new_id = str(row["id"])
+    if supersedes:
+        await conn.execute(
+            "INSERT INTO memory_links (owner, src, dst, relation, weight) "
+            "VALUES (%s, %s::uuid, %s::uuid, 'supersedes', 1.0) "
+            "ON CONFLICT (owner, src, dst, relation) DO NOTHING",
+            (turn.owner, new_id, supersedes),
+        )
+    await _tag_links(
+        conn, owner=turn.owner, quarantined=quarantined,
+        new_id=new_id, tags=cand["tags"] or [],
+    )
+    return new_id
+
+
+async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
+                          active_floor, active: set[str]) -> dict:
+    """Reconcile one embedded candidate inside the turn's transaction."""
+    quarantined = is_quarantined(turn.trust, cand["kind"])
+    if cand["kind"] == "event" or obs.raw_fallback:
+        mid = await _insert_new(
+            conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+            quarantined=quarantined,
+        )
+        return {"op": "RAW" if obs.raw_fallback else "NEW", "memory_id": mid,
+                "superseded_id": None}
+    match = None
+    for _ in range(3):  # re-find if our locked pick died underneath us
+        matches: list[dict] = []
+        if active:
+            matches = await _find_active(
+                conn, owner=turn.owner, kind=cand["kind"],
+                quarantined=quarantined, cand=cand, vec=vec,
+                floor=active_floor, active=active,
+            )
+        if not matches:
+            matches = await _find_matches(
+                conn, owner=turn.owner, kind=cand["kind"],
+                quarantined=quarantined, cand=cand, vec=vec, floor=floor,
+            )
+        match = _pick(matches, active)
+        if match is not None or not matches:
+            break
+    if match is None:
+        mid = await _insert_new(
+            conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+            quarantined=quarantined,
+        )
+        return {"op": "NEW", "memory_id": mid, "superseded_id": None}
+    old_id = str(match["id"])
+    old_obj, new_obj = _norm(match["object"]), _norm(cand["object"])
+    if old_obj is not None and new_obj is not None and old_obj != new_obj:
+        await conn.execute(
+            "UPDATE memories SET valid_to = now() WHERE id = %s::uuid",
+            (old_id,),
+        )
+        mid = await _insert_new(
+            conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+            quarantined=quarantined, supersedes=old_id,
+        )
+        return {"op": "SUPERSEDE", "memory_id": mid, "superseded_id": old_id}
+    if old_obj is not None and new_obj is not None:
+        await conn.execute(
+            "UPDATE memories SET confidence = LEAST(1.0, confidence + 0.1), "
+            "salience = GREATEST(salience, %s), last_access = now(), "
+            "access_count = access_count + 1 WHERE id = %s::uuid",
+            (obs.salience, old_id),
+        )
+        return {"op": "SKIP", "memory_id": old_id, "superseded_id": None}
+    merged_tags = list(dict.fromkeys((match["tags"] or []) + (cand["tags"] or [])))
+    await conn.execute(
+        'UPDATE memories SET content = content || %s, summary = %s, '
+        '"object" = COALESCE("object", %s), tags = %s, '
+        "salience = GREATEST(salience, %s), "
+        "confidence = LEAST(1.0, confidence + 0.1), surprise = %s, "
+        "last_access = now() WHERE id = %s::uuid",
+        (
+            "\n" + cand["content"], cand["content"][:300], cand["object"],
+            merged_tags, obs.salience, obs.surprise, old_id,
+        ),
+    )
+    return {"op": "UPDATE", "memory_id": old_id, "superseded_id": None}

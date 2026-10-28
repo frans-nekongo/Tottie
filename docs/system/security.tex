@@ -19,8 +19,10 @@ Higher-trust sources may write freely; lower-trust sources may \emph{propose} on
 
 \section{Control 2: Quarantine}
 A candidate from a low-trust source (\texttt{tool}, \texttt{web}, \texttt{model\_inferred})
-whose kind is an \textbf{identity fact}, a \textbf{convention}, a \textbf{decision}, or a
-\textbf{lesson} is written with \texttt{quarantined = true}:
+whose kind is any \textbf{claim} (\texttt{identity}, \texttt{convention}, \texttt{decision},
+\texttt{lesson}, \texttt{preference}, \texttt{fact} --- widened W3; a web ``preference'' recalled
+as fact is the same poisoning vector as a web ``decision'') is written with
+\texttt{quarantined = true}:
 \begin{itemize}
   \item it is \textbf{shown} in the Memory Panel's pending strip (so the user can see what Tottie
   wanted to believe),

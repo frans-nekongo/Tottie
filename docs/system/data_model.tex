@@ -69,11 +69,16 @@ CREATE INDEX ON memories (owner) WHERE needs_curation;               -- curation
 CREATE INDEX ON memory_links (owner, src);
 CREATE INDEX ON memory_links (owner, dst);
 CREATE INDEX ON intentions (owner, status, time_cue);
-CREATE UNIQUE INDEX ON memories (owner, subject, predicate)
-  WHERE valid_to IS NULL AND subject IS NOT NULL;   -- serialise reconcile
+CREATE UNIQUE INDEX ON memories (owner, subject, predicate, quarantined)
+  WHERE valid_to IS NULL AND subject IS NOT NULL;   -- serialise reconcile, per partition
 CREATE UNIQUE INDEX ON memories (owner, hash)
   WHERE hash IS NOT NULL;                           -- idempotent writes
+CREATE UNIQUE INDEX ON memory_events (session_id, turn, utterance)
+  WHERE turn IS NOT NULL;                           -- exactly-once turns
 \end{Verbatim}
+Post-baseline changes ship as migrations (\texttt{core/migrations/}, ledgered): 001 scoped the
+live-SP index per quarantine partition so a quarantined row coexists with the clean row it
+shadows; 002 made turns exactly-once under concurrent retries.
 Filtered vector search is the known pgvector trap: the index returns its candidates by pure
 distance and the \texttt{WHERE} clause is applied \emph{afterwards}, so a selective filter can
 starve the result below $k$. Two defences, in order: (1) the session sets

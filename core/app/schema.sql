@@ -101,12 +101,15 @@ CREATE INDEX IF NOT EXISTS intentions_trigger ON intentions (owner, status, time
 -- Serialise reconcile on a live (subject,predicate): prevents two writers from
 -- both believing they are the "current" value.
 CREATE UNIQUE INDEX IF NOT EXISTS memories_live_sp
-  ON memories (owner, subject, predicate) WHERE valid_to IS NULL AND subject IS NOT NULL;
+  ON memories (owner, subject, predicate, quarantined) WHERE valid_to IS NULL AND subject IS NOT NULL;
 
 -- Idempotency: the write path's hash(session, turn, content) key. ON CONFLICT
 -- DO NOTHING requires this unique index; without it retries double-write.
 CREATE UNIQUE INDEX IF NOT EXISTS memories_idempotency
   ON memories (owner, hash) WHERE hash IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS memory_events_turn
+  ON memory_events (session_id, turn, utterance)
+  WHERE turn IS NOT NULL AND utterance IS NOT NULL;
 
 -- Migrations ledger: every applier (init_db.sh, app boot) records here.
 CREATE TABLE IF NOT EXISTS schema_migrations (
