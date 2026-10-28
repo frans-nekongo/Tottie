@@ -1,0 +1,122 @@
+\chapter{User Guide: Running and Testing Tottie v1}
+
+This is the tester's manual: boot the stack, drive every control on screen, run
+the eval harness, reset the store, and report bugs so they can be fixed. All paths
+are relative to the \texttt{Tottie/} repo root.
+
+\section{Starting the Stack}
+Prerequisites: Postgres 18 + pgvector running locally, \texttt{.env} present (copy
+from \texttt{.env.example} and set \texttt{TOTTIE\_API\_TOKEN} plus \texttt{META\_API\_KEY}).
+Three terminals, or one \texttt{orch} profile (see \texttt{orch.config.json}):
+\begin{enumerate}
+  \item \texttt{make db} --- create/verify the \texttt{tottie} database (first run only).
+  \item \texttt{make core} --- memory engine on \texttt{http://127.0.0.1:8765}.
+  \item \texttt{make ui} --- Tottie web UI on \texttt{http://127.0.0.1:3055}.
+  \item (Optional) \texttt{make mcp} --- the MCP stdio server for IDE agents.
+\end{enumerate}
+Health gate: \texttt{GET /health} must show \texttt{status: ok},
+\texttt{embedder.loaded: true}, and \texttt{providers.active: meta}. If the embedder
+is false, stop --- nothing else will behave. First boot downloads the embedding model
+into \texttt{local LLMS/} (outside the repo, never committed).
+
+\section{The Screen, Control by Control}
+The header holds, left to right: the \textbf{sprite} (the face; its state word under it
+reads \texttt{idle}, \texttt{listening}, \texttt{thinking}, \texttt{remembering}, or
+\texttt{speaking}), the session id, the \textbf{\texttt{memory ON/OFF}} toggle, and the
+\textbf{\texttt{sleep}} button. Below the header sits the \textbf{pending strip} (only
+visible when quarantined rows exist). The body splits into \textbf{chat} (left) and the
+\textbf{Memory Panel} (right) with two tabs: \textbf{Timeline} and \textbf{3D brain}.
+
+\section{Loop 1: Teach It a Fact}
+Type \emph{``My dog is called Biscuit.''} and press \textbf{send}. Within $\approx$10~s the
+Timeline shows the Observer verdict (\texttt{KEEP}, salience, surprise) and a Scribe
+\texttt{NEW} badge with the fact text. Ask \emph{``What is my dog called?''} --- the reply
+uses the card, and the card text beside the reply carries a per-hit \texttt{why} line
+(e.g.\ \texttt{QUESTION -> vector \#1 + tag \#2}). That line is the proof of association.
+
+\section{Loop 2: Correct It}
+Type \emph{``Actually the dog is called Waffles.''} The Timeline shows \texttt{SUPERSEDE};
+the old row is struck through (kept, versioned, never injected again). Ask again --- the
+answer is Waffles. Corrections work best \textbf{in the same session} (the labile route);
+flat restatements across sessions may store a second row instead of superseding.
+
+\section{Loop 3: Command It and Remind It}
+Type \emph{``Implement feature A.''} --- a \textbf{COMMAND} cue: the card assembles project
+bindings, conventions, and decisions instead of answering a question. Type
+\emph{``Remind me to buy thyme when I say "mealplan".''} --- nothing visible happens yet.
+Then type \emph{``I say "mealplan" --- anything for me?''} --- the reply carries a
+\textbf{reminders due} block. Quoted (\texttt{"..."}) cues, \texttt{\#tags}, and
+\texttt{@mentions} are the documented intention entities; plain prose is not.
+
+\section{Loop 4: Recap and Sleep}
+Type \emph{``What have we talked about?''} --- session replay, ordered, no ranking. Press
+\textbf{sleep}: the button reads \texttt{sleeping\ldots}, the sprite goes
+\texttt{remembering}, and a note prints the counts (\emph{``6 episodic $\rightarrow$
+1 semantic; 2 ranked out''}). Sleep never deletes: episodes stay, stale rows grey out.
+
+\section{Loop 5: Prove Memory Caused It (Ablation)}
+Ask anything it learned, note the answer, then tap \textbf{\texttt{memory ON}} so it reads
+\textbf{\texttt{memory OFF}} and ask again: the raw model does not know. Flip back ON.
+OFF writes nothing and recalls nothing --- that is the whole test.
+
+\section{The Pending Strip}
+Low-trust writes (e.g.\ pasted web text) land here: \emph{``pending --- quarantined,
+visible, never injected''} with the row's kind chips and a \textbf{confirm} button. Press
+\textbf{confirm} to release the row into the active set; the next recall injects it.
+Quarantined rows never appear in cards, the graph colours them grey, and BFS never
+traverses them.
+
+\section{The 3D Brain}
+Open the \textbf{3D brain} tab (or link straight to \texttt{?tab=graph}). Drag to rotate,
+scroll to zoom, drag nodes to rearrange, click a node for its detail card. Colour is tier:
+identity gold, episodic cyan, knowledge violet, procedural green; grey means quarantined
+or ranked-out. After a chat turn that recalls, the firing \texttt{path} lights with
+travelling particles. New nodes pulse in live as memories form. If the tab ever sticks on
+\emph{``growing the brain\ldots''}, the \texttt{/api/graph} proxy is unreachable --- check
+that the core is up and the UI's token matches it.
+
+\section{Mounting the MCP Server in an IDE}
+The same brain mounts into any MCP host over stdio (command:
+\texttt{./venv/bin/python server.py}, working directory \texttt{core/},
+\texttt{TOTTIE\_API\_TOKEN} in env). Nine tools: \texttt{memory.remember},
+\texttt{memory.write}, \texttt{memory.recall}, \texttt{memory.probe},
+\texttt{memory.identity}, \texttt{memory.intend}, \texttt{memory.sleep},
+\texttt{memory.confirm}, \texttt{memory.forget}; two resources
+(\texttt{memory://identity}, \texttt{memory://tag/\{tag\}}); one prompt
+(\texttt{tottie\_context\_card}). Smoke it without a client:
+\texttt{./venv/bin/python server.py --list-tools}.
+
+\section{Running the Eval Harness}
+Boot the core with \texttt{TOTTIE\_INLINE\_WRITE=1} (the harness fails loud otherwise),
+then \texttt{./venv/bin/python eval/harness.py} from \texttt{core/}. All 22 scenarios run
+ON and OFF; the report prints accuracy, contradiction-correctness, OFF leak rate, hit
+rate, tokens/query, and p50/p95, and \texttt{--out report.json} archives it. Reference:
+\texttt{core/eval/reports/w5-2026-10-28.json} (22/22, 0.0 leak).
+
+\section{Resetting the Store}
+\texttt{PYTHONPATH=. ./venv/bin/python scripts/seed\_demo.py --wipe} (cwd \texttt{core/})
+truncates all four tables and replants the deterministic demo seed: 8 rows (7 live, the
+vegetarian \texttt{SUPERSEDE} chain built honestly), 4 links, 1 intention. Never run
+\texttt{--wipe} on any database you care about. Live test data is otherwise per-owner
+isolated, so parallel testers should use distinct owners.
+
+\section{Troubleshooting}
+\begin{itemize}
+  \item \textbf{401 everywhere:} the UI's \texttt{TOTTIE\_API\_TOKEN} does not match the
+  core's. They are compared exactly; empty never matches.
+  \item \textbf{Chat answers but nothing is learned:} the write queue is in-memory ---
+  queued-but-uncurated turns die with a server restart. Keep one continuous core server
+  while testing; watch the Timeline for the \texttt{NEW} landing.
+  \item \textbf{503 embedder unavailable:} the model cache is missing or corrupt; check
+  \texttt{local LLMS/} and reboot the core.
+  \item \textbf{Port in use:} a previous \texttt{uvicorn} or \texttt{next start} is still
+  bound to 8765/3055 --- stop it, don't stack servers.
+  \item \textbf{Graph empty but chat works:} the graph reads the UI's configured owner;
+  confirm \texttt{TOTTIE\_OWNER} matches the owner you chatted as.
+\end{itemize}
+
+\section{How to Report a Bug}
+Paste into the build chat: (1) what you typed/clicked, in order; (2) the session id from
+the header; (3) what you expected vs what you saw (screenshot if visual); (4) the
+Timeline badges for that turn, if any. The session id lets the ledger
+(\texttt{memory\_events}) replay your exact turns.
