@@ -1,0 +1,94 @@
+\chapter{Calibration Ledger: Every Knob, Measured or Guessed}
+
+Every threshold, cap, weight, and TTL in the system, with its provenance.
+\textit{Measured} means a number was observed and the value chosen from the
+observation; \textit{literature} means a published default; \textit{guess}
+means a placeholder its author picked and the harness must one day earn.
+New knobs land here as guesses first. No silent magic numbers.
+
+\section{Encode path (Observer + Scribe)}
+
+\begin{itemize}
+\item \texttt{TOTTIE\_FAMILIARITY\_COSINE = 0.80} --- \textbf{measured}.
+Live calibration: exact repeat 1.00, paraphrase 0.88, topical-novel 0.68,
+unrelated 0.32. Floor sits in the 0.68--0.88 gap. Replaces the dead
+session-centroid surprise gate, which dropped a 0.68-novel turn at 0.25.
+\item Observer \texttt{max\_tokens = 2048} + \texttt{reasoning\_effort =
+minimal} --- \textbf{measured}. Default effort burned 2046/2048 tokens
+thinking and returned nothing (6/6 live turns RAW); minimal lands in
+\textasciitilde325 reasoning tokens with content. Clerk tasks never pay
+thinker budgets.
+\item \texttt{TOTTIE\_RECONCILE\_COSINE = 0.86} --- \textbf{measured}
+(harness-calibrated per config; see eval reports).
+\item \texttt{TOTTIE\_ACTIVE\_COSINE = 0.60} --- \textbf{measured} (10-pair
+calibration; labile route).
+\item Kind fallback \texttt{event} and tier fallback \texttt{episodic} ---
+\textbf{guess} (safe defaults for empty model output only).
+\item Tag cap 12 per candidate --- \textbf{guess}, documented DOS guard
+(the prompt itself is unbounded: as-many-as-fit).
+\item \texttt{TOTTIE\_IDENTITY\_SALIENCE} boost --- \textbf{guess}.
+\item Familiar re-mention utility +0.05 --- \textbf{guess}, ordered below
+retrieval practice by the testing effect.
+\end{itemize}
+
+\section{Recall path}
+
+\begin{itemize}
+\item Confidence weights 0.4 / 0.4 / 0.2 (margin / coverage / top-1) ---
+\textbf{rationale} (written R2 justification; margin-first ordering).
+\item \texttt{TOTTIE\_CONFIDENCE\_FLOOR = 0.35} --- \textbf{guess}.
+\item \texttt{RRF\_K = 60} --- \textbf{literature} (standard RRF constant).
+\item \texttt{OVERFETCH = 50} --- \textbf{guess}.
+\item BFS: 2 hops, 50 nodes, decay 0.5, budget 0.25s, activation floor
+0.25, associative score floor 0.01 --- \textbf{all guesses}.
+\item \texttt{TOTTIE\_RECALL\_K = 8} --- \textbf{guess}.
+\item \texttt{COMMAND\_BOOST = 1.5} --- \textbf{guess} (applies to
+principle-carrying rows; actionability is emergent, the multiplier is not).
+\item Identity slice: LIMIT 5, vector floor boost 0.90 ---
+\textbf{guesses}.
+\item Card 1600 chars, summaries 300/160 chars --- \textbf{guesses}
+(presentation budgets).
+\item Coverage default 0.5 when query has no content words ---
+\textbf{guess}.
+\item \texttt{ACTIVE\_TTL = 600}s labile window --- \textbf{guess}.
+\item Retrieval-serve utility +0.15 --- \textbf{guess}, ordered above
+re-mention by the testing effect.
+\end{itemize}
+
+\section{Links and Sleep}
+
+\begin{itemize}
+\item \texttt{TAG\_LINK\_CAP = TAG\_SCAN\_CAP = 3} --- \textbf{guesses}
+(bounded association; salience-preferred, tested).
+\item \texttt{MERGE\_COSINE = 0.90}, \texttt{MERGE\_TAG\_CAP = 150},
+\texttt{MERGE\_KIND\_CAP = 60} --- \textbf{guesses}.
+\item Link decay $\times$0.9, floor 0.1, associative relations only
+--- \textbf{guess} (temporal/supersedes exempt as structure).
+\item Utility half-life 30 days (Ebbinghaus), revival floor 0.05 ---
+\textbf{literature shape, guessed constants}.
+\item Sleep window 7 days, replay cap 50, rank salience 0.6 ---
+\textbf{guesses}. Replay \textit{order} (surprise-first) is principled:
+prediction error drives consolidation.
+\item \texttt{RAW\_REVISIT\_CAP = 10} --- \textbf{guess} (one LLM call per
+row: cost control, oldest first).
+\item Semanticise support $\geq$ 2 episodes --- \textbf{principled}
+(generalisation needs more than one instance).
+\end{itemize}
+
+\section{Queue and providers}
+
+\begin{itemize}
+\item Queue 256 deep, 2 workers, drop-oldest --- \textbf{guesses}
+(2GB envelope engineering).
+\item Chat \texttt{max\_tokens = 2048}, resample-once ---
+\textbf{guesses}. Chat keeps default reasoning effort (the thinker).
+\item Health provider-cache TTL 120s --- \textbf{guess}.
+\end{itemize}
+
+\section{How a guess graduates}
+
+Reproduce the Batch-1 method: measure the quantity live (both sides of the
+boundary), pick the value from the gap, pin it with a deterministic test,
+move the row to \textit{measured} with the evidence cited. The harness
+(\texttt{eval/harness.py}) is the standing instrument; one-off
+calibrations name their script or session in the commit message.
