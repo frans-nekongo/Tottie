@@ -263,3 +263,17 @@ def test_completer_ignores_kind_namespace():
     clusters = cluster_hits(hits)
     assert sorted(c["size"] for c in clusters) == [1, 1, 1]
     assert {c["label"] for c in clusters} == {"food", "deploy", "ungrouped"}
+
+
+def test_completer_ignores_own_kind():
+    """A hit's own kind (legacy or freshly minted) never groups it: two
+    'habit' rows sharing only their kind tag stay singletons."""
+    hits = [
+        {"id": "a", "score": 0.9, "kind": "habit",
+         "tags": ["habit", "food"]},
+        {"id": "b", "score": 0.8, "kind": "habit",
+         "tags": ["habit", "deploy"]},
+    ]
+    clusters = cluster_hits(hits)
+    assert sorted(c["size"] for c in clusters) == [1, 1]
+    assert {c["label"] for c in clusters} == {"food", "deploy"}

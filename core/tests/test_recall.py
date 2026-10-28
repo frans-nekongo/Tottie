@@ -146,6 +146,30 @@ async def test_command_policy_assembles_kit(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_command_policy_boosts_principled_rows(client, db, emb):
+    """Actionability emerges from principles, not kind lists: twin rows,
+    one carrying a reusable rule — the COMMAND boost ranks it first."""
+    ids = await seed(db, emb, OWNER, [
+        {"name": "plain", "content": "Deploy checklist lives in the runbook.",
+         "kind": "note", "tags": ["deploy"]},
+        {"name": "ruled", "content": "Deploy checklist lives in the runbook.",
+         "kind": "note", "tags": ["deploy"]},
+    ])
+    await db.execute(
+        "UPDATE memories SET principle = %s WHERE id = %s::uuid",
+        ("Always check the list before Friday.", ids["ruled"]),
+    )
+    r = await client.post("/recall", json={
+        "query": "Show the deploy checklist", "session_id": "s",
+        "owner": OWNER,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["policy"] == "command"
+    assert out["hits"][0]["id"] == ids["ruled"], \
+        [h["id"] for h in out["hits"]]
+
+
+@pytest.mark.asyncio
 async def test_bfs_surfaces_associated_row(client, db, emb):
     ids = await seed(db, emb, OWNER, SEEDS)
     await db.execute(

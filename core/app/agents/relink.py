@@ -4,7 +4,7 @@ existing pairs are never duplicated. Bounded: TAG scan mirrors the live
 cap, so it cannot explode a big store. Temporal order is logical turn,
 not created_at (same backwards-chain repair as live). CLI: tottie.py relink.
 """
-from .reconcile import STOP_TAGS, _norm_tags
+from .reconcile import STOP_TAGS, _norm, _norm_tags
 
 TAG_SCAN_CAP = 3
 ROW_CAP = 500
@@ -13,7 +13,7 @@ ROW_CAP = 500
 async def relink(db, owner: str) -> dict:
     made = {"temporal": 0, "tag": 0}
     rows = await db.fetch(
-        "SELECT id, tags, source, created_at FROM memories "
+        "SELECT id, kind, tags, source, created_at FROM memories "
         "WHERE owner = %s AND valid_to IS NULL ORDER BY created_at, id "
         "LIMIT %s",
         (owner, ROW_CAP),
@@ -52,14 +52,17 @@ async def relink(db, owner: str) -> dict:
                 have_set.add((str(p["id"]), mid, "temporal"))
         if sess:
             prev_by_session[sess] = r
-        mine = set(_norm_tags(r["tags"])) - STOP_TAGS
+        mine = (set(_norm_tags(r["tags"])) - STOP_TAGS
+                - {_norm(r["kind"]) or ""})
         if not mine:
             continue
         found = 0
         for o in rows[:i]:  # earlier rows only: one directed edge, like live
             if found >= TAG_SCAN_CAP:
                 break
-            shared = sorted(mine & (set(_norm_tags(o["tags"])) - STOP_TAGS))
+            theirs = (set(_norm_tags(o["tags"])) - STOP_TAGS
+                      - {_norm(o["kind"]) or ""})
+            shared = sorted(mine & theirs)
             if not shared:
                 continue
             key = (mid, str(o["id"]), "tag")

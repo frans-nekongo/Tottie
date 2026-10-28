@@ -169,23 +169,24 @@ async def _link(conn, *, owner, src, dst, relation, weight, reason) -> None:
     )
 
 
-async def _tag_links(conn, *, owner, quarantined, new_id, tags):
+async def _tag_links(conn, *, owner, quarantined, new_id, tags, kind):
     if not tags:
         return
     cur = await conn.execute(
-        "SELECT id, tags FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "SELECT id, kind, tags FROM memories WHERE owner = %s AND valid_to IS NULL "
         "AND quarantined = %s AND id <> %s::uuid "
         "AND EXISTS (SELECT 1 FROM unnest(tags) t "
         "WHERE lower(btrim(t)) = ANY(%s)) "
         "ORDER BY salience DESC LIMIT %s",
         (owner, quarantined, new_id, tags, TAG_LINK_CAP),
     )
-    mine = set(tags)
+    mine = set(tags) - STOP_TAGS - {_norm(kind) or ""}
     for r in await cur.fetchall():
-        theirs = {_norm(t) for t in (r["tags"] or [])} - {None}
-        shared = sorted((mine & theirs) - STOP_TAGS)
+        theirs = ({_norm(t) for t in (r["tags"] or [])} - {None}
+                  - STOP_TAGS - {_norm(r["kind"]) or ""})
+        shared = sorted(mine & theirs)
         if not shared:
-            continue  # overlap was kind-names only: no link (mush guard)
+            continue  # overlap was kind-namespace only: no link (mush guard)
         await _link(
             conn, owner=owner, src=new_id, dst=str(r["id"]),
             relation="tag", weight=1.0,
@@ -268,7 +269,7 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
         )
     await _tag_links(
         conn, owner=turn.owner, quarantined=quarantined,
-        new_id=new_id, tags=cand["tags"] or [],
+        new_id=new_id, tags=cand["tags"] or [], kind=cand["kind"],
     )
     await _temporal_link(
         conn, owner=turn.owner, quarantined=quarantined,

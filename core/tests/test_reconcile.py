@@ -505,9 +505,12 @@ async def test_vegetarian_chain_live(client, db):
     summaries = " ".join(h["summary"] for h in r.json()["hits"])
     assert "vegetarian" in summaries, r.json()
     assert "meat with every meal" not in summaries, r.json()
-    chain = await db.fetch(
-        "SELECT content, valid_to, supersedes FROM memories WHERE owner = %s "
-        "AND kind = 'preference'",
+    # Kind-agnostic: kinds emerge now, so the chain is asserted directly —
+    # one dead row, one live row pointing at it — whatever words emerged.
+    rows = await db.fetch(
+        "SELECT content, kind, valid_to, supersedes FROM memories "
+        "WHERE owner = %s",
         (OWNER,),
     )
-    assert any(c["supersedes"] is not None for c in chain), chain
+    assert any(r["supersedes"] is not None for r in rows), rows
+    assert any(r["valid_to"] is not None for r in rows), rows

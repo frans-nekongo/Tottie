@@ -20,7 +20,6 @@ BFS_NODES = 50
 BFS_DECAY = 0.5
 CARD_CHARS = 1600  # ~400 tokens at the codebase's chars/4 heuristic
 COMMAND_BOOST = 1.5
-COMMAND_KINDS = {"convention", "decision", "lesson"}
 BFS_BUDGET_S = 0.25
 
 
@@ -164,7 +163,8 @@ def cluster_hits(hits: list[dict]) -> list[dict]:
     Each cluster carries its label (most-shared tag), member ids ordered by
     score, and size. Singletons keep their own cluster so every hit is
     covered exactly once. Kind-namespace words never group (the same mush
-    doctrine as link formation: shared "preference" is not a topic).
+    doctrine as link formation: shared "preference" is not a topic), and a
+    hit's own kind never groups it either (emergent kinds included).
     Pure function of the hit list: deterministic and fixture-testable."""
     parent = list(range(len(hits)))
     tag_first: dict[str, int] = {}
@@ -176,7 +176,9 @@ def cluster_hits(hits: list[dict]) -> list[dict]:
         return i
 
     def _real(h):
-        return [t for t in (h.get("tags") or []) if t not in reconcile.STOP_TAGS]
+        own = (h.get("kind") or "").strip().lower()
+        return [t for t in (h.get("tags") or [])
+                if t not in reconcile.STOP_TAGS and t != own]
 
     for i, h in enumerate(hits):
         for t in _real(h):
@@ -397,14 +399,18 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
     if want:
         for r in await db.fetch(
             "SELECT id, tier, kind, content, summary, tags, trust, salience, "
-            "utility, source, created_at FROM memories WHERE id = ANY(%s::uuid[])",
+            "utility, source, created_at, principle FROM memories "
+            "WHERE id = ANY(%s::uuid[])",
             (want,),
         ):
             by_id[str(r["id"])] = r
     if cue.policy == "command":
+        # Actionability emerges from the Scribe's principle field (rows that
+        # carry a reusable rule), never from a fixed kind list: kinds are
+        # emergent now, so no enumeration can name the actionable ones.
         for mid, slot in fused.items():
             row = by_id.get(mid)
-            if row and row["kind"] in COMMAND_KINDS:
+            if row and (row["principle"] or "").strip():
                 slot["score"] *= COMMAND_BOOST
         ordered = sorted(fused.items(), key=lambda kv: -kv[1]["score"])
     for mid, g in grown.items():

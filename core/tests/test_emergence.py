@@ -1,10 +1,10 @@
-"""Emergent categories: reuse, mint, merge. The tag space self-organizes;
-nothing is enumerated by hand (regression-guarded). Deterministic except
-the one live reuse run."""
+"""Emergent categories: reuse, mint, merge. The tag AND kind spaces
+self-organize; nothing is enumerated by hand (regression-guarded).
+Deterministic except the one live reuse run."""
 import pytest
 
 from app.agents import observer
-from app.agents.consolidate import merge_tags
+from app.agents.consolidate import merge_kinds, merge_tags
 from app.config import Settings
 from app.embeddings import Embedder
 from tests.test_recall import seed as _seed
@@ -40,6 +40,53 @@ def test_prompt_has_no_fixed_list():
     assert "money, routine" not in observer.SYSTEM
     assert "food, health, work" not in observer.SYSTEM
     assert "mint" in observer.SYSTEM and "reuse" in observer.SYSTEM.lower()
+    assert "identity|convention|decision" not in observer.SYSTEM
+    assert "closed claim type" not in observer.SYSTEM
+    assert "assimilation" in observer.SYSTEM
+    assert "accommodation" in observer.SYSTEM
+    assert "2-4" not in observer.SYSTEM
+
+
+@pytest.mark.asyncio
+async def test_kind_vocabulary_orders_by_frequency(db, emb):
+    ow = "emkv"
+    await _seed(db, emb, ow, [
+        {"name": "a", "content": "Cheese is dairy.", "kind": "preference"},
+        {"name": "b", "content": "Milk is dairy.", "kind": "preference"},
+        {"name": "c", "content": "Deploy on Friday.", "kind": "ritual"},
+    ])
+    vocab = await observer.kind_vocabulary(db, ow)
+    assert vocab[0] == "preference", vocab
+    assert "ritual" in vocab  # minted words join the space
+
+
+@pytest.mark.asyncio
+async def test_kind_merge_folds_near_dupes(db, emb):
+    ow = "emkm"
+    await _seed(db, emb, ow, [
+        {"name": "a", "content": "Ate rice for lunch.", "kind": "habit"},
+        {"name": "b", "content": "Ate rice for lunch today.", "kind": "habit"},
+        {"name": "c", "content": "Ate rice for lunch again.",
+         "kind": "habits"},
+    ])
+    out = await merge_kinds(db, ow)
+    assert out["merged"] == 1, out
+    assert out["pairs"][0]["keep"] == "habit", out
+    left = await db.fetch(
+        "SELECT DISTINCT kind FROM memories WHERE owner = %s", (ow,))
+    assert {r["kind"] for r in left} == {"habit"}, left
+
+
+@pytest.mark.asyncio
+async def test_kind_merge_keeps_distant_apart(db, emb):
+    ow = "emkd"
+    await _seed(db, emb, ow, [
+        {"name": "a", "content": "Ate rice for lunch.", "kind": "habit"},
+        {"name": "b", "content": "Deployed the payments service.",
+         "kind": "ritual"},
+    ])
+    out = await merge_kinds(db, ow)
+    assert out["merged"] == 0, out
 
 
 @pytest.mark.asyncio

@@ -387,6 +387,26 @@ async def test_burst_sixty_bounded(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_own_kind_overlap_never_links(db, emb):
+    """Emergent-kind mush guard: rows sharing only their own kind word
+    ('habit'/'habit') form no tag edge, even though the raw tags match."""
+    ow = f"lp_{uuid.uuid4().hex[:8]}"
+    a = "Owner jogs every morning at dawn."
+    b = "Owner meditates every evening at dusk."
+    await scribe.persist(db=db, embedder=emb, turn=_turn(a, ow, 0, ow),
+                         obs=_obs(a, ["habit", "running"], kind="habit"))
+    await scribe.persist(db=db, embedder=emb, turn=_turn(b, ow, 1, ow),
+                         obs=_obs(b, ["habit", "calm"], kind="habit"))
+    by = await _ids_by_content(db, ow)
+    tag = await db.fetch(
+        "SELECT reason FROM memory_links WHERE owner = %s "
+        "AND src = %s::uuid AND dst = %s::uuid AND relation = 'tag'",
+        (ow, by[b], by[a]),
+    )
+    assert not tag, f"own-kind overlap linked: {tag}"
+
+
+@pytest.mark.asyncio
 async def test_contiguity_follows_turns_not_commit_order(db):
     """Winner's before/after path must narrate logical turns even when rows
     committed out of order (the created_at lie, same class as the
