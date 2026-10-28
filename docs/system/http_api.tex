@@ -17,6 +17,7 @@ Endpoint & Purpose & Status \\
 \texttt{GET /memories} & row browser: filters + id lookup (W4) & 200 \\
 \texttt{POST /intend} & register a prospective intention & MCP tool only \\
 \texttt{POST /consolidate} & run the Sleep job on demand & 200 \\
+\texttt{POST /briefing} & ambient surface for one agent turn (card + dues + news) & 200 \\
 \texttt{POST /memories/\{id\}/confirm} & confirm a quarantined memory & 200 \\
 \texttt{POST /forget} & hard delete (right-to-be-forgotten) + audit row & 200 \\
 \texttt{GET /events} & SSE stream with resume & 200 \\
@@ -70,6 +71,14 @@ and the recall path (\texttt{COMMAND} cue). Registration is idempotent on pendin
 ranked\_out, links\_decayed, tokens\}} (W5, plus a \texttt{CONSOLIDATE} ledger event).
 Sleep degrades, never dies: if the LLM semanticise step fails, rank + decay still run
 and the summary carries \texttt{semantic\_error}.
+
+\texttt{POST /briefing}: \texttt{\{session\_id, owner?, text?, since\_event\_id?\}}
+$\rightarrow$ \texttt{\{briefing, card, confidence, abstain, fired\_intentions, new\_items,
+event\_id\}}. The agent's once-per-turn call. No \texttt{text}: recall runs on the
+session's own recent utterances (pure ambient). Due intentions (time dues need no entity
+match) and memories formed since the cursor always flow, even when the card abstains.
+\texttt{briefing} is pre-formatted for direct injection into agent context; the
+\texttt{scripts/tottie.py brief} CLI wraps it.
 
 \texttt{POST /memories/\{id\}/confirm}: flips \texttt{quarantined} to false, raises trust to
 \texttt{user\_direct}, and writes an audit event. Only the owning user can confirm.
