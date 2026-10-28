@@ -277,7 +277,12 @@ def _card(identity: list[dict], hits: list[dict], abstain: bool) -> str | None:
     if tags[:6]:
         chunks.append("probe deeper: " + " ".join(f"#{t}" for t in tags[:6]))
     text = "\n\n".join(chunks)
-    return text[:CARD_CHARS]
+    if len(text) <= CARD_CHARS:
+        return text
+    cut = text.rfind("\n", 0, CARD_CHARS)
+    if cut <= 0:
+        cut = CARD_CHARS  # one giant line: hard cut is the only option
+    return text[:cut].rstrip() + "\n…"
 
 
 async def _contiguity(db, owner: str, winner: dict) -> list[str]:

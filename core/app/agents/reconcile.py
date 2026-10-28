@@ -1,8 +1,12 @@
 """Reconciler: the moment a new fact meets an old one. NEW/SKIP/UPDATE/SUPERSEDE.
 
-Match (same owner + kind + quarantine partition, live rows only):
-  SP-equal (both non-null) OR (cosine >= floor AND an anchor: shared tag or
-  SP-partial). Event-kind candidates skip matching (episodes accumulate).
+Match (same owner + quarantine partition, live rows only):
+  SP-equal (both non-null, ANY kind) OR (same kind AND cosine >= floor AND
+  an anchor: shared tag or SP-partial). Identity is exact so it crosses
+  kinds (kind is the LLM's guess; the SP triple is the fact); similarity
+  stays typed so vibes never merge across claim types. SP-less event
+  candidates skip matching (episodes accumulate); SP-bearing events match
+  by identity only, never by cosine (episodes dedupe, never mush-merge).
 Labile route (CORRECTION turns only): just-recalled rows match at the lower
 active floor (0.60) with no anchor — single-token numeric edits score ~0.73
 and would otherwise never reconcile (measured over 10 pairs).
@@ -88,47 +92,62 @@ def _norm_tags(tags) -> list[str]:
     return out
 
 
-async def _find_matches(conn, *, owner, kind, quarantined, cand, vec, floor):
+async def _find_matches(conn, *, owner, kind, quarantined, cand, vec, floor,
+                      identity_only: bool = False):
+    cosine_leg = (
+        " OR (kind = %s AND embedding <=> %s::vector <= %s AND (EXISTS "
+        "(SELECT 1 FROM unnest(tags) t WHERE lower(btrim(t)) = ANY(%s)) "
+        "OR (subject = %s AND %s::text IS NOT NULL) "
+        "OR (predicate = %s AND %s::text IS NOT NULL)))"
+        if not identity_only else ""
+    )
+    params: list = [
+        pgvector_literal(vec), owner, quarantined,
+        cand["subject"], cand["predicate"], cand["subject"], cand["predicate"],
+    ]
+    if not identity_only:
+        params += [
+            kind, pgvector_literal(vec), 1.0 - floor, cand["tags"] or [],
+            cand["subject"], cand["subject"], cand["predicate"], cand["predicate"],
+        ]
     cur = await conn.execute(
         "SELECT id, kind, subject, predicate, object, content, tags, "
         "salience, valid_to, embedding <=> %s::vector AS dist "
-        "FROM memories WHERE owner = %s AND valid_to IS NULL AND kind = %s "
+        "FROM memories WHERE owner = %s AND valid_to IS NULL "
         "AND quarantined = %s AND ("
         "  (subject IS NOT DISTINCT FROM %s AND predicate IS NOT DISTINCT FROM %s "
         "   AND %s::text IS NOT NULL AND %s::text IS NOT NULL)"
-        "  OR (embedding <=> %s::vector <= %s AND (EXISTS (SELECT 1 FROM "
-        "   unnest(tags) t WHERE lower(btrim(t)) = ANY(%s)) "
-        "   OR (subject = %s AND %s::text IS NOT NULL) "
-        "   OR (predicate = %s AND %s::text IS NOT NULL)))"
+        f"{cosine_leg}"
         ") ORDER BY dist LIMIT 5 FOR UPDATE",
-        (
-            pgvector_literal(vec), owner, kind, quarantined,
-            cand["subject"], cand["predicate"], cand["subject"], cand["predicate"],
-            pgvector_literal(vec), 1.0 - floor, cand["tags"] or [],
-            cand["subject"], cand["subject"], cand["predicate"], cand["predicate"],
-        ),
+        tuple(params),
     )
     return await cur.fetchall()
 
 
 async def _find_active(conn, *, owner, kind, quarantined, cand, vec, floor,
-                     active: set[str]):
+                     active: set[str], identity_only: bool = False):
     """Labile route: SP-equal or cosine >= active floor among just-recalled
     rows. No tag anchor: active rows are already context-bound to this turn."""
+    cosine_leg = (
+        " OR (kind = %s AND embedding <=> %s::vector <= %s)"
+        if not identity_only else ""
+    )
+    params: list = [
+        pgvector_literal(vec), owner, quarantined, sorted(active),
+        cand["subject"], cand["predicate"], cand["subject"], cand["predicate"],
+    ]
+    if not identity_only:
+        params += [kind, pgvector_literal(vec), 1.0 - floor]
     cur = await conn.execute(
         "SELECT id, kind, subject, predicate, object, content, tags, "
         "salience, valid_to, embedding <=> %s::vector AS dist "
-        "FROM memories WHERE owner = %s AND valid_to IS NULL AND kind = %s "
+        "FROM memories WHERE owner = %s AND valid_to IS NULL "
         "AND quarantined = %s AND id = ANY(%s::uuid[]) AND ("
         "  (subject IS NOT DISTINCT FROM %s AND predicate IS NOT DISTINCT FROM %s "
         "   AND %s::text IS NOT NULL AND %s::text IS NOT NULL)"
-        "  OR embedding <=> %s::vector <= %s"
+        f"{cosine_leg}"
         ") ORDER BY dist LIMIT 5 FOR UPDATE",
-        (
-            pgvector_literal(vec), owner, kind, quarantined, sorted(active),
-            cand["subject"], cand["predicate"], cand["subject"], cand["predicate"],
-            pgvector_literal(vec), 1.0 - floor,
-        ),
+        tuple(params),
     )
     return await cur.fetchall()
 
@@ -263,13 +282,18 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
     """Reconcile one embedded candidate inside the turn's transaction."""
     cand = {**cand, "tags": _norm_tags(cand.get("tags"))}
     quarantined = is_quarantined(turn.trust)
-    if cand["kind"] == "event" or obs.raw_fallback:
+    has_sp = cand.get("subject") is not None and cand.get("predicate") is not None
+    if (cand["kind"] == "event" or obs.raw_fallback) and not has_sp:
         mid = await _insert_new(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
             quarantined=quarantined,
         )
         return {"op": "RAW" if obs.raw_fallback else "NEW", "memory_id": mid,
                 "superseded_id": None}
+    # SP is identity: SP-bearing candidates always reconcile (an event that
+    # names a triple is a claim wearing an episode costume, and the live-SP
+    # index would kill a blind insert — seen live on the hotel correction).
+    identity_only = cand["kind"] == "event"
     match = None
     for _ in range(3):  # re-find if our locked pick died underneath us
         matches: list[dict] = []
@@ -278,11 +302,13 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                 conn, owner=turn.owner, kind=cand["kind"],
                 quarantined=quarantined, cand=cand, vec=vec,
                 floor=active_floor, active=active,
+                identity_only=identity_only,
             )
         if not matches:
             matches = await _find_matches(
                 conn, owner=turn.owner, kind=cand["kind"],
                 quarantined=quarantined, cand=cand, vec=vec, floor=floor,
+                identity_only=identity_only,
             )
         match = _pick(matches, active)
         if match is not None or not matches:

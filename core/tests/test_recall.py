@@ -279,6 +279,24 @@ async def test_identity_and_probe_endpoints(client, db, emb):
     assert not any("without review" in c for c in got)  # quarantined stays out
 
 
+def test_card_truncates_at_line_boundary():
+    """Dogfood night: the card cut mid-word ('#invoi', 'probe d'). Long
+    cards now end at a newline with an honest marker, never mid-token."""
+    from app.agents.retrieve import _card
+
+    hits = [{
+        "id": str(i), "tier": "knowledge", "kind": "fact",
+        "summary": f"padded fact number {i} " + "x" * 120,
+        "tags": [f"tag{i}"], "score": 1.0 - i * 0.01,
+        "why": "QUESTION -> vector #1",
+    } for i in range(30)]
+    card = _card([], hits, False)
+    assert card is not None and len(card) <= 1600 + 2
+    assert card.endswith("\n…"), card[-20:]
+    # every body line ends with ")": the cut kept whole lines only
+    assert card[:-2].endswith(")"), card[-30:]
+
+
 @pytest.mark.asyncio
 async def test_recall_auth_and_shapes(client):
     body = {"query": "x", "session_id": "s", "owner": OWNER}

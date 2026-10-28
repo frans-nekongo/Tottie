@@ -141,6 +141,45 @@ async def test_events_401(client):
 
 
 @pytest.mark.asyncio
+async def test_death_event_visible_never_replayed(db):
+    """A worker death is ledgered (op ERROR + exception class), addressable
+    for ops, invisible to replay (cue set), and can never collide with a
+    retried turn (turn NULL)."""
+    import uuid
+
+    from app.queue import WorkerTurn, record_death
+
+    ow = f"dz_{uuid.uuid4().hex[:8]}"
+    turn = WorkerTurn(text="Doomed turn.", session_id=ow, turn=0, owner=ow,
+                      trust="user_direct", origin=None,
+                      client_event_id=uuid.uuid4().hex)
+    await record_death(db, turn, RuntimeError("boom"))
+    row = await db.fetchrow(
+        "SELECT turn, utterance, observer_verdict, scribe_action, cue "
+        "FROM memory_events WHERE owner = %s",
+        (ow,),
+    )
+    assert row["turn"] is None
+    assert row["utterance"] == "Doomed turn."
+    assert row["scribe_action"]["op"] == "ERROR"
+    assert row["scribe_action"]["turn"] == 0
+    assert "RuntimeError: boom" in row["scribe_action"]["error"]
+    assert (row["cue"] or {}).get("type") == "DEATH"
+    # replay filter skips it; a same-key live turn can still land
+    n = await db.fetchval(
+        "SELECT count(*) FROM memory_events WHERE owner = %s "
+        "AND session_id = %s AND cue IS NULL AND utterance IS NOT NULL",
+        (ow, ow),
+    )
+    assert n == 0
+    await db.execute(
+        "INSERT INTO memory_events (owner, session_id, turn, utterance) "
+        "VALUES (%s, %s, 0, %s)",
+        (ow, ow, "Doomed turn."),
+    )
+
+
+@pytest.mark.asyncio
 async def test_events_owner_scoped(booted_app, db):
     """Same session, two owners: the stream carries only the caller's own
     rows — the 005 leak, closed at the SSE surface too."""

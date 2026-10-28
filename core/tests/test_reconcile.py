@@ -267,6 +267,90 @@ async def test_concurrent_writes_one_live_row(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_sp_identity_crosses_kinds(db, emb):
+    """The hotel correction: an event naming a triple is a claim in costume.
+    A preference with the same SP supersedes it — kind never shields
+    identity, and the live-SP index never fires (it killed the turn live)."""
+    await _seed_row(db, emb, OWNER,
+                    "User's hotel in Windhoek is the Olive Grove.",
+                    kind="event", tier="episodic",
+                    subject="user", predicate="staying at", obj="Olive Grove")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Actually my hotel in Windhoek is the Am Weinberg."),
+        obs=_obs([_cand("User's hotel in Windhoek is the Am Weinberg.",
+                        kind="preference", subject="user",
+                        predicate="staying at", obj="Am Weinberg")]),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    live = await db.fetch(
+        "SELECT content, kind FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert len(live) == 1 and "Am Weinberg" in live[0]["content"], live
+
+
+@pytest.mark.asyncio
+async def test_sp_bearing_event_matches_by_identity(db, emb):
+    """Same SP, same object, both events: SKIP (dedupe), not a second row
+    and not a unique violation."""
+    await _seed_row(db, emb, OWNER,
+                    "User's hotel in Windhoek is the Olive Grove.",
+                    kind="event", tier="episodic",
+                    subject="user", predicate="staying at", obj="Olive Grove")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("User's hotel in Windhoek is the Olive Grove."),
+        obs=_obs([_cand("User's hotel in Windhoek is the Olive Grove.",
+                        kind="event", tier="episodic", subject="user",
+                        predicate="staying at", obj="Olive Grove")]),
+    )
+    assert action.startswith("SKIP"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s", (OWNER,))
+    assert n == 1
+
+
+@pytest.mark.asyncio
+async def test_sp_less_events_accumulate(db, emb):
+    """Two identical SP-less episodes with a shared tag: cosine must NOT
+    mush-merge episodes into one row (identity only, never similarity)."""
+    for i in range(2):
+        await scribe.persist(
+            db=db, embedder=emb,
+            turn=_turn("The lobby was quiet.", session="acc", turn=i),
+            obs=_obs([_cand("The lobby was quiet.", kind="event",
+                            tier="episodic", tags=["lobby"])]),
+        )
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s", (OWNER,))
+    assert n == 2, "episodes must accumulate, not cosine-merge"
+
+
+@pytest.mark.asyncio
+async def test_event_cosine_leg_is_dead(db, emb):
+    """SP-bearing event vs identical-content event with a different SP:
+    cosine 1.0 + shared tag must still NOT merge (identity only)."""
+    await _seed_row(db, emb, OWNER,
+                    "User's hotel in Windhoek is the Olive Grove.",
+                    kind="event", tier="episodic", tags=["hotel"],
+                    subject="user", predicate="staying at", obj="Olive Grove")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("User's hotel in Windhoek is the Olive Grove."),
+        obs=_obs([_cand("User's hotel in Windhoek is the Olive Grove.",
+                        kind="event", tier="episodic", tags=["hotel"],
+                        subject="user", predicate="visiting",
+                        obj="Olive Grove")]),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s", (OWNER,))
+    assert n == 2
+
+
+@pytest.mark.asyncio
 async def test_identical_race_writes_once(db, emb):
     async def one():
         return await scribe.persist(
