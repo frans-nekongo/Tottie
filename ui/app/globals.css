@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #e8e6e1;
+  --dim: #a3a099;
+  --bg: #101014;
+  --panel: #17171d;
+  --line: #2a2a33;
+  --gold: #d9a441;
+  --cyan: #4cc3d9;
+  --violet: #9a7bd0;
+  --green: #6fbf73;
+  --red: #d9534f;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dim { color: var(--dim); }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.chip {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+.op-NEW { color: var(--green); border-color: var(--green); }
+.op-SUPERSEDE { color: var(--red); border-color: var(--red); }
+.op-UPDATE { color: var(--gold); border-color: var(--gold); }
+.op-SKIP { color: var(--dim); }
+.op-RAW { color: var(--cyan); border-color: var(--cyan); }
+.op-RECALL { color: var(--violet); border-color: var(--violet); }
+.strike { text-decoration: line-through; opacity: 0.65; }
+button.action {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.35rem 0.8rem;
+}
+button.action:hover:not(:disabled) { border-color: var(--dim); }
+button.action:disabled { opacity: 0.45; cursor: not-allowed; }

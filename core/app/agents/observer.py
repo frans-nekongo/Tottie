@@ -12,7 +12,7 @@ import time
 from pydantic import BaseModel, Field, ValidationError
 
 from ..config import Settings
-from ..providers.base import ProviderError
+from ..providers.base import complete_resilient
 from ..providers.resolve import resolve_provider
 from . import gates
 
@@ -156,21 +156,9 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
         ]
         # 2048 floor (R1): the reasoning model hit finish=length with empty
         # content on 2/6 live turns at 1024. Cap only pays when needed.
-        try:
-            raw = await provider.complete(
-                messages, max_tokens=2048, json_object=True
-            )
-        except ProviderError as e:
-            if "finish=length" not in str(e):
-                raise
-            # Reasoning spiral (R1: same input fails then succeeds on
-            # resample). One identical retry; tokens burned by the dead
-            # attempt are uncountable (the error carries no usage).
-            log.info("length-finish on first sample; resampling once")
-            raw = await provider.complete(
-                messages, max_tokens=2048, json_object=True
-            )
-            resampled = True
+        raw = await complete_resilient(
+            provider, messages, max_tokens=2048, json_object=True)
+        resampled = raw.resampled
         prompt_tokens += raw.prompt_tokens
         completion_tokens += raw.completion_tokens
         try:

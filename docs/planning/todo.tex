@@ -25,39 +25,43 @@
 \begin{itemize}
   \item[$\boxtimes$] \texttt{config.py}, \texttt{db.py}, \texttt{schema.sql} (memories, events, links, intentions)
   \item[$\boxtimes$] \texttt{embeddings.py} (bge-small + labelled hash fallback)
-  \item[$\square$] \texttt{providers/} (base, meta, local, resolve)
-  \item[$\square$] \texttt{agents/gates.py} (attention + surprise + salience), \texttt{cue\_classifier.py} (rules-only)
-  \item[$\square$] \texttt{agents/observer.py}, \texttt{scribe.py} (+sparse separation), \texttt{retriever.py}, \texttt{curator.py}
-  \item[$\square$] Bounded queue + workers, CORS for the UI origin, \texttt{/health} shape, \texttt{TOTTIE\_API\_TOKEN} auth on every route
+  \item[$\boxtimes$] \texttt{providers/} (base, meta, local, resolve) + hot-switch \texttt{TOTTIE\_PROVIDER}; shared \texttt{complete\_resilient} resample-once
+  \item[$\boxtimes$] \texttt{agents/gates.py} (attention + surprise + salience), \texttt{cues.py} (rules-only classifier)
+  \item[$\boxtimes$] \texttt{agents/observer.py}, \texttt{scribe.py}, \texttt{retrieve.py} (ambient card + deliberate probe + confidence)
+  \item[$\square$] Scribe sparse separation (pattern-separation write path) --- cut from W1, still open
+  \item[$\boxtimes$] Bounded queue + workers, CORS for the UI origin, \texttt{/health} shape, \texttt{TOTTIE\_API\_TOKEN} auth on every route
 \end{itemize}
 
 \section{Phase 4 --- MCP}
 \begin{itemize}
-  \item[$\square$] \texttt{mcp/server.py}: 9 tools (incl. \texttt{memory.confirm}) + 2 resources + \texttt{tottie\_context\_card}
-  \item[$\square$] \texttt{--list-tools} prints the surface
+  \item[$\boxtimes$] \texttt{server.py}: 9 tools (incl. \texttt{memory.confirm}) + 2 resources + \texttt{tottie\_context\_card} (stdio smoke OK, 7-tool suite green)
+  \item[$\boxtimes$] \texttt{--list-tools} prints the surface
 \end{itemize}
 
 \section{Phase 5 --- Round-Trip}
 \begin{itemize}
-  \item[$\square$] \texttt{POST /write} $\rightarrow$ gated store $\rightarrow$ \texttt{POST /recall} $\rightarrow$ Card + confidence
-  \item[$\square$] \texttt{GET /events} SSE stream for the Panel
-  \item[$\square$] \texttt{scripts/seed\_demo.py}: offline demo seeding (never imported by runtime code; auto-seeding is banned)
+  \item[$\boxtimes$] \texttt{POST /write} $\rightarrow$ gated store $\rightarrow$ \texttt{POST /recall} $\rightarrow$ Card + confidence
+  \item[$\boxtimes$] \texttt{GET /events} SSE stream for the Panel
+  \item[$\boxtimes$] \texttt{scripts/seed\_demo.py}: offline demo seeding (never imported by runtime code; auto-seeding is banned)
 \end{itemize}
 
 \section{Phase 6 --- UI}
 \begin{itemize}
-  \item[$\square$] \texttt{TottieFace} (5-state machine + frame-set contract + placeholders)
-  \item[$\square$] \texttt{ChatStream}, \texttt{MemoryPanel}, \texttt{RoomMap}, \texttt{AblationToggle}, why-surfaced line, Sleep button
-  \item[$\square$] Placeholder sprite frames in \texttt{ui/public/tottie/<state>/} so the app runs before final art lands
-  \item[$\square$] BrainGraph (3D force graph: live nodes, firing path, story line; 2D fallback ready; web3d gates passed)
+  \item[$\boxtimes$] \texttt{TottieFace} (5-state machine + frame-set contract + placeholders)
+  \item[$\boxtimes$] \texttt{Chat}, \texttt{Timeline} (= MemoryPanel), \texttt{PendingStrip}, \texttt{AblationToggle}; why-surfaced line inline in card text; Sleep button = honest stub until W5
+  \item[$\square$] \texttt{RoomMap} as a standalone component (room chips render in Timeline; dedicated map cut)
+  \item[$\boxtimes$] Placeholder sprite frames in \texttt{ui/public/tottie/<state>/} so the app runs before final art lands
+  \item[$\boxtimes$] BrainGraph (3D force graph: live nodes, firing path, story line; 2D fallback ready; \texttt{next build} green)
+  \item[$\square$] web3d gates (headless \texttt{check\_page} + screenshots + fresh-player critique) before film day
 \end{itemize}
 
 \section{Phase 7 --- Reconcile / Tags / Identity / Links / Rank}
 \begin{itemize}
-  \item[$\square$] Reconsolidation (\texttt{valid\_to} / \texttt{supersedes}); labile-on-access
-  \item[$\square$] Hierarchical tags / rooms; identity allowlist
-  \item[$\square$] \texttt{memory\_links} written on tag/entity/supersede events
-  \item[$\square$] Ranker + Compressor: utility decay + ranking (never delete); access boosts utility (testing effect)
+  \item[$\boxtimes$] Reconsolidation (\texttt{valid\_to} / \texttt{supersedes}); labile-on-access
+  \item[$\boxtimes$] Hierarchical tags / rooms; identity allowlist
+  \item[$\boxtimes$] \texttt{memory\_links} written on tag/entity/supersede events
+  \item[$\boxtimes$] Ranker: ranking (never delete); access boosts utility (testing effect); quarantine widened to all claim kinds
+  \item[$\square$] Utility decay + Compressor (ranked-out exists; time-decay and compression still open, W5)
 \end{itemize}
 
 \section{Phase 8 --- Cognition + Integration + Eval}

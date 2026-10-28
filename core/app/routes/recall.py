@@ -7,7 +7,7 @@ Auth is wired in main.py (router-level dependency), same as /write.
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from ..agents import retrieve
+from ..agents import memories, retrieve
 
 router = APIRouter()
 
@@ -59,14 +59,10 @@ async def get_identity(
     request: Request, owner: str = Query(""), limit: int = Query(20, ge=1, le=100)
 ) -> dict:
     settings = request.app.state.settings
-    rows = await request.app.state.db.fetch(
-        "SELECT id, kind, content, tags, salience FROM memories "
-        "WHERE owner = %s AND tier = 'identity' AND valid_to IS NULL "
-        "AND NOT quarantined ORDER BY salience DESC LIMIT %s",
-        (owner or settings.owner, limit),
+    rows = await memories.get_identity(
+        request.app.state.db, owner or settings.owner, limit
     )
-    return {"owner": owner or settings.owner,
-            "identity": [{**r, "id": str(r["id"])} for r in rows]}
+    return {"owner": owner or settings.owner, "identity": rows}
 
 
 @router.get("/probe")
@@ -77,11 +73,7 @@ async def get_probe(
     limit: int = Query(20, ge=1, le=100),
 ) -> dict:
     settings = request.app.state.settings
-    rows = await request.app.state.db.fetch(
-        "SELECT id, tier, kind, content, tags, salience FROM memories "
-        "WHERE owner = %s AND valid_to IS NULL AND NOT quarantined "
-        "AND %s = ANY(tags) ORDER BY salience DESC, utility DESC LIMIT %s",
-        (owner or settings.owner, tag.lstrip("#"), limit),
+    rows = await memories.probe_room(
+        request.app.state.db, owner or settings.owner, tag, limit
     )
-    return {"tag": tag, "owner": owner or settings.owner,
-            "memories": [{**r, "id": str(r["id"])} for r in rows]}
+    return {"tag": tag, "owner": owner or settings.owner, "memories": rows}

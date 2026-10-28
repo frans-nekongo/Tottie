@@ -11,10 +11,12 @@ Endpoint & Purpose & Status \\
 \midrule
 \texttt{POST /write} & enqueue a turn for curation & 202 \\
 \texttt{POST /recall} & cue-typed associative recall + Context Card & 200 \\
+\texttt{POST /chat} & one demo turn: recall, reply, store (W4) & 200 \\
 \texttt{GET /identity} & pinned identity facts (zero search) & 200 \\
 \texttt{GET /probe} & read a room (tag) in full & 200 \\
-\texttt{POST /intend} & register a prospective intention & 201 \\
-\texttt{POST /consolidate} & run the Sleep job on demand & 200 \\
+\texttt{GET /memories} & row browser: filters + id lookup (W4) & 200 \\
+\texttt{POST /intend} & register a prospective intention & MCP/recall only \\
+\texttt{POST /consolidate} & run the Sleep job on demand & W5 \\
 \texttt{POST /memories/\{id\}/confirm} & confirm a quarantined memory & 200 \\
 \texttt{POST /forget} & hard delete (right-to-be-forgotten) + audit row & 200 \\
 \texttt{GET /events} & SSE stream with resume & 200 \\
@@ -40,6 +42,19 @@ over a 100-row store, 10$\times$ inside the 300~ms p95 budget.
 
 \texttt{GET /probe?tag=\&owner=} $\rightarrow$ the room's live, non-quarantined
 memories, most salient first (a read, so \texttt{GET} like \texttt{/identity}).
+
+\texttt{POST /chat}: \texttt{\{text, session\_id, owner?, memory=true\}} $\rightarrow$
+\texttt{\{reply, card, confidence, abstain, path, hits, model, event\_id, latency\_ms\}}.
+One demo turn with no history window (memory replaces context stuffing): recall the card,
+answer grounded in it, enqueue the user turn. \texttt{memory=false} is the ablation OFF arm
+(raw model, no recall, no write). Replies are never written.
+
+\texttt{GET /memories?owner=\&quarantined?\&kind?\&id?\&limit=} $\rightarrow$ live rows newest
+first (the pending strip reads \texttt{quarantined=true}; node detail reads by \texttt{id}).
+
+\texttt{GET /graph?owner=\&tiers=} $\rightarrow$ \texttt{\{nodes:[\{id, label, tier, tags,
+salience, created, quarantined\}], links:[\{source, target, relation, weight\}]\}}, capped at
+300 most-salient live rows (links restricted to the returned node set).
 
 \texttt{POST /intend}: \texttt{\{content, owner, event\_cue?, time\_cue?\}} $\rightarrow$
 \texttt{201 \{id\}}. At least one cue is required.
