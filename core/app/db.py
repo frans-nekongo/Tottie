@@ -43,7 +43,9 @@ class Database:
         self.pool = AsyncConnectionPool(
             conninfo,
             min_size=2,
-            max_size=10,
+            # max 6 bounds PG backend fan-out (each ~5MB) under SSE+chat
+            # bursts; the 2GB box never needs more (measured peak: 3).
+            max_size=6,
             open=False,
             kwargs={"row_factory": dict_row},
         )

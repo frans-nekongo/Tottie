@@ -55,7 +55,8 @@
           "NEXT_PUBLIC_TOTTIE_OWNER": "owner_local",
           "TOTTIE_CORE_URL": "http://127.0.0.1:8765",
           "TOTTIE_API_TOKEN": "changeme-local-token",
-          "TOTTIE_OWNER": "owner_local"
+          "TOTTIE_OWNER": "owner_local",
+          "NODE_OPTIONS": "--max-old-space-size=768"
         }
       }
     ],
@@ -125,7 +126,8 @@
           "NEXT_PUBLIC_TOTTIE_CORE_URL": "http://127.0.0.1:8765",
           "TOTTIE_CORE_URL": "http://127.0.0.1:8765",
           "TOTTIE_API_TOKEN": "changeme-local-token",
-          "TOTTIE_OWNER": "owner_local"
+          "TOTTIE_OWNER": "owner_local",
+          "NODE_OPTIONS": "--max-old-space-size=768"
         }
       }
     ]
