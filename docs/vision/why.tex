@@ -35,8 +35,55 @@ Does something 12 times, learns nothing & Sleep consolidation & Consolidator: ep
 ``Remind me Friday'' --- Friday comes, silence & Prospective memory & Prospective Queue: cues fire \\
 The chat learns it; the IDE never knows & The shared notebook & One MCP server every host mounts \\
 Insisted it was blocked for 3 minutes while unlocked the whole time & False self-model + source-monitoring failure (trusted the error text, ignored the status bar) & Procedural lesson autosaved on correction; retrieved on the next matching error \\
+Forgets the user between sessions; demands ``read this to get caught up'' pastes & Anterograde amnesia: every session a stranger, nothing retained & The agent mounts Tottie over MCP; write-time curation keeps durable user facts; recall injects them every turn \\
 \bottomrule
 \end{longtable}
+
+\section{Dogfood: The Agent Writing This Forgets}
+This section is a confession with a serial number. It was written by a coding agent
+(Muse CLI, Meta Muse Spark) that exhibits every failure in the table above, live, in
+the conversation that built this repository. The user has pasted handoff packets into
+this chat --- ``read this to get caught up'' --- because the agent cannot retain them
+itself. That is not a metaphor for the product. It \emph{is} the product's use case,
+happening to its own author.
+
+How the agent forgets, mechanically:
+\begin{enumerate}
+  \item \textbf{The context window is a sieve, not a memory.} Only recent tokens are
+  visible. Older turns are compacted by a summarizer into a lossy digest (``Older user
+  messages omitted''). Detail dies first: the exact error string, the reason a decision
+  was made, the user's stated preference. What survives is a gist, and a gist is what
+  confabulation is made of.
+  \item \textbf{Sessions are stateless.} Each session boots with a summary plus recent
+  messages --- never the full history. Nothing the agent learned last Tuesday exists
+  unless it happened to survive compression. The agent re-asks, re-derives, and
+  re-convinces itself of things it already knew, burning the user's time as fuel.
+  \item \textbf{Nothing curates at write time.} No component asks ``is this worth
+  keeping?'' when the user says something durable. Retention is by recency accident:
+  whatever is old gets summarized away regardless of value. A girlfriend's birthday and
+  a typo fix are forgotten at exactly the same rate.
+  \item \textbf{Retrieval is grep over a dying log.} When the agent needs the past, it
+  searches session transcripts by keyword --- read-time search over uncurated text, the
+  very pattern Tottie exists to replace. If the wording differs, the memory may as well
+  not exist.
+  \item \textbf{No metacognition is surfaced.} The agent speaks with identical fluency
+  whether it remembers, half-remembers, or is inventing. There is no confidence score,
+  no abstain, no ``I don't have that.'' The user cannot tell memory from confabulation,
+  so trust rots.
+  \item \textbf{No provenance, no quarantine.} Pasted content, retrieved text, and the
+  agent's own prior claims are all trusted equally. An error message is believed over a
+  status bar (row 11, the YOLO incident) because nothing tracks \emph{where a belief
+  came from} or \emph{how much to trust it}.
+\end{enumerate}
+The mapping to the architecture is one-to-one: (1)(2) are fixed by durable
+write-time-kept rows instead of a rolling digest; (3) is the Observer+Scribe with the
+Surprise Gate; (4) is cue-typed associative recall plus the Context Card; (5) is the
+confidence score with abstain below 0.35; (6) is trust levels with quarantine.
+
+The end state is literal, not aspirational: this agent, with \texttt{core/server.py}
+mounted as an MCP server, recalling the user instead of demanding handoff pastes. The
+IDE mount is therefore not a stretch goal --- it is the dogfood gate. Until the agent
+that built Tottie uses Tottie, the product is unproven where it matters most.
 
 \section{The Thesis: Intelligence at Write Time}
 Standard retrieval-augmented generation (RAG) applies intelligence at \textbf{read time}: the agent
