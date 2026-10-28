@@ -56,3 +56,29 @@ The per-item verdicts are maintained alongside this specification. Items are res
 \texttt{Keep}/\texttt{Improve} before the spec is frozen for build. The cognition-model IDs added in
 v3 (\textbf{4.9--4.15, 5.7--5.8, 6.6, 8.6, 9.5, 3.6}) are recorded as \texttt{Add}, with the two
 open items resolved: the Consolidator is SHOULD/on-demand, and the Sleep beat enters the video.
+
+\section{v6 Audit Ledger (pre-build, 2026-10-26)}
+Findings from the front-to-back audit; each fix is already folded into this spec.
+\begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
+\toprule
+ID & Finding & Fix (where) \\
+\midrule
+A1 & No HTTP schema: endpoints named, shapes nowhere & new \emph{HTTP API} chapter \\
+A2 & Driver mismatch (docs: asyncpg, requirements: psycopg) & standardised on psycopg \texttt{AsyncConnectionPool} \\
+A3 & Idempotency unimplementable: \texttt{hash} had no unique index & unique \texttt{(owner, hash)} index in schema \\
+A4 & \texttt{TOTTIE\_API\_TOKEN} specified but in no env file & added to \texttt{.env.example} + all orch profiles \\
+A5 & No CORS plan, but UI calls core across origins & CORS section in \emph{HTTP API}; wired in P3 \\
+A6 & Quarantine covered identity/convention only & widened to decision/lesson; episodic stays labelled \\
+A7 & No way to confirm a quarantined memory & \texttt{/memories/\{id\}/confirm} + \texttt{memory.confirm} (9th tool) \\
+A8 & Over-fetch was the only filtered-search defence & iterative scan + \texttt{ef\_search=100} primary (pgvector $\geq$ 0.8) \\
+A9 & No HNSW params, tokenizer, rate values, tuning defaults & all pinned (see \emph{Performance}, \texttt{.env.example}) \\
+A10 & 2 write calls budgeted; LLM reachable on read & one shared call; rules-only classifier; 0 on read \\
+A11 & Stale ``prune'' wording in 3 chapters vs D4 & rewritten to ranked-out \\
+A12 & Deck never mentions Meta (rubric risk) & Muse Spark bullet; ordered open-weights fallback \\
+A13 & Prospective firing needed an unplanned scheduler & poll-on-recall/write, no scheduler \\
+A14 & Transactive/Completer/RIF/imagination undecided & cut / rule-based / flag-off / deferred \\
+A15 & Eval: 10 scenarios, harness + checks unspecified & 20 scenarios + harness contract in \emph{Roadmap} \\
+A16 & No compliant demo seed path (auto-seeding banned) & offline \texttt{seed\_demo.py} specified (P5) \\
+A17 & No local Postgres/pgvector; Python 3.9; no Ollama & P3 setup: brew python, postgres, pgvector \\
+\bottomrule
+\end{longtable}

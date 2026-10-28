@@ -30,6 +30,15 @@ Brain (the agent) & strongest available & the ``present thought''; quality matte
 \bottomrule
 \end{longtable}
 
+\section{Meta Depth (the rubric column)}
+The demo routes the Observer/Scribe, the Consolidator, and the chat brain through the
+\textbf{Meta Model API (Muse Spark series)} whenever \texttt{META\_API\_KEY} is set --- Meta is
+the primary path, not a logo. The local fallback prefers a \textbf{Meta open-weights model}
+(Muse Glimmer / Muse Spark Open, or Llama 3.x via Ollama) when one is installed, falling back
+to the bundled \texttt{LOCAL\_LLM\_MODEL} otherwise; this ordering is what the ``Best Build on
+Meta Open-Weight Models'' bonus awards. Every eval run records the exact model ids, so a judge
+can see Meta in the loop rather than taking it on faith.
+
 \section{Cost Control}
 Tottie's whole argument is that write-time curation is cheaper than stuffing context. The eval
 harness measures \textbf{tokens per query} with memory ON vs OFF to make that claim falsifiable.

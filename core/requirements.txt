@@ -1,4 +1,5 @@
 # Tottie — memory engine dependencies
+# Requires Python >= 3.11 (create with: python3.12 -m venv venv).
 # Install into core/venv:  python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 
 # --- web ---
@@ -7,6 +8,8 @@ uvicorn[standard]>=0.30
 sse-starlette>=2.1
 
 # --- storage (pgvector) ---
+# Async via psycopg AsyncConnectionPool (no asyncpg needed). Server-side needs
+# pgvector >= 0.8 for iterative filtered scans (brew install pgvector).
 psycopg[binary]>=3.2
 pgvector>=0.3
 
@@ -19,6 +22,10 @@ fastembed>=0.3
 
 # --- http client (model providers) ---
 httpx>=0.27
+
+# --- async helpers ---
+# Explicit (FastAPI pulls it in anyway): thread-pool for the sync ONNX embedder calls.
+anyio>=4
 
 # --- MCP server ---
 # Pin below 2.0: the 2.x line renamed the FastMCP server imports.

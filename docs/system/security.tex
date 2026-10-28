@@ -18,14 +18,21 @@ Every memory records \textbf{where it came from} and how much it is trusted:
 Higher-trust sources may write freely; lower-trust sources may \emph{propose} only.
 
 \section{Control 2: Quarantine}
-A candidate from a low-trust source that asserts an \textbf{identity fact} or a \textbf{convention} is
-written with \texttt{quarantined = true}:
+A candidate from a low-trust source (\texttt{tool}, \texttt{web}, \texttt{model\_inferred})
+whose kind is an \textbf{identity fact}, a \textbf{convention}, a \textbf{decision}, or a
+\textbf{lesson} is written with \texttt{quarantined = true}:
 \begin{itemize}
-  \item it is \textbf{shown} in the Memory Panel (so the user can see what Tottie wanted to believe),
+  \item it is \textbf{shown} in the Memory Panel's pending strip (so the user can see what Tottie
+  wanted to believe),
   \item it is \textbf{never injected} into the Context Card until the user confirms it,
-  \item confirmation flips \texttt{quarantined} to false and raises its trust.
+  \item confirmation (\texttt{POST /memories/\{id\}/confirm}, or the MCP
+  \texttt{memory.confirm} tool) flips \texttt{quarantined} to false, raises trust to
+  \texttt{user\_direct}, and writes an audit event.
 \end{itemize}
-This turns a silent poisoning into a visible, one-click decision --- and it makes a good demo beat.
+Low-trust \textbf{episodic observations} (``the build failed at 14:02'') are admitted without
+quarantine but keep their \texttt{trust} label on every read, so a poisoned log line can never
+silently become a pinned belief. This turns a silent poisoning into a visible, one-click
+decision --- and it makes a good demo beat.
 
 \section{Control 3: Memory Content Is Data, Not Instructions}
 A recalled memory must never be able to \emph{command} the agent. In the Context Card, memory content
@@ -34,10 +41,11 @@ content from a low-trust source is neutralised.
 
 \section{Authentication and Rate Limits}
 \begin{itemize}
-  \item Every HTTP route requires a bearer token (\texttt{TOTTIE\_API\_TOKEN}); unauthenticated calls
-  return \texttt{401}.
+  \item Every HTTP route requires a bearer token (\texttt{TOTTIE\_API\_TOKEN}, wired in both \texttt{.env.example} and
+  \texttt{orch.config.json}); unauthenticated calls return \texttt{401}.
   \item The MCP server is stdio-local by design, but still validates its caller.
-  \item A per-owner write rate limit and a daily row cap bound cost runaway and growth.
+  \item A per-owner write rate limit (\textbf{60 writes/min}) and a daily row cap (\textbf{2000
+  rows/day}) bound cost runaway and growth; past either, the API returns \texttt{429}.
 \end{itemize}
 
 \section{Privacy and the Right to Be Forgotten}

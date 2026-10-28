@@ -22,14 +22,16 @@ knowledge, losing their episodic detail and becoming general.
 \textbf{Data Flow \& Mutators:} \texttt{INSERT INTO memories (tier='knowledge', ...)} with links from
 the source episodes in \texttt{memory\_links} (relation \texttt{cooccur}).
 
-\section{Pruning and Scaling}
+\section{Ranking and Scaling}
 \textbf{Trigger:} The end of the replay pass.
 \textbf{Action / UI State:} The Panel prints a summary: \emph{``12 episodic $\rightarrow$ 3 semantic;
-4 pruned''}.
-\textbf{System Logic:} Low-activation, rarely-accessed memories and links are decayed or archived, and
-link weights are normalised so total capacity stays bounded (the homeostatic-scaling / long-term
-depression analogue). Nothing user-visible is deleted without the number being reported.
-\textbf{Data Flow \& Mutators:} Weight decay on \texttt{memory\_links}; archival flag on stale rows.
+4 ranked out''}.
+\textbf{System Logic:} Low-activation, rarely-accessed memories are \textbf{ranked out}
+(deprioritised, still available --- never deleted), and link weights are normalised so total
+capacity stays bounded (the homeostatic-scaling / long-term depression analogue). Nothing
+user-visible is destroyed; the count reported is a rank change, not a loss.
+\textbf{Data Flow \& Mutators:} Weight decay on \texttt{memory\_links}; \texttt{utility} update on
+stale rows (rank change, not deletion).
 
 \section{Why This Beat Exists}
 No other memory tool demonstrated on stage shows \emph{generalisation} --- the move from ``I did this

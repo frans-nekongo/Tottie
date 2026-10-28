@@ -33,7 +33,7 @@ Memory visible in the Panel & $<$ 2 s \\
 \texttt{POST /recall} p95 & $<$ 300 ms \\
 Embedding (bge-small, CPU) & $\approx$ 25 ms per text \\
 Context Card & $\leq$ 400 tokens \\
-LLM calls per turn & $\leq$ 2 on write, \textbf{0} on read (Curator is rules-based) \\
+LLM calls per turn & $\leq$ 1 on write (Observer+Scribe share one call), \textbf{0} on read \\
 \bottomrule
 \end{longtable}
 
@@ -47,18 +47,24 @@ $k=60$, a top-8 cut, a graph expansion of at most \textbf{2 hops} and \textbf{50
   \item A \textbf{heuristic pre-filter} skips the model for obvious chit-chat and fast-paths clear
   patterns (``my \ldots'', ``always'', ``never'', a date).
   \item A \textbf{small model} handles the Observer; the strongest model is reserved for the brain.
+  \item The \textbf{Observer and Scribe share one structured-output call} (temperature 0, JSON
+  schema): propose candidates and structure them in the same pass.
+  \item The 400-token card budget is measured with a \textbf{chars/4 heuristic} --- no tokenizer
+  dependency; close enough for a budget, and it never fails.
   \item Identical turns are cached; token caps are enforced on every call.
 \end{itemize}
 
 \section{Storage Engineering}
 \begin{itemize}
-  \item \textbf{Connection pooling} (asyncpg pool created at startup) instead of a connection per
-  request.
+  \item \textbf{Connection pooling} (psycopg \texttt{AsyncConnectionPool} created at startup)
+  instead of a connection per request.
   \item The embedder is \textbf{loaded once} and all embedding calls run in a thread pool, so the
   synchronous ONNX call never blocks the event loop.
-  \item \textbf{HNSW} indexes are built with tuned \texttt{m} / \texttt{ef\_construction} and queried
-  with an explicit \texttt{ef\_search}; because pgvector applies filters after the index scan, we
-  \textbf{over-fetch} (top-50) before filtering by owner and validity.
+  \item \textbf{HNSW} indexes are built with explicit \texttt{m = 16} / \texttt{ef\_construction = 64}
+  and queried with \texttt{hnsw.ef\_search = 100} plus \texttt{hnsw.iterative\_scan = strict\_order}
+  (requires pgvector $\geq$ 0.8), which keeps walking the graph until enough rows pass the filter.
+  The \textbf{over-fetch} (top-50 per leg) before filtering by owner and validity stays as
+  belt-and-braces.
 \end{itemize}
 
 \section{Resilience}

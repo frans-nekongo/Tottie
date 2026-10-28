@@ -26,8 +26,9 @@ quarantined}. Unconditional and cheap --- identity has zero search overhead.
   \item \textbf{Filter}: \texttt{owner = ?} AND \texttt{valid\_to IS NULL} AND \texttt{NOT quarantined};
   \item \textbf{Fusion}: Reciprocal Rank Fusion, $k=60$, to top-8.
 \end{enumerate}
-Candidates are \textbf{over-fetched} (50 per leg) before filtering, because pgvector filters after the
-index scan.
+The session sets \texttt{hnsw.ef\_search = 100} and \texttt{hnsw.iterative\_scan = strict\_order}
+(pgvector $\geq$ 0.8). Candidates are still \textbf{over-fetched} (50 per leg) before filtering,
+as belt-and-braces for older servers.
 \textbf{Data Flow \& Mutators:} A ranked hit list of \texttt{(id, tier, summary, tags, score, trust)}.
 
 \section{Spreading Activation and Completion}
@@ -54,6 +55,17 @@ surfaced (cue type $\rightarrow$ seed $\rightarrow$ hops) and its \emph{source}.
 fencing memory content as \emph{data} (never instructions) and appending the ``probe deeper'' pointers.
 \textbf{Data Flow \& Mutators:} The card is injected into the prompt; a \texttt{recall} event is
 streamed to the Panel.
+
+\section{Prospective Check (no scheduler)}
+\textbf{Trigger:} Every recall (and every write).
+\textbf{System Logic:} There is no background scheduler. Instead, each recall checks the
+Prospective Queue inline: any \texttt{pending} intention whose \texttt{time\_cue} has passed
+fires now (status $\rightarrow$ \texttt{fired}), and any whose \texttt{event\_cue} overlaps the
+turn's entities fires now. Fired intentions ride along in the recall response
+(\texttt{fired\_intentions}) and the Panel renders them as a ``remember to\ldots'' banner.
+\textbf{Data Flow \& Mutators:} A read of \texttt{(owner, status, time\_cue)} plus a status flip
+on fire. A time-cue can only fire late by (at most) the gap between turns --- acceptable for a
+demo, documented for honesty.
 
 \section{The Deliberate Probe}
 \textbf{Trigger:} The agent decides it needs more depth than the card provides.

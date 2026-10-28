@@ -46,11 +46,38 @@ Transactive Directory & route to where knowledge lives & STRETCH \\
 \end{longtable}
 
 \section{Runtime Shape}
-The engine is \textbf{async throughout}. A single \texttt{asyncpg} pool is created at startup; the
+The engine is \textbf{async throughout}. A single psycopg \texttt{AsyncConnectionPool} is created at startup; the
 embedder is loaded once and called from a thread pool. The write path is a \textbf{bounded queue}
 drained by a small worker pool, so an Observer model call never blocks a user turn. Recall runs inline
 under a hard wall-clock budget. See \emph{Performance} for the budgets and \emph{Security} for the
 trust controls that guard what may be written and what may be injected.
+
+\section{Module Map (file $\rightarrow$ component)}
+\begin{longtable}{@{}p{0.34\textwidth}p{0.56\textwidth}@{}}
+\toprule
+File & Owns \\
+\midrule
+\texttt{core/app/main.py} & FastAPI app, lifespan (pool, embedder, workers), CORS, auth \\
+\texttt{core/app/config.py} & typed settings from env (see \texttt{.env.example}) \\
+\texttt{core/app/db.py} & pool, migrations ledger, query helpers (bound params only) \\
+\texttt{core/app/embeddings.py} & FastEmbed bge-small, loaded once, fail-loud, thread-pooled \\
+\texttt{core/app/queue.py} & bounded write queue + worker pool + drop-oldest metric \\
+\texttt{core/app/agents/gates.py} & Attention Gate, Surprise Gate, heuristic pre-filter \\
+\texttt{core/app/agents/observer.py} & salience scoring + candidate proposal (one LLM call, shared with the Scribe) \\
+\texttt{core/app/agents/scribe.py} & structure, tag, embed, reconcile (\texttt{NEW/UPDATE/SUPERSEDE/SKIP}) \\
+\texttt{core/app/agents/cue\_classifier.py} & deterministic cue rules (rules-only for the hackathon) \\
+\texttt{core/app/agents/retriever.py} & RRF SQL + graph BFS + confidence \\
+\texttt{core/app/agents/curator.py} & rules-based Context Card assembly ($\leq$ 400 tokens) \\
+\texttt{core/app/agents/ranker.py} & utility recompute (SQL-side); compression happens in Sleep \\
+\texttt{core/app/agents/consolidator.py} & on-demand Sleep job \\
+\texttt{core/app/agents/prospective.py} & intention matching on recall/write (no scheduler) \\
+\texttt{core/app/routes/*.py} & HTTP surface (see \emph{HTTP API}) + SSE with resume \\
+\texttt{core/app/providers/*.py} & \texttt{MetaProvider}, \texttt{LocalProvider}, \texttt{resolve\_provider()} \\
+\texttt{mcp/server.py} & thin MCP adapter over the same core (9 tools, 2 resources, 1 prompt) \\
+\texttt{eval/harness.py} & ON/OFF runner, metrics, special checks (see \emph{Roadmap}) \\
+\texttt{core/scripts/seed\_demo.py} & offline demo seeding (never imported by runtime code) \\
+\bottomrule
+\end{longtable}
 
 \section{The Tier Model}
 \textbf{Identity} (persona, pinned, zero search) · \textbf{Episodic} (decisions, state, history) ·

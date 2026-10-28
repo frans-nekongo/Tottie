@@ -15,6 +15,25 @@ bindings, conventions, prior decisions on \texttt{A}, lessons tied to \texttt{A}
 \textbf{Data Flow \& Mutators:} A retrieval request is issued with the intent, entities, and scope; a
 \texttt{memory\_event} of kind \texttt{recall} begins.
 
+\section{The Deterministic Rules (implementation contract)}
+Rules run in order; STATEMENT is the default, so every turn classifies with zero model calls.
+An LLM fallback for genuinely ambiguous turns is deferred past the hackathon.
+\begin{longtable}{@{}p{0.20\textwidth}p{0.68\textwidth}@{}}
+\toprule
+Cue type & Rule (first match wins) \\
+\midrule
+CORRECTION & contains \texttt{actually}, \texttt{no wait}, \texttt{correction}, \texttt{I meant} \\
+REFERENCE & contains \texttt{that} + noun, \texttt{the same}, \texttt{we discussed}, \texttt{you mentioned} \\
+QUESTION & ends with \texttt{?}, or starts with who/what/when/where/why/how/which \\
+COMMAND & starts with an imperative verb (implement, add, fix, create, update, refactor, build, write, run, show, remind) \\
+CHITCHAT & matches \texttt{\^{}(thanks|thank you|hi|hello|hey|bye|ok|okay|cool|great)[!.]*\$} (case-insensitive) \\
+STATEMENT & default: anything carrying new information \\
+\bottomrule
+\end{longtable}
+A turn matching both CORRECTION and another type is a CORRECTION (the reconsolidation route
+depends on it). ``Remind me to\ldots'' is a COMMAND that additionally registers an intention
+(see \emph{The Recall Path}: the prospective check).
+
 \section{Seeding the Associative Network}
 \textbf{Trigger:} The classified cue.
 \textbf{Action / UI State:} The Panel shows seed chips (e.g.\ \texttt{\#project/A}, \texttt{feature A}).

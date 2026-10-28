@@ -5,7 +5,8 @@ Local development across the NKNGO ecosystem uses SQLite. Tottie is an explicit,
 exception: \textbf{semantic memory requires vector search}, and the ecosystem's canonical RAG engine
 (\texttt{ask.nkngo}) and Pattern already run \textbf{Postgres + pgvector} locally. Tottie therefore
 uses a local \texttt{tottie} database on \texttt{127.0.0.1:5432}, accessed through an
-\textbf{asyncpg connection pool} (not a connection per request).
+\textbf{async psycopg pool} (\texttt{AsyncConnectionPool}, not a connection per request).
+The server needs \textbf{pgvector $\geq$ 0.8} for iterative filtered scans (see \emph{Indexes}).
 
 \section{Schema}
 \begin{Verbatim}[breaklines=true,fontsize=\small]
@@ -53,7 +54,8 @@ CREATE TABLE intentions (               -- prospective memory ("remind me to..."
 
 \section{Indexes (and why each exists)}
 \begin{Verbatim}[breaklines=true,fontsize=\small]
-CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops);  -- vector leg
+CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);                                -- vector leg
 CREATE INDEX ON memories USING gin (tags);                           -- room/tag filter
 CREATE INDEX ON memories USING gin (to_tsvector('english', content));-- lexical leg
 CREATE INDEX ON memories (owner, tier) WHERE valid_to IS NULL;       -- live slice
@@ -65,10 +67,17 @@ CREATE INDEX ON memory_links (owner, dst);
 CREATE INDEX ON intentions (owner, status, time_cue);
 CREATE UNIQUE INDEX ON memories (owner, subject, predicate)
   WHERE valid_to IS NULL AND subject IS NOT NULL;   -- serialise reconcile
+CREATE UNIQUE INDEX ON memories (owner, hash)
+  WHERE hash IS NOT NULL;                           -- idempotent writes
 \end{Verbatim}
-Because pgvector applies \emph{filters after} the index scan, retrieval \textbf{over-fetches} the top
-50 per leg and then filters by owner, validity, and trust --- otherwise a filtered query can return
-fewer than $k$ rows.
+Filtered vector search is the known pgvector trap: the index returns its candidates by pure
+distance and the \texttt{WHERE} clause is applied \emph{afterwards}, so a selective filter can
+starve the result below $k$. Two defences, in order: (1) the session sets
+\texttt{hnsw.ef\_search = 100} and \texttt{hnsw.iterative\_scan = strict\_order}, which makes
+pgvector ($\geq$ 0.8) keep walking the graph until enough rows pass the filter; (2) retrieval
+still \textbf{over-fetches} the top 50 per leg before filtering by owner, validity, and trust,
+as belt-and-braces for older servers. The harness asserts recall@k on a filtered fixture so a
+regression here fails loudly instead of silently returning short lists.
 
 \section{The Field Semantics That Matter}
 \begin{itemize}

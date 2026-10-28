@@ -73,8 +73,13 @@ CREATE TABLE IF NOT EXISTS intentions (
 );
 
 -- Indexes
+-- HNSW build params (m=16, ef_construction=64 are the pgvector defaults; stated
+-- explicitly so a rebuild is reproducible). Query-time: SET hnsw.ef_search = 100
+-- and SET hnsw.iterative_scan = strict_order (requires pgvector >= 0.8); the
+-- 50-per-leg over-fetch stays as belt-and-braces for older servers.
 CREATE INDEX IF NOT EXISTS memories_embedding_hnsw
-  ON memories USING hnsw (embedding vector_cosine_ops);
+  ON memories USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
 CREATE INDEX IF NOT EXISTS memories_tags_gin
   ON memories USING gin (tags);
 CREATE INDEX IF NOT EXISTS memories_content_fts
@@ -97,3 +102,8 @@ CREATE INDEX IF NOT EXISTS intentions_trigger ON intentions (owner, status, time
 -- both believing they are the "current" value.
 CREATE UNIQUE INDEX IF NOT EXISTS memories_live_sp
   ON memories (owner, subject, predicate) WHERE valid_to IS NULL AND subject IS NOT NULL;
+
+-- Idempotency: the write path's hash(session, turn, content) key. ON CONFLICT
+-- DO NOTHING requires this unique index; without it retries double-write.
+CREATE UNIQUE INDEX IF NOT EXISTS memories_idempotency
+  ON memories (owner, hash) WHERE hash IS NOT NULL;

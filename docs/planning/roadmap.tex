@@ -7,7 +7,7 @@ Tier & Contents \\
 \midrule
 \textbf{MUST} & Attention Gate $\cdot$ Surprise Gate $\cdot$ Salience Scorer $\cdot$ Cue Classifier $\cdot$ Scribe (+sparse separation) $\cdot$ Reconciler $\cdot$ Retriever $\cdot$ Activator $\cdot$ Curator $\cdot$ \textbf{async core (pool + fail-loud embedder)} $\cdot$ \textbf{non-blocking write queue} $\cdot$ \textbf{trust + quarantine} $\cdot$ MCP server $\cdot$ Context Card + probe $\cdot$ Tottie UI $\cdot$ ON/OFF ablation $\cdot$ eval harness $\cdot$ 3-minute video $\cdot$ docs + deck \\
 \textbf{SHOULD} & \textbf{Ranker + Compressor} (adaptive forgetting) $\cdot$ \textbf{Metacognitive Evaluator} $\cdot$ \textbf{Prospective Queue} $\cdot$ Completer $\cdot$ Consolidator (on-demand ``Sleep'') $\cdot$ coding-agent MCP integration $\cdot$ Autosave/Lessons $\cdot$ \texttt{memory\_links} graph \\
-\textbf{STRETCH} & \textbf{Transactive Directory} $\cdot$ self-testing during idle $\cdot$ spaced-review scheduler $\cdot$ full relation extraction $\cdot$ autoassociative reconstruction $\cdot$ MCP-sampling curation $\cdot$ X/viral push \\
+\textbf{STRETCH} & \textbf{Transactive Directory (CUT for the hackathon --- documented, not built)} $\cdot$ self-testing during idle $\cdot$ spaced-review scheduler $\cdot$ full relation extraction $\cdot$ autoassociative reconstruction $\cdot$ MCP-sampling curation $\cdot$ X/viral push \\
 \bottomrule
 \end{longtable}
 
@@ -18,13 +18,13 @@ non-blocking write path, and the security controls.
 \toprule
 \# & Deliverable \\
 \midrule
-1 & Skeleton $+$ \texttt{/health} $+$ auth $+$ asyncpg pool $+$ embedder (fail-loud, thread-pooled) $+$ migrations \\
+1 & Skeleton $+$ \texttt{/health} $+$ auth $+$ CORS $+$ psycopg async pool $+$ embedder (fail-loud, thread-pooled) $+$ migrations \\
 2 & Write path: queue, workers, gates, Observer, Scribe, reconcile, raw fallback \\
 3 & Recall path: cue classifier, RRF SQL (over-fetch, temporal $+$ trust filters), graph BFS, confidence, Curator \\
 4 & MCP over the same core (thin adapter) \\
 5 & UI: SSE with resume, Memory Panel, sprite state machine, ablation \\
 6 & Trust/quarantine UI (the ``pending'' strip) \\
-7 & Eval harness (real DB, pinned models) $+$ revival $+$ surprise-gating checks \\
+7 & Eval harness (real DB, pinned models) $+$ revival $+$ surprise-gating $+$ consolidation $+$ quarantine checks $+$ offline \texttt{seed\_demo.py} \\
 8 & Observability, backup, rate limit \\
 \bottomrule
 \end{longtable}
@@ -53,6 +53,21 @@ A phase does not begin until the prior phase's \textbf{docs} are written and its
 applicable) pass. If time runs short, cut in this order: STRETCH $\rightarrow$ Completer $\rightarrow$
 Consolidator (degrades to a summary stub) $\rightarrow$ Prospective Queue $\rightarrow$ Ranker + Compressor.
 \textbf{Never cut the Surprise Gate, the trust/quarantine controls, the eval harness, or the demo video.}
+Decided in the v6 audit: the Transactive Directory is cut for the hackathon; the Completer ships
+rule-based (cluster grouping, no LLM reconstruction); the cue classifier is rules-only;
+retrieval-induced suppression ships behind \texttt{TOTTIE\_RIF\_ENABLED=0} and is measured, not
+assumed; imagination / episodic future thinking is explicitly deferred (no demo beat, no rubric
+column).
+
+\section{Eval Harness Contract}
+\texttt{eval/harness.py} runs every scenario in \texttt{scenarios.jsonl} twice --- memory ON and
+memory OFF --- against the pinned brain model (temperature 0, recorded model ids) and reports:
+answer accuracy, memory-hit@k, contradiction-correctness, tokens/query, and p50/p95 latency.
+Four special checks sit beside the Q/A suite: \textbf{revival} (rank a memory out, then prove the
+cue returns it), \textbf{surprise-gating} (chit-chat writes nothing, first real facts always
+land), \textbf{consolidation} (Sleep turns N episodic rows into semantic rows without losing the
+raw episodes), and \textbf{quarantine} (a low-trust identity write is visible but never injected
+until confirmed). Scenario target is 40; the suite ships 20 and grows during P8.
 
 \section{Mandates Honoured During the Build}
 Document First $\rightarrow$ Implement $\rightarrow$ Test $\rightarrow$ Conclude; atomic commits

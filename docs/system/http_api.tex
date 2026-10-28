@@ -1,0 +1,71 @@
+\chapter{HTTP API: Endpoints, Events, and Errors}
+
+The MCP server is the product surface; the HTTP API underneath it is what the Tottie UI,
+the eval harness, and the seed script talk to. Every route requires the Bearer [REDACTED]
+except \texttt{GET /health}. All \texttt{POST} bodies are JSON; all times are ISO-8601.
+
+\section{Endpoint Map}
+\begin{longtable}{@{}p{0.30\textwidth}p{0.50\textwidth}p{0.12\textwidth}@{}}
+\toprule
+Endpoint & Purpose & Status \\
+\midrule
+\texttt{POST /write} & enqueue a turn for curation & 202 \\
+\texttt{POST /recall} & cue-typed associative recall + Context Card & 200 \\
+\texttt{GET /identity} & pinned identity facts (zero search) & 200 \\
+\texttt{POST /probe} & read a room (tag) in full & 200 \\
+\texttt{POST /intend} & register a prospective intention & 201 \\
+\texttt{POST /consolidate} & run the Sleep job on demand & 200 \\
+\texttt{POST /memories/\{id\}/confirm} & confirm a quarantined memory & 200 \\
+\texttt{POST /forget} & hard delete (right-to-be-forgotten) + audit row & 200 \\
+\texttt{GET /events} & SSE stream with resume & 200 \\
+\texttt{GET /health} & pool, queue, embedder, provider status (no auth) & 200 \\
+\bottomrule
+\end{longtable}
+
+\section{Request and Response Shapes}
+\texttt{POST /write}: \texttt{\{text, session\_id, turn, owner, source:\{trust\}\}}
+$\rightarrow$ \texttt{202 \{event\_id\}}. The idempotency key
+\texttt{hash(session, turn, content)} is computed server-side; retries return the same
+\texttt{event\_id} without double-writing (unique index on \texttt{(owner, hash)}).
+
+\texttt{POST /recall}: \texttt{\{query, session\_id, owner, tiers?, k?\}}
+$\rightarrow$ \texttt{\{card, hits:[\{id, tier, summary, tags, score, trust, why\}], confidence, fired\_intentions\}}.
+The \texttt{why} line per hit is the ``why this surfaced'' annotation; \texttt{fired\_intentions}
+carries any prospective intentions this turn triggered.
+
+\texttt{POST /probe}: \texttt{\{tag|id, owner\}} $\rightarrow$ the room's live, non-quarantined
+memories, most salient first, subject to the same token budget as the card.
+
+\texttt{POST /intend}: \texttt{\{content, owner, event\_cue?, time\_cue?\}} $\rightarrow$
+\texttt{201 \{id\}}. At least one cue is required.
+
+\texttt{POST /consolidate}: \texttt{\{owner, replay\_n?\}} $\rightarrow$
+\texttt{\{episodic\_replayed, semantic\_written, ranked\_out, curated\}}.
+
+\texttt{POST /memories/\{id\}/confirm}: flips \texttt{quarantined} to false, raises trust to
+\texttt{user\_direct}, and writes an audit event. Only the owning user can confirm.
+
+\texttt{POST /forget}: \texttt{\{id|query, owner\}} $\rightarrow$ hard-deletes the rows,
+their links, and their events payload, then writes an audit row proving it happened.
+
+\section{The Event Stream}
+\texttt{GET /events?session\_id=\&last\_event\_id=} streams \texttt{memory\_event} rows as
+Server-Sent Events with the row's monotonic \texttt{id} as the event id. A reconnecting Panel
+passes \texttt{Last-Event-ID} (or the query param) and the server replays everything after it,
+so no step is ever missed. The server assigns \texttt{turn\_id}; chat and Panel both render
+from it, so they can never disagree.
+
+\section{Errors}
+\texttt{401} without (or with a wrong) token. \texttt{422} on schema violations (with the
+failing field named). \texttt{429} past the per-owner rate limit (60 writes/min, 2000
+rows/day). \texttt{503} with \texttt{\{retryable:true\}} when the embedder or the pool is
+unhealthy --- the UI shows ``memory unavailable'' and the host falls back to raw model.
+Low confidence is \emph{not} an error: it returns \texttt{200} with
+\texttt{confidence} below \texttt{0.35} and an explicit \texttt{abstain:true} recommendation.
+
+\section{Cross-Origin and Health}
+The UI (\texttt{:3055}) calls the core (\texttt{:8765}) directly, so the core serves CORS for
+the configured UI origin only. \texttt{GET /health} returns
+\texttt{\{pool, queue\_depth, embedder:\{loaded, model\}, providers:\{meta, local\}\}} and is
+the readiness gate for the demo and the harness: if \texttt{embedder.loaded} is false, nothing
+else is attempted.

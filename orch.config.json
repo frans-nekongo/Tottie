@@ -12,12 +12,30 @@
         "env": {
           "TOTTIE_PORT": "8765",
           "TOTTIE_OWNER": "owner_local",
+          "TOTTIE_API_TOKEN": "changeme-local-token",
           "TOTTIE_DB_URL": "postgresql://localhost:5432/tottie",
           "TOTTIE_EMBEDDER": "fastembed",
           "TOTTIE_EMBED_MODEL": "BAAI/bge-small-en-v1.5",
           "EMBEDDING_CACHE_DIR": "../../local LLMS",
           "LOCAL_LLM_URL": "http://127.0.0.1:11434",
-          "LOCAL_LLM_MODEL": "nkngo-qwen-coder-3b"
+          "LOCAL_LLM_MODEL": "nkngo-qwen-coder-3b",
+          "LOCAL_LLM_MAX_CTX": "4096",
+          "LOCAL_LLM_MAX_TOKENS": "512",
+          "META_API_KEY": "",
+          "META_BASE_URL": "",
+          "META_MODEL": "",
+          "TOTTIE_IDENTITY_SALIENCE": "0.90",
+          "TOTTIE_RECONCILE_COSINE": "0.86",
+          "TOTTIE_RECALL_K": "8",
+          "TOTTIE_SURPRISE_FLOOR": "0.20",
+          "TOTTIE_UTILITY_HALF_LIFE_DAYS": "30",
+          "TOTTIE_CONFIDENCE_FLOOR": "0.35",
+          "TOTTIE_RIF_ENABLED": "0",
+          "TOTTIE_HNSW_EF_SEARCH": "100",
+          "TOTTIE_INLINE_WRITE": "0",
+          "TOTTIE_REPLAY_N": "50",
+          "TOTTIE_RATE_LIMIT_PER_MIN": "60",
+          "TOTTIE_MAX_ROWS_PER_DAY": "2000"
         }
       },
       {
@@ -41,9 +59,19 @@
         "ports": [8765],
         "env": {
           "TOTTIE_PORT": "8765",
+          "TOTTIE_API_TOKEN": "changeme-local-token",
           "TOTTIE_DB_URL": "postgresql://localhost:5432/tottie",
           "TOTTIE_EMBEDDER": "fastembed",
-          "EMBEDDING_CACHE_DIR": "../../local LLMS"
+          "EMBEDDING_CACHE_DIR": "../../local LLMS",
+          "TOTTIE_SURPRISE_FLOOR": "0.20",
+          "TOTTIE_UTILITY_HALF_LIFE_DAYS": "30",
+          "TOTTIE_CONFIDENCE_FLOOR": "0.35",
+          "TOTTIE_RIF_ENABLED": "0",
+          "TOTTIE_HNSW_EF_SEARCH": "100",
+          "TOTTIE_INLINE_WRITE": "0",
+          "TOTTIE_REPLAY_N": "50",
+          "TOTTIE_RATE_LIMIT_PER_MIN": "60",
+          "TOTTIE_MAX_ROWS_PER_DAY": "2000"
         }
       }
     ],
@@ -56,8 +84,18 @@
         "ports": [8765],
         "env": {
           "TOTTIE_PORT": "8765",
+          "TOTTIE_API_TOKEN": "changeme-local-token",
           "TOTTIE_DB_URL": "postgresql://localhost:5432/tottie",
-          "LOCAL_LLM_URL": "http://127.0.0.1:11434"
+          "LOCAL_LLM_URL": "http://127.0.0.1:11434",
+          "TOTTIE_SURPRISE_FLOOR": "0.20",
+          "TOTTIE_UTILITY_HALF_LIFE_DAYS": "30",
+          "TOTTIE_CONFIDENCE_FLOOR": "0.35",
+          "TOTTIE_RIF_ENABLED": "0",
+          "TOTTIE_HNSW_EF_SEARCH": "100",
+          "TOTTIE_INLINE_WRITE": "0",
+          "TOTTIE_REPLAY_N": "50",
+          "TOTTIE_RATE_LIMIT_PER_MIN": "60",
+          "TOTTIE_MAX_ROWS_PER_DAY": "2000"
         }
       },
       {

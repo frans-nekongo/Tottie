@@ -25,13 +25,14 @@
   \item[$\square$] \texttt{config.py}, \texttt{db.py}, \texttt{schema.sql} (memories, events, links, intentions)
   \item[$\square$] \texttt{embeddings.py} (bge-small + labelled hash fallback)
   \item[$\square$] \texttt{providers/} (base, meta, local, resolve)
-  \item[$\square$] \texttt{agents/attention.py}, \texttt{surprise.py}, \texttt{salience.py}, \texttt{cue\_classifier.py}
+  \item[$\square$] \texttt{agents/gates.py} (attention + surprise + salience), \texttt{cue\_classifier.py} (rules-only)
   \item[$\square$] \texttt{agents/observer.py}, \texttt{scribe.py} (+sparse separation), \texttt{retriever.py}, \texttt{curator.py}
+  \item[$\square$] Bounded queue + workers, CORS for the UI origin, \texttt{/health} shape, \texttt{TOTTIE\_API\_TOKEN} auth on every route
 \end{itemize}
 
 \section{Phase 4 --- MCP}
 \begin{itemize}
-  \item[$\square$] \texttt{mcp/server.py}: 8 tools + 2 resources + \texttt{tottie\_context\_card}
+  \item[$\square$] \texttt{mcp/server.py}: 9 tools (incl. \texttt{memory.confirm}) + 2 resources + \texttt{tottie\_context\_card}
   \item[$\square$] \texttt{--list-tools} prints the surface
 \end{itemize}
 
@@ -39,29 +40,32 @@
 \begin{itemize}
   \item[$\square$] \texttt{POST /write} $\rightarrow$ gated store $\rightarrow$ \texttt{POST /recall} $\rightarrow$ Card + confidence
   \item[$\square$] \texttt{GET /events} SSE stream for the Panel
+  \item[$\square$] \texttt{scripts/seed\_demo.py}: offline demo seeding (never imported by runtime code; auto-seeding is banned)
 \end{itemize}
 
 \section{Phase 6 --- UI}
 \begin{itemize}
   \item[$\square$] \texttt{TottieFace} (5-state machine + frame-set contract + placeholders)
   \item[$\square$] \texttt{ChatStream}, \texttt{MemoryPanel}, \texttt{RoomMap}, \texttt{AblationToggle}, why-surfaced line, Sleep button
+  \item[$\square$] Placeholder sprite frames in \texttt{ui/public/tottie/<state>/} so the app runs before final art lands
 \end{itemize}
 
-\section{Phase 7 --- Reconcile / Tags / Identity / Links / Decay}
+\section{Phase 7 --- Reconcile / Tags / Identity / Links / Rank}
 \begin{itemize}
   \item[$\square$] Reconsolidation (\texttt{valid\_to} / \texttt{supersedes}); labile-on-access
   \item[$\square$] Hierarchical tags / rooms; identity allowlist
   \item[$\square$] \texttt{memory\_links} written on tag/entity/supersede events
-  \item[$\square$] Ranker + Compressor: utility decay + pruning; access boosts utility (testing effect)
+  \item[$\square$] Ranker + Compressor: utility decay + ranking (never delete); access boosts utility (testing effect)
 \end{itemize}
 
 \section{Phase 8 --- Cognition + Integration + Eval}
 \begin{itemize}
-  \item[$\square$] Activator (spreading activation, priming, decay) + Completer (pattern completion)
+  \item[$\square$] Activator (spreading activation, priming, decay) + Completer (rule-based cluster grouping)
   \item[$\square$] Metacognitive Evaluator (confidence) + Prospective Queue (\texttt{memory.intend})
-  \item[$\square$] Consolidator (on-demand Sleep: replay $\rightarrow$ semanticise $\rightarrow$ prune)
+  \item[$\square$] Consolidator (on-demand Sleep: replay $\rightarrow$ semanticise $\rightarrow$ rank/compress)
   \item[$\square$] Mount MCP in VS Code / Cursor (three bodies)
   \item[$\square$] \texttt{eval/harness.py} + \texttt{scenarios.jsonl} (ON/OFF ablation + consolidation check)
+  \item[$\square$] Special checks: revival, surprise-gating, consolidation, quarantine (see \emph{Roadmap})
 \end{itemize}
 
 \section{Phase 9 --- Film}

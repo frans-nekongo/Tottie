@@ -15,7 +15,8 @@ Tool & Signature & Purpose \\
 \texttt{memory.probe} & \texttt{(tag|id)} & Walk into a ``room'' and read its memories \\
 \texttt{memory.identity} & \texttt{()} & Return the pinned identity facts \\
 \texttt{memory.intend} & \texttt{(content, event\_cue?, time\_cue?)} & Register a prospective intention \\
-\texttt{memory.sleep} & \texttt{()} & Consolidation (replay $\rightarrow$ semanticise $\rightarrow$ prune) \\
+\texttt{memory.sleep} & \texttt{()} & Consolidation (replay $\rightarrow$ semanticise $\rightarrow$ rank/compress) \\
+\texttt{memory.confirm} & \texttt{(id)} & Confirm a quarantined memory (pending $\rightarrow$ trusted) \\
 \texttt{memory.forget} & \texttt{(id)} & Right-to-be-forgotten (hard delete) \\
 \bottomrule
 \end{longtable}
