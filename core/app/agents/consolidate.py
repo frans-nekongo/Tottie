@@ -18,6 +18,7 @@ enter because quarantined rows are never replayed.
 import json
 import logging
 
+import numpy as np
 from psycopg.types.json import Json
 
 from ..db import pgvector_literal
@@ -42,6 +43,61 @@ to follow. Empty list [] if nothing generalises."""
 KINDS = {"fact", "preference", "decision", "lesson"}
 LINK_DECAY = 0.9
 LINK_FLOOR = 0.1
+MERGE_COSINE = 0.90
+MERGE_TAG_CAP = 150
+
+
+def _vec(s: str):
+    return np.array(s.strip("[]").split(","), dtype=float)
+
+
+async def merge_tags(db, owner: str) -> dict:
+    """Consolidation merge: fold near-duplicate tags (food/foods) into one,
+    automatically, no human curation. Centroid cosine >= 0.90; the more
+    frequent tag wins. Returns what merged for the ledger."""
+    rows = await db.fetch(
+        "SELECT tags, embedding FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL AND embedding IS NOT NULL",
+        (owner,),
+    )
+    members: dict[str, list] = {}
+    for r in rows:
+        v = _vec(r["embedding"])
+        for t in r["tags"] or []:
+            if t in reconcile.STOP_TAGS:
+                continue
+            members.setdefault(t, []).append(v)
+    freq = {t: len(vs) for t, vs in
+            sorted(members.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+            [:MERGE_TAG_CAP]}
+    cent = {}
+    for t in freq:
+        m = np.mean(members[t], axis=0)
+        cent[t] = m / (np.linalg.norm(m) or 1.0)
+    tags = sorted(freq, key=lambda t: (-freq[t], t))
+    pairs = []
+    for i, a in enumerate(tags):
+        for b in tags[i + 1:]:
+            cos = float(cent[a] @ cent[b])
+            if cos >= MERGE_COSINE:
+                pairs.append((cos, a, b))
+    pairs.sort(reverse=True)
+    merged: list[dict] = []
+    dead: set[str] = set()
+    for cos, a, b in pairs:
+        if a in dead or b in dead:
+            continue
+        keep, drop = (a, b) if freq[a] >= freq[b] else (b, a)
+        await db.execute(
+            "UPDATE memories SET tags = (SELECT array_agg(DISTINCT x) "
+            "FROM unnest(array_replace(tags, %s, %s)) AS x) "
+            "WHERE owner = %s AND valid_to IS NULL AND %s = ANY(tags)",
+            (drop, keep, owner, drop),
+        )
+        dead.add(drop)
+        merged.append({"drop": drop, "keep": keep,
+                       "cosine": round(cos, 3)})
+    return {"merged": len(merged), "pairs": merged}
 
 
 async def consolidate(*, db, embedder, owner: str, session_id: str,
@@ -80,6 +136,7 @@ async def consolidate(*, db, embedder, owner: str, session_id: str,
         "WHERE owner = %s RETURNING id",
         (LINK_FLOOR, LINK_DECAY, owner),
     )
+    merged = await merge_tags(db, owner)
     summary = {
         "episodes_replayed": len(episodes),
         "semantic_written": len(semantic_ids),
@@ -87,6 +144,8 @@ async def consolidate(*, db, embedder, owner: str, session_id: str,
         "semantic_error": semantic_error,
         "ranked_out": len(ranked),
         "links_decayed": len(decayed),
+        "tags_merged": merged["merged"],
+        "merged_pairs": merged["pairs"],
         "tokens": tokens,
     }
     await db.execute(

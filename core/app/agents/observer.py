@@ -15,13 +15,14 @@ from ..config import Settings
 from ..providers.base import complete_resilient
 from ..providers.resolve import resolve_provider
 from . import gates
+from .reconcile import STOP_TAGS
 
 log = logging.getLogger("tottie.observer")
 
 SYSTEM = """You are Tottie's Observer+Scribe. Read one conversation turn and decide what, if anything, is worth remembering.
 Respond with JSON ONLY, exactly this shape, no fences, no prose:
 {"keep": bool, "salience": 0.0-1.0, "candidates": [{"kind": "identity|convention|decision|lesson|preference|event", "subject": str|null, "predicate": str|null, "object": str|null, "content": str, "tags": [str], "principle": str|null}]}
-Rules: keep=false for greetings, thanks, and smalltalk. salience = will-this-matter-later from 0 to 1. content = the durable fact in one sentence. tags = lowercase topic words: one broad category (food, health, work, people, place, money, routine) plus specifics (cheese, vegetarian, gym). Never use kind words (fact, preference, decision, lesson, identity, convention, event) as tags. principle = the general rule if the turn states one, else null. Never invent facts not in the turn."""
+Rules: keep=false for greetings, thanks, and smalltalk. salience = will-this-matter-later from 0 to 1. content = the durable fact in one sentence. kind = the closed claim type, chosen stably: identity is ONLY for name and self-definition; habits, diet, tastes, and states are preference; plans are decision. subject/predicate/object = the claim's triple, always filled when the turn names a doer and a doing (subject owner for I-statements). tags = 2-4 lowercase topic words spanning specific to general (the item, its kind, its domain), drawn from the owner's vocabulary below: reuse every tag that fits (a memory may carry many), and mint new words when nothing fits. Never use kind words (fact, preference, decision, lesson, identity, convention, event) as tags. principle = the general rule if the turn states one, else null. Never invent facts not in the turn."""
 
 KIND_TO_TIER = {
     "identity": "identity",
@@ -111,6 +112,19 @@ def _raw_observation(text: str, salience: float, surprise: float, reason: str) -
     )
 
 
+async def tag_vocabulary(db, owner: str, limit: int = 40) -> list[str]:
+    """The owner's live tag space: tags by live-row frequency, kind-words
+    excluded (they are namespace, not categories). Emergent: nothing here is
+    enumerated by hand; use breeds reuse."""
+    rows = await db.fetch(
+        "SELECT t AS tag, count(*) AS n FROM memories, unnest(tags) AS t "
+        "WHERE owner = %s AND valid_to IS NULL GROUP BY t "
+        "ORDER BY n DESC, t LIMIT %s",
+        (owner, limit + len(STOP_TAGS)),
+    )
+    return [r["tag"] for r in rows if r["tag"] not in STOP_TAGS][:limit]
+
+
 async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     text = turn.text.strip()
     if gates.is_chitchat(text):
@@ -150,9 +164,15 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
         log.warning("no provider (%s); raw fallback", e)
         return _raw_observation(text, 0.5, score, "no provider")
     try:
+        vocab = await tag_vocabulary(db, turn.owner)
+        vocab_line = (
+            f"Owner tag vocabulary (reuse fitting, mint new): "
+            f"{', '.join(vocab)}" if vocab else
+            "Owner tag vocabulary is empty: mint the first tags."
+        )
         messages = [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": f"Turn:\n{text}"},
+            {"role": "user", "content": f"Turn:\n{text}\n{vocab_line}"},
         ]
         # 2048 floor (R1): the reasoning model hit finish=length with empty
         # content on 2/6 live turns at 1024. Cap only pays when needed.
