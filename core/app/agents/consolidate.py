@@ -5,9 +5,13 @@ Semanticise: ONE LLM pass extracts structure true across 2+ episodes and
 writes tier='knowledge' rows, linked from their source episodes (cooccur).
 Sleep never mints identity rows and never replays quarantined rows.
 Rank: stale untouched episodes are flagged ranked_out (ambient legs skip
-them; the deliberate probe still returns them, which is the revival path).
-Decay: owner link weights x0.9 with a 0.1 floor (homeostatic scaling).
-Nothing is deleted; the summary reports rank changes, not losses.
+them; re-mention revives, the probe replays).
+Decay: ASSOCIATIVE link weights (tag/cooccur) x0.9 with a 0.1 floor;
+temporal/supersedes edges are structure, not belief, and never decay.
+Retrieval strength (utility) fades on an Ebbinghaus curve (half-life from
+settings, 0.05 revival floor); retrieval practice (+0.15) and re-mention
+(+0.05) rehearse it back up. Nothing is deleted; the summary reports rank
+changes, not losses.
 
 Trust note: semantic rows carry trust='model_inferred' with
 quarantined=false. That is not a quarantine bypass: the quarantine gate
@@ -134,16 +138,23 @@ async def merge_kinds(db, owner: str) -> dict:
     return await _merge_labels(db, owner, members, MERGE_KIND_CAP, _apply)
 
 
-async def consolidate(*, db, embedder, owner: str, session_id: str,
-                      settings) -> dict:
-    episodes = await db.fetch(
+async def _replay_episodes(db, owner: str, settings) -> list[dict]:
+    """Replay set: recent live episodes, highest prediction error first.
+    Surprise drives consolidation (novelty is what Sleep is FOR); recency
+    breaks ties. Extracted so the order is testable without an LLM."""
+    return await db.fetch(
         "SELECT id, kind, content, summary, tags, salience FROM memories "
         "WHERE owner = %s AND tier = 'episodic' AND valid_to IS NULL "
         "AND NOT quarantined AND NOT ranked_out "
         "AND created_at >= now() - make_interval(days => %s) "
-        "ORDER BY created_at DESC LIMIT %s",
+        "ORDER BY surprise DESC NULLS LAST, created_at DESC LIMIT %s",
         (owner, settings.sleep_window_days, settings.sleep_replay_cap),
     )
+
+
+async def consolidate(*, db, embedder, owner: str, session_id: str,
+                      settings) -> dict:
+    episodes = await _replay_episodes(db, owner, settings)
     by_id = {str(e["id"]): e for e in episodes}
     semantic_ids: list[str] = []
     semantic_error: str | None = None
@@ -167,8 +178,15 @@ async def consolidate(*, db, embedder, owner: str, session_id: str,
     )
     decayed = await db.fetch(
         "UPDATE memory_links SET weight = GREATEST(%s, weight * %s) "
-        "WHERE owner = %s RETURNING id",
+        "WHERE owner = %s AND relation IN ('tag', 'cooccur') RETURNING id",
         (LINK_FLOOR, LINK_DECAY, owner),
+    )
+    faded = await db.fetch(
+        "UPDATE memories SET utility = GREATEST(0.05, utility * "
+        "EXP(-0.693 * EXTRACT(EPOCH FROM "
+        "(now() - COALESCE(last_access, created_at))) / 86400 / %s)) "
+        "WHERE owner = %s AND valid_to IS NULL RETURNING id",
+        (settings.utility_half_life_days, owner),
     )
     merged = await merge_tags(db, owner)
     kinds = await merge_kinds(db, owner)
@@ -179,6 +197,7 @@ async def consolidate(*, db, embedder, owner: str, session_id: str,
         "semantic_error": semantic_error,
         "ranked_out": len(ranked),
         "links_decayed": len(decayed),
+        "utility_faded": len(faded),
         "tags_merged": merged["merged"],
         "merged_pairs": merged["pairs"],
         "kinds_merged": kinds["merged"],

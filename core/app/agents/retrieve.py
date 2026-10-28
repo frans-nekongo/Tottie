@@ -219,10 +219,15 @@ def _why(legs: dict, cue_type: str) -> str:
 
 
 async def _bump_access(db, ids: list[str]) -> None:
+    """Rehearsal on retrieval: serving a hit is retrieval PRACTICE (the
+    testing effect), the strongest rehearsal there is — access_count,
+    last_access, and retrieval strength (utility) all move."""
     if ids:
         await db.execute(
             "UPDATE memories SET access_count = access_count + 1, "
-            "last_access = now() WHERE id = ANY(%s::uuid[])",
+            "last_access = now(), "
+            "utility = LEAST(1.0, utility + 0.15) "
+            "WHERE id = ANY(%s::uuid[])",
             (ids,),
         )
 

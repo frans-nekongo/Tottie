@@ -233,16 +233,17 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
                       supersedes: str | None = None) -> str:
     cur = await conn.execute(
         'INSERT INTO memories (owner, tier, kind, subject, predicate, "object", '
-        "content, tags, principle, salience, surprise, trust, source, "
+        "content, tags, principle, salience, surprise, arousal, trust, source, "
         "embedding, embedding_model, hash, quarantined, needs_curation, "
         "supersedes) VALUES "
-        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s,%s) "
+        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s,%s) "
         "ON CONFLICT (owner, hash) WHERE hash IS NOT NULL "
         "DO NOTHING RETURNING id",
         (
             turn.owner, cand["tier"], cand["kind"], cand["subject"],
             cand["predicate"], cand["object"], cand["content"], cand["tags"],
-            cand["principle"], obs.salience, obs.surprise, turn.trust,
+            cand["principle"], obs.salience, obs.surprise, obs.surprise,
+            turn.trust,
             Json({
                 "session": turn.session_id, "turn": turn.turn,
                 "origin": turn.origin, "client_event_id": turn.client_event_id,

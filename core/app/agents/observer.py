@@ -166,11 +166,13 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     score = round(max(0.0, min(1.0, 1.0 - fam_cos)), 3)
     if fam_id is not None and fam_cos >= settings.familiarity_cosine:
         # Already known: skip the LLM call, but repetition still rehearses
-        # (confidence + access bump) and revives ranked-out rows — the real
-        # revival path, not the probe nobody calls.
+        # (confidence + access + a SMALL utility bump: passive re-mention is
+        # maintenance rehearsal, far weaker than retrieval practice) and
+        # revives ranked-out rows — the real revival path.
         await db.execute(
             "UPDATE memories SET ranked_out = false, "
             "confidence = LEAST(1.0, confidence + 0.1), "
+            "utility = LEAST(1.0, utility + 0.05), "
             "last_access = now(), access_count = access_count + 1 "
             "WHERE id = %s::uuid",
             (fam_id,),

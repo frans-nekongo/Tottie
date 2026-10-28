@@ -91,6 +91,21 @@ async def test_tool_event_quarantines(db):
 
 
 @pytest.mark.asyncio
+async def test_arousal_records_encoding_surprise(db):
+    """Arousal is moment-of-encoding surprise: the column finally carries
+    the value its schema comment always promised."""
+    emb = Embedder(Settings())
+    turn = WorkerTurn(
+        text="We decided to pin all dependencies.",
+        session_id="ar", turn=0, owner="ar",
+        trust="user_direct", origin=None, client_event_id="e1",
+    )
+    await scribe.persist(db=db, embedder=emb, turn=turn, obs=_decision_obs())
+    row = await db.fetchrow("SELECT arousal FROM memories WHERE owner = 'ar'")
+    assert row["arousal"] == pytest.approx(0.9)
+
+
+@pytest.mark.asyncio
 async def test_user_decision_not_quarantined(db):
     emb = Embedder(Settings())
     turn = WorkerTurn(

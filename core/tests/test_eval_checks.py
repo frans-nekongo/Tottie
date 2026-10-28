@@ -176,6 +176,92 @@ async def test_consolidation_sleep_generalises(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_sleep_fades_utility_ebbinghaus(client, db, emb):
+    """Retrieval strength decays exponentially with a 30-day half-life:
+    untouched-for-60-days fades 1.0 -> ~0.25. One episode only, so no LLM
+    runs and the math is exactly checkable."""
+    from app.config import get_settings
+
+    ow = f"eb_{uuid.uuid4().hex[:8]}"
+    mid = await _seed_episode(
+        db, emb, ow, "Dusty memory from long ago.", ["dust"])
+    await db.execute(
+        "UPDATE memories SET utility = 1.0, last_access = now() "
+        "- make_interval(days => 60) WHERE id = %s::uuid",
+        (mid,),
+    )
+    r = await client.post("/consolidate", json={
+        "session_id": ow, "owner": ow,
+    }, headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["utility_faded"] == 1
+    assert get_settings().utility_half_life_days == 30
+    u = await db.fetchval(
+        "SELECT utility FROM memories WHERE id = %s::uuid", (mid,))
+    assert abs(u - 0.25) < 0.02, u
+
+
+@pytest.mark.asyncio
+async def test_sleep_decay_spares_structural_edges(client, db, emb):
+    """Associative weights (tag/cooccur) decay; temporal/supersedes edges
+    are structure and never weaken."""
+    from tests.test_recall import seed as _seed
+
+    ow = f"dc_{uuid.uuid4().hex[:8]}"
+    ids = await _seed(db, emb, ow, [
+        {"name": "a", "content": "First episode.", "tier": "episodic",
+         "kind": "event", "tags": ["x"]},
+        {"name": "b", "content": "A knowledge fact.", "tier": "knowledge",
+         "kind": "fact", "tags": ["y"]},
+    ])
+    for rel in ("tag", "temporal", "supersedes"):
+        await db.execute(
+            "INSERT INTO memory_links (owner, src, dst, relation, weight) "
+            "VALUES (%s, %s::uuid, %s::uuid, %s, 1.0)",
+            (ow, ids["a"], ids["b"], rel),
+        )
+    r = await client.post("/consolidate", json={
+        "session_id": ow, "owner": ow,
+    }, headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["links_decayed"] == 1
+    got = await db.fetch(
+        "SELECT relation, weight FROM memory_links WHERE owner = %s",
+        (ow,),
+    )
+    w = {r["relation"]: r["weight"] for r in got}
+    assert w["tag"] == pytest.approx(0.9), w
+    assert w["temporal"] == 1.0 and w["supersedes"] == 1.0, w
+
+
+@pytest.mark.asyncio
+async def test_replay_orders_by_surprise(db, emb):
+    """Sleep replays highest prediction error first: novelty is what
+    consolidation is FOR. recency only breaks ties."""
+    from app.agents.consolidate import _replay_episodes
+    from app.config import get_settings
+    from tests.test_recall import seed as _seed
+
+    ow = f"rp_{uuid.uuid4().hex[:8]}"
+    ids = await _seed(db, emb, ow, [
+        {"name": "low", "content": "Routine morning coffee.",
+         "tier": "episodic", "kind": "event"},
+        {"name": "high", "content": "Lightning struck the garden shed.",
+         "tier": "episodic", "kind": "event"},
+        {"name": "mid", "content": "Mail arrived a day early.",
+         "tier": "episodic", "kind": "event"},
+    ])
+    for name, s in (("low", 0.1), ("high", 0.9), ("mid", 0.5)):
+        await db.execute(
+            "UPDATE memories SET surprise = %s WHERE id = %s::uuid",
+            (s, ids[name]),
+        )
+    got = await _replay_episodes(db, ow, get_settings())
+    assert [str(r["id"]) for r in got] == [
+        ids["high"], ids["mid"], ids["low"]]
+
+
+@pytest.mark.asyncio
 async def test_revival_ranked_out_returns_via_probe(client, db, emb):
     ow = f"rv_{uuid.uuid4().hex[:8]}"
     mid = await _seed_episode(

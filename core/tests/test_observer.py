@@ -136,6 +136,10 @@ async def test_familiar_repeat_skips_without_llm(db, monkeypatch):
          "content": "BusinessManager todo.txt is currently empty.",
          "tags": ["todos"]},
     ])
+    await db.execute(
+        "UPDATE memories SET utility = 0.5 WHERE id = %s::uuid",
+        (ids["todo"],),
+    )
     _kill_provider(monkeypatch)
     turn = WorkerTurn(
         text="BusinessManager todo.txt is currently empty.",
@@ -149,10 +153,11 @@ async def test_familiar_repeat_skips_without_llm(db, monkeypatch):
     assert obs.provider == "none"
     assert "familiar" in obs.verdict and "already known" in obs.verdict
     row = await db.fetchrow(
-        "SELECT access_count FROM memories WHERE id = %s::uuid",
+        "SELECT access_count, utility FROM memories WHERE id = %s::uuid",
         (ids["todo"],),
     )
     assert row["access_count"] == 1
+    assert row["utility"] == pytest.approx(0.55), dict(row)
 
 
 @pytest.mark.asyncio

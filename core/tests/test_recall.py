@@ -146,6 +146,30 @@ async def test_command_policy_assembles_kit(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_recall_rehearses_utility(client, db, emb):
+    """Serving a hit is retrieval practice (the testing effect): utility
+    climbs +0.15 and access is logged."""
+    ids = await seed(db, emb, OWNER, [
+        {"name": "ramen", "content": "The user adores midnight ramen.",
+         "tags": ["food"]},
+    ])
+    await db.execute(
+        "UPDATE memories SET utility = 0.5 WHERE id = %s::uuid",
+        (ids["ramen"],),
+    )
+    r = await client.post("/recall", json={
+        "query": "midnight ramen", "session_id": "s", "owner": OWNER,
+    }, headers=AUTH)
+    assert ids["ramen"] in {h["id"] for h in r.json()["hits"]}
+    row = await db.fetchrow(
+        "SELECT utility, access_count FROM memories WHERE id = %s::uuid",
+        (ids["ramen"],),
+    )
+    assert row["utility"] == pytest.approx(0.65), dict(row)
+    assert row["access_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_command_policy_boosts_principled_rows(client, db, emb):
     """Actionability emerges from principles, not kind lists: twin rows,
     one carrying a reusable rule — the COMMAND boost ranks it first."""
