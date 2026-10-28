@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     # ---- prospective ----
     replay_n: int = Field(default=50, alias="TOTTIE_REPLAY_N")
 
+    # ---- sleep (consolidation) ----
+    sleep_window_days: int = Field(default=7, alias="TOTTIE_SLEEP_WINDOW_DAYS")
+    sleep_replay_cap: int = Field(default=50, alias="TOTTIE_SLEEP_REPLAY_CAP")
+    sleep_rank_salience: float = Field(
+        default=0.6, alias="TOTTIE_SLEEP_RANK_SALIENCE")
+
     # ---- rate limits ----
     rate_limit_per_min: int = Field(default=60, alias="TOTTIE_RATE_LIMIT_PER_MIN")
     max_rows_per_day: int = Field(default=2000, alias="TOTTIE_MAX_ROWS_PER_DAY")

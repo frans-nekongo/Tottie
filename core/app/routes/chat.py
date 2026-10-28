@@ -59,6 +59,12 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
             k=settings.recall_k, tiers=None, settings=settings,
         )
         card, confidence, abstain = rec["card"], rec["confidence"], rec["abstain"]
+        fired = rec.get("fired_intentions") or []
+        if fired:
+            dues = "\n".join(f"- {f['content']}"[:200] for f in fired)
+            due_block = f"# reminders due\n{dues}"
+            card = f"{card}\n\n{due_block}" if card else due_block
+            abstain = False
         path = rec["path"]
         hits = [{"id": h["id"], "summary": h["summary"], "why": h["why"],
                  "tier": h["tier"]} for h in rec["hits"]]
@@ -99,5 +105,7 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
         "reply": raw.text, "card": card, "confidence": confidence,
         "abstain": abstain, "path": path, "hits": hits, "model": raw.model,
         "event_id": event_id,
+        "tokens": {"prompt": raw.prompt_tokens,
+                   "completion": raw.completion_tokens},
         "latency_ms": int((time.monotonic() - t0) * 1000),
     }

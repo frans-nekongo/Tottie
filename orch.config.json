@@ -37,6 +37,9 @@
           "TOTTIE_HNSW_EF_SEARCH": "100",
           "TOTTIE_INLINE_WRITE": "0",
           "TOTTIE_REPLAY_N": "50",
+          "TOTTIE_SLEEP_WINDOW_DAYS": "7",
+          "TOTTIE_SLEEP_REPLAY_CAP": "50",
+          "TOTTIE_SLEEP_RANK_SALIENCE": "0.6",
           "TOTTIE_RATE_LIMIT_PER_MIN": "60",
           "TOTTIE_MAX_ROWS_PER_DAY": "2000"
         }
@@ -77,6 +80,9 @@
           "TOTTIE_HNSW_EF_SEARCH": "100",
           "TOTTIE_INLINE_WRITE": "0",
           "TOTTIE_REPLAY_N": "50",
+          "TOTTIE_SLEEP_WINDOW_DAYS": "7",
+          "TOTTIE_SLEEP_REPLAY_CAP": "50",
+          "TOTTIE_SLEEP_RANK_SALIENCE": "0.6",
           "TOTTIE_RATE_LIMIT_PER_MIN": "60",
           "TOTTIE_MAX_ROWS_PER_DAY": "2000"
         }
@@ -102,6 +108,9 @@
           "TOTTIE_HNSW_EF_SEARCH": "100",
           "TOTTIE_INLINE_WRITE": "0",
           "TOTTIE_REPLAY_N": "50",
+          "TOTTIE_SLEEP_WINDOW_DAYS": "7",
+          "TOTTIE_SLEEP_REPLAY_CAP": "50",
+          "TOTTIE_SLEEP_RANK_SALIENCE": "0.6",
           "TOTTIE_RATE_LIMIT_PER_MIN": "60",
           "TOTTIE_MAX_ROWS_PER_DAY": "2000"
         }

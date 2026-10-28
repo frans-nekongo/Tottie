@@ -39,7 +39,7 @@ RECENCY_RES = [
     for p in (
         r"\bjust\b", r"\bso far\b", r"\blast \d+\b", r"\brecent\b",
         r"\blately\b", r"\bwhere were we\b", r"\brecap\b",
-        r"\bwhat have we done\b", r"\bwhat did i\b",
+        r"\bwhat have we done\b", r"\bwhat did i\b", r"\bwhat have we\b",
     )
 ]
 TAG_RE = re.compile(r"#([\w/-]+)")

@@ -1,7 +1,8 @@
 """POST /recall — cue-typed associative recall + Context Card.
 
 GET /identity — the ambient identity slice (what the card header shows).
-GET /probe — the deliberate probe: a tag room's live, non-quarantined rows.
+GET /probe — the deliberate probe: a tag room's live rows, ranked-out
+included (the revival path), quarantined excluded.
 Auth is wired in main.py (router-level dependency), same as /write.
 """
 from fastapi import APIRouter, HTTPException, Query, Request, status

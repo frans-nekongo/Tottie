@@ -126,7 +126,11 @@ async def test_confirm_forget_sleep(db):
         assert await db.fetchrow(
             "SELECT 1 FROM memories WHERE id = %s::uuid", (mid,)) is None
         out = await mcp.call_tool("memory.sleep", {})
-        assert json.loads(_text(out))["available"] is False
+        slept = json.loads(_text(out))
+        assert slept["available"] is True  # W5: real Consolidator
+        assert slept["episodes_replayed"] == 0  # store was forgotten above
+        assert slept["semantic_written"] == 0
+        assert slept["semantic_error"] is None
 
 
 @pytest.mark.asyncio

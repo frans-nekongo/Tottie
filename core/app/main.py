@@ -15,7 +15,7 @@ from .config import Settings, get_settings
 from .db import Database
 from .embeddings import Embedder, EmbedderUnavailable
 from .queue import WriteQueue
-from .routes import chat, events, graph, health, memories, recall, write
+from .routes import chat, events, graph, health, memories, recall, sleep, write
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -71,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(memories.router, dependencies=[Depends(require_auth)])
     app.include_router(graph.router, dependencies=[Depends(require_auth)])
     app.include_router(chat.router, dependencies=[Depends(require_auth)])
+    app.include_router(sleep.router, dependencies=[Depends(require_auth)])
     return app
 
 

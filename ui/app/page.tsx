@@ -18,6 +18,8 @@ export default function Home() {
   const [path, setPath] = useState<string[]>([]);
   const [face, setFace] = useState<FaceState>("idle");
   const [busy, setBusy] = useState(false);
+  const [sleeping, setSleeping] = useState(false);
+  const [sleepNote, setSleepNote] = useState<string | null>(null);
   const [graphTick, setGraphTick] = useState(0);
   const faceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -91,11 +93,37 @@ export default function Home() {
         </button>
         <button
           className="action text-sm"
-          disabled
-          title="Consolidation lands in W5 — this button sleeps then."
+          disabled={sleeping || busy}
+          title="Run Sleep: replay episodes into semantic knowledge."
+          onClick={async () => {
+            setSleeping(true);
+            setFace("remembering");
+            setSleepNote("replaying…");
+            try {
+              const r = await fetch("/api/sleep", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: session }),
+              });
+              const j = await r.json();
+              setSleepNote(
+                `${j.episodes_replayed ?? 0} episodic → ` +
+                  `${j.semantic_written ?? 0} semantic; ` +
+                  `${j.ranked_out ?? 0} ranked out` +
+                  (j.semantic_error ? ` (semanticise: ${j.semantic_error})` : "")
+              );
+              setGraphTick((n) => n + 1);
+            } catch {
+              setSleepNote("(core unreachable)");
+            } finally {
+              setSleeping(false);
+              setFace("idle");
+            }
+          }}
         >
-          sleep
+          {sleeping ? "sleeping…" : "sleep"}
         </button>
+        {sleepNote && <p className="text-xs dim mono">{sleepNote}</p>}
       </header>
       {!memory && (
         <p className="text-xs dim card px-3 py-1">

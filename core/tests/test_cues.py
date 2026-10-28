@@ -47,6 +47,8 @@ def test_replay_markers():
     assert classify("What did I just do").replay is True
     assert classify("Recap so far").replay is True
     assert classify("What is my name").replay is False
+    assert classify("What have we talked about?").replay is True
+    assert classify("What have we talked about?").type == "QUESTION"
 
 
 def test_entities():

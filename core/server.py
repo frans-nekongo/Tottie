@@ -15,7 +15,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.agents import memories, observer, retrieve, scribe
+from app.agents import consolidate, memories, observer, retrieve, scribe
 from app.agents.memories import MemoryNotFound, NotOwner
 from app.agents.observer import Observation
 from app.config import Settings
@@ -178,9 +178,13 @@ async def memory_intend(content: str, event_cue: str | None = None,
 
 @mcp.tool(name="memory.sleep")
 async def memory_sleep(ctx: Context = None) -> str:
-    """Consolidation. Honest stub until W5 builds the Consolidator."""
-    return _out({"available": False,
-                 "reason": "consolidation lands in W5; nothing ran"})
+    """Consolidation: replay recent episodes into semantic knowledge, rank
+    out stale rows, decay link weights. Nothing is ever deleted."""
+    st = _state(ctx)
+    out = await consolidate.consolidate(
+        db=st["db"], embedder=st["embedder"],
+        owner=st["settings"].owner, session_id="mcp", settings=st["settings"])
+    return _out({"available": True, **out})
 
 
 @mcp.tool(name="memory.confirm")

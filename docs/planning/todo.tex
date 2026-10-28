@@ -61,17 +61,17 @@
   \item[$\boxtimes$] Hierarchical tags / rooms; identity allowlist
   \item[$\boxtimes$] \texttt{memory\_links} written on tag/entity/supersede events
   \item[$\boxtimes$] Ranker: ranking (never delete); access boosts utility (testing effect); quarantine widened to all claim kinds
-  \item[$\square$] Utility decay + Compressor (ranked-out exists; time-decay and compression still open, W5)
+  \item[$\square$] Utility time-decay + Compressor (rank-out flag + Sleep rank step shipped W5; value decay and compression still open)
 \end{itemize}
 
 \section{Phase 8 --- Cognition + Integration + Eval}
 \begin{itemize}
-  \item[$\square$] Activator (spreading activation, priming, decay) + Completer (rule-based cluster grouping)
-  \item[$\square$] Metacognitive Evaluator (confidence) + Prospective Queue (\texttt{memory.intend})
-  \item[$\square$] Consolidator (on-demand Sleep: replay $\rightarrow$ semanticise $\rightarrow$ rank/compress)
+  \item[$\boxtimes$] Activator (2-hop BFS spreading activation over \texttt{memory\_links}) + Completer (rule-based tag-cluster grouping, \texttt{clusters} on recall)
+  \item[$\boxtimes$] Metacognitive Evaluator (0.4/0.4/0.2 confidence + abstain) + Prospective Queue (\texttt{memory.intend} + write/recall auto-registration + inline firing + chat injection)
+  \item[$\boxtimes$] Consolidator (on-demand Sleep: replay $\rightarrow$ semanticise $\rightarrow$ rank + link decay; time-decay of utility still deferred)
   \item[$\square$] Mount MCP in VS Code / Cursor (three bodies)
-  \item[$\square$] \texttt{eval/harness.py} + \texttt{scenarios.jsonl} (ON/OFF ablation + consolidation check)
-  \item[$\square$] Special checks: revival, surprise-gating, consolidation, quarantine (see \emph{Roadmap})
+  \item[$\boxtimes$] \texttt{eval/harness.py} + \texttt{scenarios.jsonl} (22 scenarios ON/OFF + report: accuracy, contradiction, leak, hit, tokens, p50/p95)
+  \item[$\boxtimes$] Special checks: revival, surprise-gating, consolidation, quarantine (see \emph{Roadmap})
 \end{itemize}
 
 \section{Phase 9 --- Film}

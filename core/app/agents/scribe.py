@@ -11,12 +11,24 @@ import logging
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 
-from . import cues, reconcile
+from . import cues, reconcile, retrieve
 
 log = logging.getLogger("tottie.scribe")
 
 
+async def _maybe_register_intention(db, turn) -> None:
+    """A "remind me..." turn is a prospective registration, not (only) an
+    episode. Runs on the write path so /write setup registers exactly like
+    /chat recall does; register_reminder is idempotent across both."""
+    if cues.classify(turn.text).type != "COMMAND":
+        return
+    draft = cues.parse_reminder(turn.text)
+    if draft:
+        await retrieve.register_reminder(db, turn.owner, draft)
+
+
 async def persist(*, db, embedder, turn, obs) -> str:
+    await _maybe_register_intention(db, turn)
     if not obs.keep:
         try:
             await _event(db, turn, obs, op="SKIP", ops=[], memory_ids=[])

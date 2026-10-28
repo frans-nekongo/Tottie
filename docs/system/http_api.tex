@@ -15,8 +15,8 @@ Endpoint & Purpose & Status \\
 \texttt{GET /identity} & pinned identity facts (zero search) & 200 \\
 \texttt{GET /probe} & read a room (tag) in full & 200 \\
 \texttt{GET /memories} & row browser: filters + id lookup (W4) & 200 \\
-\texttt{POST /intend} & register a prospective intention & MCP/recall only \\
-\texttt{POST /consolidate} & run the Sleep job on demand & W5 \\
+\texttt{POST /intend} & register a prospective intention & MCP tool only \\
+\texttt{POST /consolidate} & run the Sleep job on demand & 200 \\
 \texttt{POST /memories/\{id\}/confirm} & confirm a quarantined memory & 200 \\
 \texttt{POST /forget} & hard delete (right-to-be-forgotten) + audit row & 200 \\
 \texttt{GET /events} & SSE stream with resume & 200 \\
@@ -33,20 +33,25 @@ $\rightarrow$ \texttt{202 \{event\_id\}}. The idempotency key
 
 \texttt{POST /recall}: \texttt{\{query, session\_id, owner, tiers?, k?\}}
 $\rightarrow$ \texttt{\{card, hits:[\{id, tier, kind, summary, tags, score, trust, why\}],
-confidence, abstain, mode, cue, margin, path, candidates\_matched, timeline?,
-fired\_intentions, registered\_intention, latency\_ms\}}.
-The \texttt{why} line per hit is the ``why this surfaced'' annotation; \texttt{fired\_intentions}
-carries any prospective intentions this turn triggered; \texttt{mode} is \texttt{ranked} or
-\texttt{replay} (recency cues bypass ranking for ordered session replay). Verified W2: 32~ms
-over a 100-row store, 10$\times$ inside the 300~ms p95 budget.
+clusters:[\{label, ids, size\}], confidence, abstain, mode, cue, margin, path,
+candidates\_matched, timeline?, fired\_intentions, registered\_intention, latency\_ms\}}.
+The \texttt{why} line per hit is the ``why this surfaced'' annotation;
+\texttt{clusters} is the rule Completer's tag-grouping of the hits (W5);
+\texttt{fired\_intentions} carries any prospective intentions this turn triggered;
+\texttt{mode} is \texttt{ranked} or \texttt{replay} (recency cues bypass ranking for
+ordered session replay). Verified W2: 32~ms over a 100-row store, 10$\times$ inside
+the 300~ms p95 budget.
 
-\texttt{GET /probe?tag=\&owner=} $\rightarrow$ the room's live, non-quarantined
-memories, most salient first (a read, so \texttt{GET} like \texttt{/identity}).
+\texttt{GET /probe?tag=\&owner=} $\rightarrow$ the room's live memories, most salient
+first, ranked-out \emph{included} (the revival path) and quarantined excluded
+(a read, so \texttt{GET} like \texttt{/identity}).
 
 \texttt{POST /chat}: \texttt{\{text, session\_id, owner?, memory=true\}} $\rightarrow$
-\texttt{\{reply, card, confidence, abstain, path, hits, model, event\_id, latency\_ms\}}.
+\texttt{\{reply, card, confidence, abstain, path, hits, model, event\_id,
+tokens:\{prompt, completion\}, latency\_ms\}}.
 One demo turn with no history window (memory replaces context stuffing): recall the card,
-answer grounded in it, enqueue the user turn. \texttt{memory=false} is the ablation OFF arm
+inject any fired intentions as a ``reminders due'' block, answer grounded in it, enqueue
+the user turn. \texttt{memory=false} is the ablation OFF arm
 (raw model, no recall, no write). Replies are never written.
 
 \texttt{GET /memories?owner=\&quarantined?\&kind?\&id?\&limit=} $\rightarrow$ live rows newest
@@ -56,11 +61,15 @@ first (the pending strip reads \texttt{quarantined=true}; node detail reads by \
 salience, created, quarantined\}], links:[\{source, target, relation, weight\}]\}}, capped at
 300 most-salient live rows (links restricted to the returned node set).
 
-\texttt{POST /intend}: \texttt{\{content, owner, event\_cue?, time\_cue?\}} $\rightarrow$
-\texttt{201 \{id\}}. At least one cue is required.
+Prospective registration has no HTTP route: the \texttt{memory.intend} MCP tool plus
+automatic registration of ``remind me\ldots'' turns on both the write path (Scribe, W5)
+and the recall path (\texttt{COMMAND} cue). Registration is idempotent on pending content.
 
-\texttt{POST /consolidate}: \texttt{\{owner, replay\_n?\}} $\rightarrow$
-\texttt{\{episodic\_replayed, semantic\_written, ranked\_out, curated\}}.
+\texttt{POST /consolidate}: \texttt{\{session\_id, owner?\}} $\rightarrow$
+\texttt{\{episodes\_replayed, semantic\_written, semantic\_ids, semantic\_error,
+ranked\_out, links\_decayed, tokens\}} (W5, plus a \texttt{CONSOLIDATE} ledger event).
+Sleep degrades, never dies: if the LLM semanticise step fails, rank + decay still run
+and the summary carries \texttt{semantic\_error}.
 
 \texttt{POST /memories/\{id\}/confirm}: flips \texttt{quarantined} to false, raises trust to
 \texttt{user\_direct}, and writes an audit event. Only the owning user can confirm.

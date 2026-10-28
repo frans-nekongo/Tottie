@@ -31,7 +31,7 @@ SELECT id, leg, rnk FROM (
   SELECT id, 'v' AS leg, row_number() OVER (ORDER BY d) AS rnk FROM (
     SELECT id, embedding <=> %s::vector AS d FROM memories
     WHERE owner = %s AND valid_to IS NULL AND NOT quarantined
-      AND embedding IS NOT NULL {tier}
+      AND NOT ranked_out AND embedding IS NOT NULL {tier}
     ORDER BY d LIMIT {OVERFETCH}
   ) v
   UNION ALL
@@ -39,6 +39,7 @@ SELECT id, leg, rnk FROM (
     SELECT id, ts_rank(to_tsvector('english', content),
       plainto_tsquery('english', %s)) AS r FROM memories
     WHERE owner = %s AND valid_to IS NULL AND NOT quarantined
+      AND NOT ranked_out
       AND to_tsvector('english', content) @@ plainto_tsquery('english', %s)
       {tier}
     ORDER BY r DESC LIMIT {OVERFETCH}
@@ -48,7 +49,7 @@ SELECT id, leg, rnk FROM (
     ORDER BY salience DESC, utility DESC) AS rnk FROM (
     SELECT id, salience, utility FROM memories
     WHERE owner = %s AND valid_to IS NULL AND NOT quarantined
-      AND tags && %s {tier}
+      AND NOT ranked_out AND tags && %s {tier}
     ORDER BY salience DESC, utility DESC LIMIT {OVERFETCH}
   ) a
 ) u"""
@@ -90,8 +91,9 @@ async def check_intentions(db, owner: str, entities: list[str]) -> list[dict]:
 
 async def _bfs(db, owner: str, seeds: list[str], deadline: float) -> dict[str, dict]:
     """2-hop walk over memory_links, both directions (one row per
-    association). Quarantined/superseded rows are never entered: the join
-    filters them before traversal, so links cannot leak poison into hits."""
+    association). Quarantined/superseded/ranked-out rows are never entered:
+    the join filters them before traversal, so links cannot leak poison or
+    retired rows into hits. Only the deliberate probe path sees ranked-out."""
     act = {s: 1.0 for s in seeds}
     found: dict[str, dict] = {}
     frontier = list(seeds)
@@ -101,7 +103,9 @@ async def _bfs(db, owner: str, seeds: list[str], deadline: float) -> dict[str, d
         rows = await db.fetch(
             "SELECT l.src, l.dst, l.relation, l.weight, "
             "ms.valid_to AS s_valid, ms.quarantined AS s_quar, "
-            "md.valid_to AS d_valid, md.quarantined AS d_quar "
+            "ms.ranked_out AS s_rank, "
+            "md.valid_to AS d_valid, md.quarantined AS d_quar, "
+            "md.ranked_out AS d_rank "
             "FROM memory_links l "
             "JOIN memories ms ON ms.id = l.src "
             "JOIN memories md ON md.id = l.dst "
@@ -113,13 +117,15 @@ async def _bfs(db, owner: str, seeds: list[str], deadline: float) -> dict[str, d
         for r in rows:
             src, dst = str(r["src"]), str(r["dst"])
             if src in act and dst not in act:
-                known, other, valid, quar = src, dst, r["d_valid"], r["d_quar"]
+                known, other = src, dst
+                dead = r["d_valid"] is not None or r["d_quar"] or r["d_rank"]
             elif dst in act and src not in act:
-                known, other, valid, quar = dst, src, r["s_valid"], r["s_quar"]
+                known, other = dst, src
+                dead = r["s_valid"] is not None or r["s_quar"] or r["s_rank"]
             else:
                 continue  # cycle guard (both ends already visited)
-            if valid is not None or quar:
-                continue  # never traverse into dead or quarantined rows
+            if dead:
+                continue  # never traverse into dead, quarantined, or ranked-out rows
             a = act[known] * BFS_DECAY * float(r["weight"] or 1.0)
             act[other] = a
             found[other] = {"act": a, "via": r["relation"], "from": known}
@@ -152,6 +158,49 @@ def _confidence(fused: list[tuple[str, dict]], query: str,
     return round(conf, 3), round(margin, 3)
 
 
+def cluster_hits(hits: list[dict]) -> list[dict]:
+    """Rule Completer: group hits that share a tag (union-find, no LLM).
+
+    Each cluster carries its label (most-shared tag), member ids ordered by
+    score, and size. Singletons keep their own cluster so every hit is
+    covered exactly once. Pure function of the hit list: deterministic and
+    fixture-testable."""
+    parent = list(range(len(hits)))
+    tag_first: dict[str, int] = {}
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, h in enumerate(hits):
+        for t in h.get("tags") or []:
+            if t in tag_first:
+                parent[find(i)] = find(tag_first[t])
+            else:
+                tag_first[t] = i
+    groups: dict[int, list[int]] = {}
+    for i in range(len(hits)):
+        groups.setdefault(find(i), []).append(i)
+    clusters = []
+    for members in groups.values():
+        members.sort(key=lambda i: -hits[i].get("score", 0.0))
+        counts: dict[str, int] = {}
+        for i in members:
+            for t in hits[i].get("tags") or []:
+                counts[t] = counts.get(t, 0) + 1
+        label = max(counts, key=lambda t: (counts[t], t)) if counts else "ungrouped"
+        clusters.append({
+            "label": label,
+            "ids": [hits[i]["id"] for i in members],
+            "size": len(members),
+        })
+    order = {h["id"]: h.get("score", 0.0) for h in hits}
+    clusters.sort(key=lambda c: -max(order[i] for i in c["ids"]))
+    return clusters
+
+
 def _why(legs: dict, cue_type: str) -> str:
     parts = []
     if "v" in legs:
@@ -172,9 +221,22 @@ async def _bump_access(db, ids: list[str]) -> None:
         )
 
 
-async def _register_reminder(db, owner: str, draft: dict) -> dict | None:
+async def register_reminder(db, owner: str, draft: dict) -> dict | None:
+    """Shared write/recall registration; idempotent on pending content."""
     if not draft or not draft["content"]:
         return None
+    dup = await db.fetchrow(
+        "SELECT id, content, event_cue, time_cue FROM intentions "
+        "WHERE owner = %s AND status = 'pending' AND content = %s",
+        (owner, draft["content"]),
+    )
+    if dup:  # re-uttered reminder (or a write/recal double path): one row
+        return {
+            "id": str(dup["id"]), "content": dup["content"],
+            "event_cue": dup["event_cue"],
+            "time_cue": dup["time_cue"].isoformat() if dup["time_cue"] else None,
+            "duplicate": True,
+        }
     delta = timedelta(days=draft["days"], hours=draft["hours"])
     time_cue = (
         datetime.now(timezone.utc) + delta if delta.total_seconds() > 0 else None
@@ -222,7 +284,8 @@ async def _contiguity(db, owner: str, winner: dict) -> list[str]:
         return path
     rows = await db.fetch(
         "SELECT id, created_at FROM memories WHERE owner = %s AND tier = 'episodic' "
-        "AND valid_to IS NULL AND NOT quarantined AND source->>'session' = %s "
+        "AND valid_to IS NULL AND NOT quarantined AND NOT ranked_out "
+        "AND source->>'session' = %s "
         "AND id <> %s::uuid ORDER BY created_at",
         (owner, session, path[0]),
     )
@@ -264,7 +327,7 @@ async def recall(*, db, embedder, owner: str, query: str, session_id: str,
     if cue.type == "COMMAND":
         draft = cues.parse_reminder(query)
         if draft:
-            registered = await _register_reminder(db, owner, draft)
+            registered = await register_reminder(db, owner, draft)
     if cue.replay:
         out = await _replay(db, owner, session_id, settings)
     else:
@@ -358,7 +421,8 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
             path = await _contiguity(db, owner, winner)
     return {
         "mode": "ranked", "card": _card(identity, hits, abstain),
-        "hits": hits, "confidence": confidence, "abstain": abstain,
+        "hits": hits, "clusters": cluster_hits(hits),
+        "confidence": confidence, "abstain": abstain,
         "margin": margin, "path": path, "candidates_matched": candidates_matched,
     }
 
@@ -372,9 +436,9 @@ async def _replay(db, owner: str, session_id: str, settings) -> dict:
     )
     if not events:
         return {
-            "mode": "replay", "card": None, "hits": [], "timeline": [],
-            "confidence": 0.0, "abstain": True, "margin": 0.0, "path": [],
-            "candidates_matched": 0,
+            "mode": "replay", "card": None, "hits": [], "clusters": [],
+            "timeline": [], "confidence": 0.0, "abstain": True,
+            "margin": 0.0, "path": [], "candidates_matched": 0,
         }
     mids: list[str] = []
     for e in events:
@@ -385,7 +449,8 @@ async def _replay(db, owner: str, session_id: str, settings) -> dict:
     if mids:
         for r in await db.fetch(
             "SELECT id, tier, kind, content, summary, tags, trust FROM memories "
-            "WHERE id = ANY(%s::uuid[]) AND valid_to IS NULL AND NOT quarantined",
+            "WHERE id = ANY(%s::uuid[]) AND valid_to IS NULL AND NOT quarantined "
+            "AND NOT ranked_out",
             (mids,),
         ):
             by_id[str(r["id"])] = r
@@ -415,7 +480,7 @@ async def _replay(db, owner: str, session_id: str, settings) -> dict:
     card = "# session replay\n" + "\n".join(lines + kept_lines)
     return {
         "mode": "replay", "card": card[:CARD_CHARS], "hits": hits,
-        "timeline": timeline, "confidence": 1.0, "abstain": False,
-        "margin": 1.0, "path": [h["id"] for h in hits],
-        "candidates_matched": len(events),
+        "clusters": cluster_hits(hits), "timeline": timeline,
+        "confidence": 1.0, "abstain": False, "margin": 1.0,
+        "path": [h["id"] for h in hits], "candidates_matched": len(events),
     }
