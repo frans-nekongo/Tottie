@@ -12,10 +12,10 @@ Time & Beat & On screen \\
 0:12 & The problem & Restart = amnesia; the agent re-asks your name. Caption: \emph{``Long context isn't memory.''} \\
 0:30 & The reveal & Sprite wakes; Panel pins Identity \texttt{birthday = Nov 7}. Caption: \emph{``It just\ldots knows.''} \\
 0:52 & Write-time magic & \emph{``I'm vegetarian now''} $\rightarrow$ Panel: \texttt{SUPERSEDE} (old struck through); a new fact $\rightarrow$ Observer verdict + Scribe \texttt{NEW} live. \\
-1:14 & Why this surfaced & Command: \emph{``implement feature A''}. Panel: \texttt{cue=COMMAND $\rightarrow$ seed \#project/A $\rightarrow$ spread 1 hop}. Caption: \emph{``It doesn't search. It associates.''} \\
-\textbf{1:32} & \textbf{The constraint we refused} & \textbf{A memory drops out of the active set: ``utility 0.06 $\rightarrow$ archived'' (greyed, but present). Then the cue arrives --- it returns instantly. Caption: \emph{``We didn't copy the forgetting. We copied the finding.''} Then: \emph{``Not a better memory --- a memory without the bug.''}} \\
-1:52 & Three bodies & Cut to VS Code: the coding agent already knows the stack; it hits a bug; \textbf{autosave} a lesson; a new session recalls the fix. \\
-2:08 & Sleep & Press \textbf{Sleep}. Caption: \emph{``12 moments become 3 lessons.''} Panel: \emph{12 episodic $\rightarrow$ 3 semantic; 4 ranked out}. \\
+1:14 & Why this surfaced & Command: \emph{``implement feature A''}. Card: \texttt{COMMAND $\rightarrow$ tag \#2 + vector \#5} per hit. Caption: \emph{``It doesn't search. It associates.''} \\
+\textbf{1:32} & \textbf{The constraint we refused} & \textbf{Sleep ranks stale rows out: the node greys in the brain graph but stays present (revival is probe-verified in eval). Caption: \emph{``We didn't copy the forgetting. We copied the finding.''} Then: \emph{``Not a better memory --- a memory without the bug.''}} \\
+1:52 & Three bodies (CONDITIONAL: only if the IDE mount lands; else cut to Sleep) & Cut to VS Code: the coding agent already knows the stack; it hits a bug; \textbf{autosave} a lesson; a new session recalls the fix. \\
+2:08 & Sleep & Press \textbf{Sleep}. Caption: \emph{``Moments become lessons.''} Panel prints the live counts (measured reference: \emph{6 episodic $\rightarrow$ 1 semantic; 2 ranked out}). \\
 2:20 & Restart + ablation & Kill the session, reopen, ask an old question $\rightarrow$ knows. Flip \textbf{Tottie OFF} $\rightarrow$ \emph{``I don't know.''} ON $\rightarrow$ knows. \\
 2:42 & Joke + pitch & Caption: \emph{``\ldots everything I was mad at my girlfriend for --- and the one thing that matters: her birthday.''} $\rightarrow$ the aspirational line + repo link. \\
 \bottomrule
@@ -53,3 +53,19 @@ session log (did it form memories? does the recap hold? does the story path chec
 several, keep the best. \textbf{Every take} logs take number + seed + model ids + verdict in a
 run sheet; takes are reviewed the same evening, R-gate style, and only reviewed takes enter the
 edit.
+
+\section{Hallway Test (5 minutes, before filming)}
+Hand a friend the running UI with zero explanation beyond ``talk to it, watch the right side.''
+They think aloud; you only watch and note. Pass criteria: (1) they notice the Panel reacting to
+their first message without prompting; (2) they can say in their own words what a
+\texttt{NEW} / \texttt{SUPERSEDE} badge meant; (3) they find the 3D brain tab unprompted;
+(4) the ablation flip (ON $\rightarrow$ knows, OFF $\rightarrow$ doesn't) surprises them.
+Any criterion missed $\rightarrow$ fix the UI or the shot order \emph{before} rolling takes.
+
+\section{Film-Day Run Sheet (per take)}
+Take no. \underline{\hspace{1.5cm}} Seed/owner \underline{\hspace{2.5cm}} Model
+\underline{\hspace{3cm}} Shot card followed? Y / N. Panel states seen (badges):
+\underline{\hspace{4cm}}. Graph: nodes pulsed? Y / N. Firing path lit? Y / N (if N, cut the
+path beat from this take). Verdict: KEEP / CUT. Notes: \underline{\hspace{6cm}}.
+Pre-roll checklist: one continuous core server (queued turns die on restart); dev DB freshly
+wiped + reseeded; \texttt{?tab=graph} deep link verified; captions draft open.

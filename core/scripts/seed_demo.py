@@ -23,6 +23,8 @@ SEEDS = [
     # (text, kind, tier, subject, predicate, object, tags, trust)
     ("The user's name is Amara.", "identity", "identity", "user", "name",
      "Amara", ["user"], "user_direct"),
+    ("Amara's girlfriend's birthday is Nov 7.", "identity", "identity",
+     "user", "girlfriend_birthday", "Nov 7", ["user"], "user_direct"),
     ("I eat meat with every meal.", "preference", "knowledge", "user", "diet",
      "meat-eater", ["diet"], "user_direct"),
     ("I am vegetarian.", "preference", "knowledge", "user", "diet",

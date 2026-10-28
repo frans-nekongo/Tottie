@@ -44,6 +44,15 @@ async def test_graph_shape_and_tier_filter(client, db, emb):
     assert out["nodes"][0]["label"]
     assert len(out["links"]) == 1
     assert out["links"][0]["source"] == ids["vault"]
+    assert all("ranked_out" in n and "quarantined" in n for n in out["nodes"])
+    await db.execute(
+        "UPDATE memories SET ranked_out = true WHERE id = %s::uuid",
+        (ids["vault"],),
+    )
+    r = await client.get(f"/graph?owner={OWNER}", headers=AUTH)
+    by_id = {n["id"]: n for n in r.json()["nodes"]}
+    assert by_id[ids["vault"]]["ranked_out"] is True  # still shown, greyed
+    assert by_id[ids["name"]]["ranked_out"] is False
     r = await client.get(f"/graph?owner={OWNER}&tiers=identity", headers=AUTH)
     assert {n["tier"] for n in r.json()["nodes"]} == {"identity"}
     r = await client.get("/graph?owner=x&tiers=bogus", headers=AUTH)

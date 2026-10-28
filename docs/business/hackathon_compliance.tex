@@ -8,24 +8,40 @@ author's own repositories (see the Reuse Map), never third-party code or assets 
 own. This repository is public, satisfying the open-source rule.
 
 \section{Feature $\rightarrow$ Commit Ledger}
-This table is updated at every phase gate. Judges can verify each row against \texttt{git log}.
+Every row is a verbatim \texttt{git log} subject on \texttt{main} (verify:
+\texttt{git log --format="\%h \%ad \%s" --date=short}). All dates fall inside the
+2026-10-27 $\rightarrow$ 2026-11-04 building window.
 
-\begin{longtable}{@{}p{0.30\textwidth}p{0.42\textwidth}p{0.20\textwidth}@{}}
+\begin{longtable}{@{}p{0.34\textwidth}p{0.46\textwidth}p{0.12\textwidth}@{}}
 \toprule
-Feature / Component & Commit & Date \\
+Feature / Component & Commit subject & Date \\
 \midrule
-Repo scaffold, env, orch config, docs skeleton & \texttt{chore: scaffold Tottie repo} & 2026-10-27 \\
-LaTeX documentation set (\texttt{docs/master.pdf}) & \texttt{docs: architecture, flows, roadmap, todo} & 2026-10-27 \\
-Beamer demo deck (\texttt{presentation.pdf}) & \texttt{docs: demo deck v1} & 2026-10-27 \\
-Memory engine skeleton (schema, providers, minds) & \texttt{feat(core): memory engine skeleton} & 2026-10-28 \\
-MCP server surface & \texttt{feat(mcp): server surface} & 2026-10-29 \\
-End-to-end memory round-trip & \texttt{feat(core): memory round-trip} & 2026-10-30 \\
-Tottie UI + live Memory Panel + ablation & \texttt{feat(ui): Tottie chat + memory panel} & 2026-10-31 \\
-Reconcile, tag rooms, identity pinning, Lessons & \texttt{feat(core): reconcile + tags + lessons} & 2026-11-01 \\
-MCP-in-IDE integration + eval harness & \texttt{feat: mcp-in-agent integration} & 2026-11-02 \\
-Demo video, README, compliance ledger & \texttt{docs: demo video + compliance} & 2026-11-03 \\
+Repo scaffold + docs skeleton + demo deck &
+\texttt{d5f7658 chore: scaffold Tottie repo, docs (LaTeX-\textgreater PDF), and demo deck} & 2026-10-27 \\
+Cognition model, audits, graph spec, retrieval story (7 docs commits) &
+\texttt{276bb22 \ldots\ f8bc9d1 docs: \ldots\ final pre-dev sweep} & 2026-10-27 \\
+W0 skeleton green + Meta live &
+\texttt{54be6ec W0 skeleton green + Meta live + keys cascade + lesson dogfood} & 2026-10-27 \\
+W1 providers + Observer/Scribe + queue + \texttt{/write} + \texttt{/events} &
+\texttt{436176a W1 green: \ldots\ (22 passed, 1 honest skip)} & 2026-10-27 \\
+R1 locked (floor, resample, chitchat, quarantine) &
+\texttt{e00f978 R1 locked: \ldots\ (27 passed, 1 skip)} & 2026-10-28 \\
+W2 cue classifier + 3-leg recall + RRF + BFS + card + replay &
+\texttt{e2f8c79 W2 green: \ldots\ (48 passed, 1 skip)} & 2026-10-28 \\
+W3 reconciler + labile route + confirm/forget + links &
+\texttt{6a9081c W3 green: \ldots\ (65 passed, 1 skip)} & 2026-10-28 \\
+R2 locked (live 4-step, confidence 0.4/0.4/0.2, schema frozen) &
+\texttt{233a9eb R2 locked: \ldots\ (65 passed, 1 skip)} & 2026-10-28 \\
+W4 MCP stdio 9/2/1 + Panel UI + 3D brain + ablation + seed &
+\texttt{a027b85 W4 green: \ldots\ (76 passed, 1 skip)} & 2026-10-28 \\
+W5 Sleep + rank-out + prospective + Completer + 22-scenario harness &
+\texttt{ab6d6ce W5 green: \ldots\ harness 22/22} & 2026-10-28 \\
+R3 locked (deck synced to actuals, code freeze) &
+\texttt{1aa137b R3 locked: \ldots\ (83 passed, 1 skip)} & 2026-10-28 \\
 \bottomrule
 \end{longtable}
+W6 (film + buffer) and the demo-video commit land after this row; the ledger is
+recompiled with the video link before submission.
 
 \section{Reuse Disclosure}
 Tottie reuses \emph{architectural patterns} from the author's own repositories. It copies no files.

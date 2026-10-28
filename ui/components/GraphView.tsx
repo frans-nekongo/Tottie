@@ -13,6 +13,7 @@ interface Node {
   tags: string[];
   salience: number;
   quarantined: boolean;
+  ranked_out?: boolean;
 }
 interface Link {
   source: string;
@@ -66,7 +67,10 @@ export default function GraphView({
   if (!data) return <p className="dim text-sm">growing the brain…</p>;
   const nodes = data.nodes.map((n) => ({
     ...n,
-    color: n.quarantined ? "#5a5a66" : TIER_COLOR[n.tier] ?? "#e8e6e1",
+    color:
+      n.quarantined || n.ranked_out
+        ? "#5a5a66"
+        : TIER_COLOR[n.tier] ?? "#e8e6e1",
     val: 1 + (n.salience ?? 0.5) * 3,
   }));
   const links = data.links.map((l) => ({

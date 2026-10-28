@@ -13,25 +13,43 @@ Built for the **Meta Global AI Developer Hackathon** — *Indie Developer track*
 
 | Path | What it is |
 |---|---|
-| `core/` | Memory engine — FastAPI + pgvector (384-d) + FastEmbed `bge-small-en-v1.5`. The four minds: **Observer → Scribe → Retriever → Curator**. |
-| `mcp/` | MCP server exposing the memory over stdio (tools + resources + prompt). |
-| `ui/` | **Tottie** (chat + sprite) with the live **Memory Panel** (the X-ray). |
-| `eval/` | ON/OFF ablation harness (with-memory vs without-memory). |
+| `core/app/` | Memory engine — FastAPI + pgvector (384-d) + FastEmbed `bge-small-en-v1.5`. Pipeline: **gates → Observer → Scribe (+reconcile) → retrieve (3 legs + RRF + BFS + card) → Consolidator**. |
+| `core/server.py` | MCP server over stdio: 9 tools, 2 resources, 1 prompt (imports core in-process). |
+| `core/eval/` | 22-scenario ON/OFF ablation harness + the measured report (`reports/w5-2026-10-28.json`). |
+| `ui/` | **Tottie** (chat + sprite) with the live **Memory Panel** (Timeline + 3D brain graph). |
 | `docs/` | The full LaTeX documentation set → `docs/master.pdf`. |
 | `docs/presentation/` | The Beamer demo deck → `docs/presentation/presentation.pdf`. |
 | `docs/planning/` | Roadmap, the master todo, and the 3-minute demo script. |
+
+## Measured (W5 harness, pinned `muse-spark-1.3-contributor`)
+
+**22/22** with memory · **0.0** OFF leak rate · contradiction **4/4** · 1,087 vs 817
+tokens/query · p50 9.4s / p95 13.2s per answer. Suite: **83 passed, 1 skipped**
+(honest provider skip). No full-context baseline was run — the deck claims none.
+
+## Demo video
+
+The 3-minute screen-capture (shot list: `docs/planning/demo_script.tex`) is recorded in
+W6 and linked here on submission.
 
 ## Quickstart
 
 ```bash
 # docs → PDF (you should only ever need to open the PDFs)
 make docs        # → docs/master.pdf            (latexmk -xelatex)
-make deck        # → docs/presentation/presentation.pdf (pdflatex)
+make deck        # → docs/presentation/presentation.pdf (pdflatex ×2)
 
-# run the stack locally (see docs/system/*.tex for details)
-cd core && ./scripts/init_db.sh && python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-./venv/bin/uvicorn app.main:app --port 8765          # memory engine
-cd ../ui && npm install && npm run dev               # Tottie UI on :3055
+# first run (see docs/system/*.tex for details)
+make db core-install ui-install   # Postgres schema, Python venv, node modules
+cp .env.example .env              # set TOTTIE_API_TOKEN + META_API_KEY (never commit)
+
+# run the stack (three terminals, or see orch.config.json)
+make core                         # memory engine on :8765
+make ui                           # Tottie UI on :3055 (dev)
+make mcp                          # MCP stdio server (any host mounts this)
+
+# one-command verification (docs + deck + UI build + full suite)
+make verify
 ```
 
 ## Port map

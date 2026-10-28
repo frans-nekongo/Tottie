@@ -8,9 +8,15 @@ import Timeline, { StreamEvent } from "../components/Timeline";
 import TottieFace, { FaceState } from "../components/TottieFace";
 
 export default function Home() {
-  const [session] = useState(
-    () => `ui-${Math.random().toString(36).slice(2, 8)}`
-  );
+  const [session, setSession] = useState("");
+  useEffect(() => {
+    // Client-only: Math.random / location in useState break SSR hydration
+    // (React #418: server HTML must match the first client render).
+    setSession(`ui-${Math.random().toString(36).slice(2, 8)}`);
+    if (new URLSearchParams(window.location.search).get("tab") === "graph") {
+      setTab("graph");
+    }
+  }, []);
   const [memory, setMemory] = useState(true);
   const [tab, setTab] = useState<"timeline" | "graph">("timeline");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -30,6 +36,10 @@ export default function Home() {
   };
 
   useEffect(() => {
+    if (!session) return;
+    if (new URLSearchParams(window.location.search).get("stream") === "off") {
+      return; // headless gates / stills: no infinite stream to settle
+    }
     const src = new EventSource(`/api/events?session_id=${session}`);
     src.onmessage = (m) => {
       try {
@@ -47,6 +57,7 @@ export default function Home() {
   }, [session]);
 
   const send = async (text: string) => {
+    if (!session) return;
     setMessages((xs) => [...xs, { role: "user", text }]);
     setBusy(true);
     setFace("thinking");
@@ -93,7 +104,7 @@ export default function Home() {
         </button>
         <button
           className="action text-sm"
-          disabled={sleeping || busy}
+          disabled={sleeping || busy || !session}
           title="Run Sleep: replay episodes into semantic knowledge."
           onClick={async () => {
             setSleeping(true);

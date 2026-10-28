@@ -50,8 +50,16 @@ function SvgFace({ state }: { state: FaceState }) {
 }
 
 export default function TottieFace({ state }: { state: FaceState }) {
-  const [png, setPng] = useState(true);
-  useEffect(() => setPng(true), [state]);
+  // SVG first: an SSR'd <img> that 404s can miss onError during hydration
+  // (the error fires before React attaches the listener). Upgrade to PNG
+  // only after a client-side probe proves the frame set exists.
+  const [png, setPng] = useState(false);
+  useEffect(() => {
+    setPng(false);
+    const probe = new Image();
+    probe.onload = () => setPng(true);
+    probe.src = PNG(state);
+  }, [state]);
   if (!png) return <SvgFace state={state} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element

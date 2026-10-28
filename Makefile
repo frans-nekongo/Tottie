@@ -20,9 +20,9 @@ core-install:
 core:
 	cd core && ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765
 
-# ---------- MCP (imports core in-process; needs venv python + core on the path) ----------
+# ---------- MCP stdio server (imports core in-process) ----------
 mcp:
-	cd mcp && PYTHONPATH=../core ../core/venv/bin/python server.py
+	cd core && ./venv/bin/python server.py
 
 # ---------- UI ----------
 ui-install:

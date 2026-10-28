@@ -53,6 +53,18 @@ def _text(out) -> str:
     return out.content[0].text
 
 
+def test_list_tools_cli():
+    proc = subprocess.run(
+        [sys.executable, "server.py", "--list-tools"], cwd=CORE_DIR,
+        env=_env(), capture_output=True, text=True, timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr[-1000:]
+    names = sorted(
+        line.split(":")[0] for line in proc.stdout.splitlines() if line.strip()
+    )
+    assert names == TOOLS
+
+
 @pytest.mark.asyncio
 async def test_list_matches_spec(_test_db):
     async with _session() as mcp:

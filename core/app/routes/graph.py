@@ -29,16 +29,17 @@ async def get_graph(
     who = owner or settings.owner
     if want is None:
         rows = await db.fetch(
-            "SELECT id, content, tier, tags, salience, created_at, quarantined "
-            "FROM memories WHERE owner = %s AND valid_to IS NULL "
-            "ORDER BY salience DESC LIMIT %s",
+            "SELECT id, content, tier, tags, salience, created_at, "
+            "quarantined, ranked_out FROM memories WHERE owner = %s "
+            "AND valid_to IS NULL ORDER BY salience DESC LIMIT %s",
             (who, GRAPH_CAP),
         )
     else:
         rows = await db.fetch(
-            "SELECT id, content, tier, tags, salience, created_at, quarantined "
-            "FROM memories WHERE owner = %s AND valid_to IS NULL "
-            "AND tier = ANY(%s) ORDER BY salience DESC LIMIT %s",
+            "SELECT id, content, tier, tags, salience, created_at, "
+            "quarantined, ranked_out FROM memories WHERE owner = %s "
+            "AND valid_to IS NULL AND tier = ANY(%s) "
+            "ORDER BY salience DESC LIMIT %s",
             (who, want, GRAPH_CAP),
         )
     ids = [str(r["id"]) for r in rows]
@@ -57,6 +58,7 @@ async def get_graph(
             "salience": r["salience"],
             "created": r["created_at"].isoformat() if r["created_at"] else None,
             "quarantined": r["quarantined"],
+            "ranked_out": r["ranked_out"],
         } for r in rows],
         "links": [{
             "source": str(l["src"]), "target": str(l["dst"]),

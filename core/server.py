@@ -251,6 +251,13 @@ async def prompt_context_card() -> str:
 
 
 def main() -> None:
+    if "--list-tools" in sys.argv:
+        import asyncio
+
+        tools = asyncio.run(mcp.list_tools())
+        for t in sorted(tools, key=lambda t: t.name):
+            print(f"{t.name}: {(t.description or '').splitlines()[0][:100]}")
+        return
     if not os.environ.get("TOTTIE_API_TOKEN"):
         print("tottie-mcp: TOTTIE_API_TOKEN not in env; refusing to start",
               file=sys.stderr)
