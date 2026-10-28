@@ -163,10 +163,11 @@ async def _semanticise(db, embedder, owner, session_id, episodes, by_id,
         mid = str(row["id"])
         for s in sources:
             await db.execute(
-                "INSERT INTO memory_links (owner, src, dst, relation, weight) "
-                "VALUES (%s, %s::uuid, %s::uuid, 'cooccur', 1.0) "
+                "INSERT INTO memory_links (owner, src, dst, relation, weight, "
+                "reason) VALUES (%s, %s::uuid, %s::uuid, 'cooccur', 1.0, %s) "
                 "ON CONFLICT (owner, src, dst, relation) DO NOTHING",
-                (owner, s, mid),
+                (owner, s, mid,
+                 "sleep: this episode supports the generalisation"),
             )
         written.append(mid)
     reconcile.note_active(owner, session_id, written)

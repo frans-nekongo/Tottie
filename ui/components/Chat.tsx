@@ -13,6 +13,7 @@ export interface ChatMsg {
   card?: string | null;
   confidence?: number;
   abstain?: boolean;
+  story?: string | null;
 }
 
 export default function Chat({
@@ -57,6 +58,11 @@ export default function Chat({
                   </summary>
                   <pre className="mono whitespace-pre-wrap mt-1">{m.card}</pre>
                 </details>
+              )}
+              {m.role === "tottie" && m.story != null && (
+                <div className="mono text-xs dim mt-1">
+                  why this surfaced → {m.story}
+                </div>
               )}
             </div>
           </div>

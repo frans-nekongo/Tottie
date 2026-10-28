@@ -46,7 +46,7 @@ async def get_graph(
     links = []
     if ids:
         links = await db.fetch(
-            "SELECT src, dst, relation, weight FROM memory_links "
+            "SELECT src, dst, relation, weight, reason FROM memory_links "
             "WHERE owner = %s AND src = ANY(%s::uuid[]) "
             "AND dst = ANY(%s::uuid[])",
             (who, ids, ids),
@@ -63,6 +63,7 @@ async def get_graph(
         "links": [{
             "source": str(l["src"]), "target": str(l["dst"]),
             "relation": l["relation"], "weight": l["weight"],
+            "reason": l["reason"] or l["relation"],
         } for l in links],
     }
 

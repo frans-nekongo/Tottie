@@ -35,6 +35,12 @@ QUARANTINE_TRUSTS = {"tool", "web", "model_inferred"}
 QUARANTINE_KINDS = {"identity", "convention", "decision", "lesson", "preference", "fact"}
 ACTIVE_TTL_S = 600.0
 TAG_LINK_CAP = 3
+# Kind/tier names leak into tags ("preference") and glue unrelated rows.
+# They never form links on their own (the cheese-petite repair).
+STOP_TAGS = frozenset({
+    "fact", "preference", "decision", "lesson", "identity", "convention",
+    "event", "doc", "episodic", "knowledge", "procedural",
+})
 
 _ACTIVE: dict[tuple[str, str], tuple[set[str], float]] = {}
 
@@ -121,22 +127,55 @@ def _pick(matches: list[dict], active: set[str]) -> dict | None:
     return live[0]
 
 
+async def _link(conn, *, owner, src, dst, relation, weight, reason) -> None:
+    await conn.execute(
+        "INSERT INTO memory_links (owner, src, dst, relation, weight, reason) "
+        "VALUES (%s, %s::uuid, %s::uuid, %s, %s, %s) "
+        "ON CONFLICT (owner, src, dst, relation) DO NOTHING",
+        (owner, src, dst, relation, weight, reason),
+    )
+
+
 async def _tag_links(conn, *, owner, quarantined, new_id, tags):
     if not tags:
         return
     cur = await conn.execute(
-        "SELECT id FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "SELECT id, tags FROM memories WHERE owner = %s AND valid_to IS NULL "
         "AND quarantined = %s AND id <> %s::uuid AND tags && %s "
         "ORDER BY salience DESC LIMIT %s",
         (owner, quarantined, new_id, tags, TAG_LINK_CAP),
     )
+    mine = set(tags)
     for r in await cur.fetchall():
-        await conn.execute(
-            "INSERT INTO memory_links (owner, src, dst, relation, weight) "
-            "VALUES (%s, %s::uuid, %s::uuid, 'tag', 1.0) "
-            "ON CONFLICT (owner, src, dst, relation) DO NOTHING",
-            (owner, new_id, str(r["id"])),
+        shared = sorted((mine & set(r["tags"] or [])) - STOP_TAGS)
+        if not shared:
+            continue  # overlap was kind-names only: no link (mush guard)
+        await _link(
+            conn, owner=owner, src=new_id, dst=str(r["id"]),
+            relation="tag", weight=1.0,
+            reason=f"shared tag: {', '.join(shared)}",
         )
+
+
+async def _temporal_link(conn, *, owner, quarantined, new_id, turn):
+    """Session before/after chain (the linked list): the new memory points at
+    the previously formed live row in the same session, so the graph can
+    narrate what came before and after. One edge per memory: bounded."""
+    cur = await conn.execute(
+        "SELECT id, source FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "AND quarantined = %s AND id <> %s::uuid "
+        "AND source->>'session' = %s ORDER BY created_at DESC LIMIT 1",
+        (owner, quarantined, new_id, turn.session_id),
+    )
+    prev = await cur.fetchone()
+    if prev is None:
+        return
+    prev_turn = (prev["source"] or {}).get("turn", "?")
+    await _link(
+        conn, owner=owner, src=new_id, dst=str(prev["id"]),
+        relation="temporal", weight=0.8,
+        reason=f"session order: turn {prev_turn} -> turn {turn.turn}",
+    )
 
 
 async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
@@ -172,15 +211,18 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
         row = await cur.fetchone()
     new_id = str(row["id"])
     if supersedes:
-        await conn.execute(
-            "INSERT INTO memory_links (owner, src, dst, relation, weight) "
-            "VALUES (%s, %s::uuid, %s::uuid, 'supersedes', 1.0) "
-            "ON CONFLICT (owner, src, dst, relation) DO NOTHING",
-            (turn.owner, new_id, supersedes),
+        await _link(
+            conn, owner=turn.owner, src=new_id, dst=supersedes,
+            relation="supersedes", weight=1.0,
+            reason="newer truth replaced this row (valid_to set)",
         )
     await _tag_links(
         conn, owner=turn.owner, quarantined=quarantined,
         new_id=new_id, tags=cand["tags"] or [],
+    )
+    await _temporal_link(
+        conn, owner=turn.owner, quarantined=quarantined,
+        new_id=new_id, turn=turn,
     )
     return new_id
 

@@ -42,8 +42,12 @@ CREATE TABLE memory_links (             -- the associative index ("hippocampus")
   src uuid REFERENCES memories(id) ON DELETE CASCADE,
   dst uuid REFERENCES memories(id) ON DELETE CASCADE,
   relation text NOT NULL, weight real DEFAULT 1.0,
+  reason text,                            -- why this edge exists (its story)
   UNIQUE (owner, src, dst, relation)
 );
+-- relations: tag (shared non-stop tags, reason names them), temporal (session
+-- before/after chain, one edge per memory), supersedes, cooccur (Sleep).
+-- kind/tier names never link alone (migration 004 repaired the mush).
 
 CREATE TABLE intentions (               -- prospective memory ("remind me to...")
   id uuid PRIMARY KEY, owner text NOT NULL, content text NOT NULL,

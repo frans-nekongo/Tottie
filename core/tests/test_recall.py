@@ -285,3 +285,25 @@ async def test_live_write_recall_roundtrip(client, db):
     out = r.json()
     assert out["abstain"] is False, out
     assert "thyme" in " ".join(h["summary"] for h in out["hits"])
+
+
+@pytest.mark.asyncio
+async def test_recall_story_narrates(client, db, emb):
+    ids = await seed(db, emb, "rstory", [
+        {"name": "lake", "content": "The lake cabin has a red canoe.",
+         "tags": ["lake"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "What is at the lake cabin?", "session_id": "rstory",
+        "owner": "rstory",
+    }, headers=AUTH)
+    out = r.json()
+    assert "QUESTION" in out["story"]
+    assert "vector" in out["story"] or "lexical" in out["story"]
+    assert "confidence" in out["story"]
+    r = await client.post("/recall", json={
+        "query": "Anything at all?", "session_id": "rstory",
+        "owner": "rstory_empty",
+    }, headers=AUTH)
+    assert "abstained" in r.json()["story"]
+    assert len(ids) == 1

@@ -47,6 +47,7 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
     abstain = True
     path: list[str] = []
     hits: list[dict] = []
+    story: str | None = None
     if body.memory:
         if request.app.state.embedder is None:
             raise HTTPException(
@@ -59,6 +60,7 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
             k=settings.recall_k, tiers=None, settings=settings,
         )
         card, confidence, abstain = rec["card"], rec["confidence"], rec["abstain"]
+        story = rec["story"]
         fired = rec.get("fired_intentions") or []
         if fired:
             dues = "\n".join(f"- {f['content']}"[:200] for f in fired)
@@ -103,8 +105,8 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
         ))
     return {
         "reply": raw.text, "card": card, "confidence": confidence,
-        "abstain": abstain, "path": path, "hits": hits, "model": raw.model,
-        "event_id": event_id,
+        "abstain": abstain, "path": path, "hits": hits, "story": story,
+        "model": raw.model, "event_id": event_id,
         "tokens": {"prompt": raw.prompt_tokens,
                    "completion": raw.completion_tokens},
         "latency_ms": int((time.monotonic() - t0) * 1000),

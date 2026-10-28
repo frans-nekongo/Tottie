@@ -21,6 +21,7 @@ declare module "react-force-graph-3d" {
     nodeColor?: string | ((n: GraphNode) => string);
     nodeVal?: string | ((n: GraphNode) => number);
     linkColor?: string | ((l: GraphLink) => string);
+    linkLabel?: string | ((l: GraphLink) => string);
     linkWidth?: number | ((l: GraphLink) => number);
     linkDirectionalParticles?: number | ((l: GraphLink) => number);
     linkDirectionalParticleSpeed?: number;

@@ -19,6 +19,7 @@ interface Link {
   source: string;
   target: string;
   relation: string;
+  reason?: string;
 }
 interface Detail {
   content: string;
@@ -65,14 +66,18 @@ export default function GraphView({
 
   if (err) return <p className="dim text-sm">{err}</p>;
   if (!data) return <p className="dim text-sm">growing the brain…</p>;
-  const nodes = data.nodes.map((n) => ({
-    ...n,
-    color:
-      n.quarantined || n.ranked_out
-        ? "#5a5a66"
-        : TIER_COLOR[n.tier] ?? "#e8e6e1",
-    val: 1 + (n.salience ?? 0.5) * 3,
-  }));
+  const nodes = data.nodes.map((n) => {
+    const onPath = pathSet.current.has(n.id);
+    return {
+      ...n,
+      color: onPath
+        ? "#ffffff"
+        : n.quarantined || n.ranked_out
+          ? "#5a5a66"
+          : TIER_COLOR[n.tier] ?? "#e8e6e1",
+      val: (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1),
+    };
+  });
   const links = data.links.map((l) => ({
     ...l,
     color:
@@ -99,6 +104,7 @@ export default function GraphView({
         nodeColor="color"
         nodeVal="val"
         linkColor="color"
+        linkLabel="reason"
         linkWidth={1.2}
         linkDirectionalParticles={onPath}
         linkDirectionalParticleSpeed={0.006}

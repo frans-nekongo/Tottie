@@ -21,7 +21,7 @@ log = logging.getLogger("tottie.observer")
 SYSTEM = """You are Tottie's Observer+Scribe. Read one conversation turn and decide what, if anything, is worth remembering.
 Respond with JSON ONLY, exactly this shape, no fences, no prose:
 {"keep": bool, "salience": 0.0-1.0, "candidates": [{"kind": "identity|convention|decision|lesson|preference|event", "subject": str|null, "predicate": str|null, "object": str|null, "content": str, "tags": [str], "principle": str|null}]}
-Rules: keep=false for greetings, thanks, and smalltalk. salience = will-this-matter-later from 0 to 1. content = the durable fact in one sentence. tags = lowercase topic words. principle = the general rule if the turn states one, else null. Never invent facts not in the turn."""
+Rules: keep=false for greetings, thanks, and smalltalk. salience = will-this-matter-later from 0 to 1. content = the durable fact in one sentence. tags = lowercase topic words: one broad category (food, health, work, people, place, money, routine) plus specifics (cheese, vegetarian, gym). Never use kind words (fact, preference, decision, lesson, identity, convention, event) as tags. principle = the general rule if the turn states one, else null. Never invent facts not in the turn."""
 
 KIND_TO_TIER = {
     "identity": "identity",

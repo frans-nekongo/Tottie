@@ -57,8 +57,10 @@ def main():
     s = sub.add_parser("sleep", help="run consolidation now")
     s.add_argument("--owner", default="owner_local")
     s.add_argument("--session", required=True)
+    rl = sub.add_parser("relink", help="recompute links for old rows (offline)")
+    rl.add_argument("--owner", default="owner_local")
     args = ap.parse_args()
-    if not TOKEN:
+    if not TOKEN and args.cmd != "relink":
         _fail("TOTTIE_API_TOKEN is empty")
     if args.cmd == "brief":
         code, out = _req("POST", "/briefing", {
@@ -88,6 +90,24 @@ def main():
         print(f"{out['episodes_replayed']} episodic -> "
               f"{out['semantic_written']} semantic; "
               f"{out['ranked_out']} ranked out")
+    elif args.cmd == "relink":
+        import asyncio
+
+        sys.path.insert(0, ".")
+        from app.agents import relink as rl_agent
+        from app.config import get_settings
+        from app.db import Database
+
+        async def _run():
+            db = Database(get_settings())
+            await db.open()
+            try:
+                return await rl_agent.relink(db, args.owner)
+            finally:
+                await db.close()
+
+        made = asyncio.run(_run())
+        print(f"relinked {made['temporal']} temporal, {made['tag']} tag")
 
 
 if __name__ == "__main__":

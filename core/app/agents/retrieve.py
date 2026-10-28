@@ -419,11 +419,22 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
         winner = by_id.get(hits[0]["id"])
         if winner is not None:
             path = await _contiguity(db, owner, winner)
+    assoc = sum(1 for h in hits if (h.get("why") or "").startswith("associated"))
+    if abstain:
+        story = (f"{cue.type}: no confident match "
+                 f"({confidence:.2f} < {settings.confidence_floor:.2f}) — abstained")
+    elif hits:
+        story = (f"{cue.type}: {len(hits)} hit(s), top {hits[0]['why']}, "
+                 f"{assoc} associated, path of {len(path)}, "
+                 f"confidence {confidence:.2f}")
+    else:
+        story = f"{cue.type}: store is empty for this cue — abstained"
     return {
         "mode": "ranked", "card": _card(identity, hits, abstain),
         "hits": hits, "clusters": cluster_hits(hits),
         "confidence": confidence, "abstain": abstain,
         "margin": margin, "path": path, "candidates_matched": candidates_matched,
+        "story": story,
     }
 
 
@@ -439,6 +450,7 @@ async def _replay(db, owner: str, session_id: str, settings) -> dict:
             "mode": "replay", "card": None, "hits": [], "clusters": [],
             "timeline": [], "confidence": 0.0, "abstain": True,
             "margin": 0.0, "path": [], "candidates_matched": 0,
+            "story": "RECENCY: session has no turns yet — nothing to replay",
         }
     mids: list[str] = []
     for e in events:
@@ -483,4 +495,6 @@ async def _replay(db, owner: str, session_id: str, settings) -> dict:
         "clusters": cluster_hits(hits), "timeline": timeline,
         "confidence": 1.0, "abstain": False, "margin": 1.0,
         "path": [h["id"] for h in hits], "candidates_matched": len(events),
+        "story": (f"RECENCY: replayed {len(events)} session turn(s), "
+                  f"{len(hits)} kept — no ranking"),
     }

@@ -56,6 +56,18 @@ export default function Home() {
     return () => src.close();
   }, [session]);
 
+  const saidRef = useRef(false);
+  const sendRef = useRef<(t: string) => Promise<void>>(async () => {});
+  useEffect(() => {
+    // ?say= auto-sends once the session exists: fixed film takes + headless gates.
+    if (!session || saidRef.current) return;
+    const say = new URLSearchParams(window.location.search).get("say");
+    if (say && say.trim()) {
+      saidRef.current = true;
+      void sendRef.current(say.trim());
+    }
+  }, [session]);
+
   const send = async (text: string) => {
     if (!session) return;
     setMessages((xs) => [...xs, { role: "user", text }]);
@@ -76,6 +88,7 @@ export default function Home() {
           card: j.card ?? null,
           confidence: j.confidence,
           abstain: j.abstain,
+          story: j.story ?? null,
         },
       ]);
       setPath(j.path ?? []);
@@ -86,6 +99,7 @@ export default function Home() {
       setBusy(false);
     }
   };
+  sendRef.current = send;
 
   return (
     <main className="h-screen max-w-[1440px] mx-auto flex flex-col px-4 py-3 gap-3">

@@ -28,7 +28,7 @@ SEEDS = [
     ("I eat meat with every meal.", "preference", "knowledge", "user", "diet",
      "meat-eater", ["diet"], "user_direct"),
     ("I am vegetarian.", "preference", "knowledge", "user", "diet",
-     "vegetarian", ["diet"], "user_direct"),  # supersedes the meat row
+     "vegetarian", ["diet", "food"], "user_direct"),  # supersedes the meat row
     ("We decided to use Postgres with pgvector for memory storage.",
      "decision", "knowledge", "team", "storage", "postgres-pgvector",
      ["deploy", "project/A"], "user_direct"),
