@@ -1,4 +1,4 @@
-"""W5 eval special checks: surprise-gating, quarantine, consolidation,
+"""W5 eval special checks: familiarity-gating, quarantine, consolidation,
 revival. Real DB + real embedder; LLM steps run against the configured
 provider (skip-with-reason when none is up). The retrieval path is never
 mocked."""
@@ -12,7 +12,7 @@ from app.agents.retrieve import cluster_hits
 from app.config import Settings
 from app.db import pgvector_literal
 from app.embeddings import Embedder
-from app.providers.base import NoProviderAvailable
+from app.providers.base import Completion, NoProviderAvailable
 from app.providers.resolve import resolve_provider
 from tests.conftest import TEST_TOKEN
 
@@ -173,6 +173,98 @@ async def test_consolidation_sleep_generalises(client, db, emb):
         (ow,),
     )
     assert ev is not None, "sleep must leave a ledger event"
+
+
+class CurateStub:
+    name = "stub"
+
+    async def healthy(self) -> bool:
+        return True
+
+    async def complete(self, messages, *, max_tokens=1024, json_object=False,
+                       reasoning_effort=None):
+        return Completion(
+            text='{"keep": true, "salience": 0.7, "candidates": [{'
+            '"kind": "preference", "tier": "knowledge", '
+            '"subject": "owner", "predicate": "hates", "object": "cheese", '
+            '"content": "Owner hates cheese.", '
+            '"tags": ["food", "cheese"], "principle": null}]}',
+            model="stub",
+        )
+
+    async def close(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_sleep_curates_raw_rows(db, emb, monkeypatch):
+    """The revisit pass: a needs_curation row is rewritten in place against
+    the live vocabularies, unflagged, and linked by its new tags."""
+    from app.agents import consolidate as cons_mod
+    from tests.test_recall import seed as _seed
+
+    async def fake_resolve():
+        return CurateStub()
+
+    monkeypatch.setattr(cons_mod, "resolve_provider", fake_resolve)
+    ow = f"cu_{uuid.uuid4().hex[:8]}"
+    ids = await _seed(db, emb, ow, [
+        {"name": "raw", "content": "Cheese is disliked here.",
+         "kind": "event", "tier": "knowledge", "tags": []},
+        {"name": "anchor", "content": "Owner stocks the fridge with food.",
+         "kind": "fact", "tier": "knowledge", "tags": ["food"]},
+    ])
+    await db.execute(
+        "UPDATE memories SET needs_curation = true WHERE id = %s::uuid",
+        (ids["raw"],),
+    )
+    out = await cons_mod._curate_raw(db, ow)
+    assert out == {"curated": 1, "failed": 0}, out
+    row = await db.fetchrow(
+        "SELECT kind, tier, subject, predicate, object, content, tags, "
+        "needs_curation FROM memories WHERE id = %s::uuid",
+        (ids["raw"],),
+    )
+    assert row["kind"] == "preference" and row["tier"] == "knowledge"
+    assert row["subject"] == "owner" and row["predicate"] == "hates"
+    assert row["tags"] == ["food", "cheese"], dict(row)
+    assert row["needs_curation"] is False
+    link = await db.fetchrow(
+        "SELECT reason FROM memory_links WHERE owner = %s "
+        "AND src = %s::uuid AND dst = %s::uuid AND relation = 'tag'",
+        (ow, ids["raw"], ids["anchor"]),
+    )
+    assert link and "food" in link["reason"], link
+
+
+@pytest.mark.asyncio
+async def test_sleep_curate_failure_stays_flagged(db, emb, monkeypatch):
+    """A dead provider fails the pass honestly: the row stays flagged and
+    consolidate() reports curate_error instead of raising."""
+    from app.agents import consolidate as cons_mod
+    from app.config import get_settings
+    from app.providers.base import ProviderError
+
+    async def dead_resolve():
+        raise ProviderError("curator down")
+
+    monkeypatch.setattr(cons_mod, "resolve_provider", dead_resolve)
+    ow = f"cf_{uuid.uuid4().hex[:8]}"
+    mid = await _seed_episode(db, emb, ow, "Muddy unclear memory.", [])
+    await db.execute(
+        "UPDATE memories SET needs_curation = true, tier = 'knowledge' "
+        "WHERE id = %s::uuid",
+        (mid,),
+    )
+    out = await cons_mod.consolidate(
+        db=db, embedder=emb, owner=ow, session_id=ow,
+        settings=get_settings(),
+    )
+    assert out["curate_error"] == "ProviderError", out
+    assert out["raw_curated"] == 0
+    flag = await db.fetchval(
+        "SELECT needs_curation FROM memories WHERE id = %s::uuid", (mid,))
+    assert flag is True
 
 
 @pytest.mark.asyncio
