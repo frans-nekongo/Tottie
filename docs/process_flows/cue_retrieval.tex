@@ -24,9 +24,9 @@ Cue type & Rule (first match wins) \\
 \midrule
 CORRECTION & contains \texttt{actually}, \texttt{no wait}, \texttt{correction}, \texttt{I meant} \\
 REFERENCE & contains \texttt{that} + noun, \texttt{the same}, \texttt{we discussed}, \texttt{you mentioned} \\
+CHITCHAT & strips one leading greeting (\texttt{\^{}(hi|hello|hey)[,.]?\textbackslash s+}), then matches \texttt{\^{}(thanks|thank you|hi|hello|hey|bye|ok|okay|cool|great|how are you|how's it going)[?!.]*\$} (case-insensitive) \\
 QUESTION & ends with \texttt{?}, or starts with who/what/when/where/why/how/which \\
 COMMAND & starts with an imperative verb (implement, add, fix, create, update, refactor, build, write, run, show, remind) \\
-CHITCHAT & strips one leading greeting (\texttt{\^{}(hi|hello|hey)[,.]?\textbackslash s+}), then matches \texttt{\^{}(thanks|thank you|hi|hello|hey|bye|ok|okay|cool|great|how are you|how's it going)[?!.]*\$} (case-insensitive) \\
 STATEMENT & default: anything carrying new information \\
 \bottomrule
 \end{longtable}

@@ -15,7 +15,7 @@ from .config import Settings, get_settings
 from .db import Database
 from .embeddings import Embedder, EmbedderUnavailable
 from .queue import WriteQueue
-from .routes import events, health, write
+from .routes import events, health, recall, write
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -67,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # /events does its own ?token= auth (EventSource cannot set headers).
     app.include_router(events.router)
     app.include_router(write.router, dependencies=[Depends(require_auth)])
+    app.include_router(recall.router, dependencies=[Depends(require_auth)])
     return app
 
 

@@ -42,9 +42,13 @@ returns what it has rather than failing.
 \section{Confidence (Metacognition)}
 \textbf{Trigger:} The final candidate set.
 \textbf{Action / UI State:} The Panel shows a confidence chip (know / verify / abstain).
-\textbf{System Logic:} \texttt{confidence = clamp((top1 - top2) / top1, 0, 1)} blended with slot
-coverage; below \textbf{0.35} the result is flagged ``verify or abstain''. This is the difference
-between hallucinating and saying ``I don't have that''.
+\textbf{System Logic:} \texttt{confidence = 0.7 * clamp((top1 - top2) / top1, 0, 1) + 0.3 *
+coverage}, where coverage is the fraction of query entities found in the hits (vacuously 1.0
+with no entities); below \textbf{0.35} the result is flagged ``verify or abstain''. This is the
+difference between hallucinating and saying ``I don't have that''. Two abstain semantics,
+locked W2: the identity header still rides the card (pinned user truths, not retrieved
+guesses), and \texttt{hits} stay populated for Panel transparency while \texttt{card} carries
+no ranked lines --- the host injects nothing.
 \textbf{Data Flow \& Mutators:} A confidence value attached to the recall event.
 
 \section{Curate and Inject}
@@ -57,7 +61,8 @@ fencing memory content as \emph{data} (never instructions) and appending the ``p
 streamed to the Panel.
 
 \section{Prospective Check (no scheduler)}
-\textbf{Trigger:} Every recall (and every write).
+\textbf{Trigger:} Every recall (write-side checks deferred to W4: the 202 write path has
+no response channel for fired banners until the Panel/MCP surface exists).
 \textbf{System Logic:} There is no background scheduler. Instead, each recall checks the
 Prospective Queue inline: any \texttt{pending} intention whose \texttt{time\_cue} has passed
 fires now (status $\rightarrow$ \texttt{fired}), and any whose \texttt{event\_cue} overlaps the

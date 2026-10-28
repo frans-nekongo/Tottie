@@ -12,7 +12,7 @@ Endpoint & Purpose & Status \\
 \texttt{POST /write} & enqueue a turn for curation & 202 \\
 \texttt{POST /recall} & cue-typed associative recall + Context Card & 200 \\
 \texttt{GET /identity} & pinned identity facts (zero search) & 200 \\
-\texttt{POST /probe} & read a room (tag) in full & 200 \\
+\texttt{GET /probe} & read a room (tag) in full & 200 \\
 \texttt{POST /intend} & register a prospective intention & 201 \\
 \texttt{POST /consolidate} & run the Sleep job on demand & 200 \\
 \texttt{POST /memories/\{id\}/confirm} & confirm a quarantined memory & 200 \\
@@ -30,12 +30,16 @@ $\rightarrow$ \texttt{202 \{event\_id\}}. The idempotency key
 \texttt{event\_id} without double-writing (unique index on \texttt{(owner, hash)}).
 
 \texttt{POST /recall}: \texttt{\{query, session\_id, owner, tiers?, k?\}}
-$\rightarrow$ \texttt{\{card, hits:[\{id, tier, summary, tags, score, trust, why\}], confidence, fired\_intentions\}}.
+$\rightarrow$ \texttt{\{card, hits:[\{id, tier, kind, summary, tags, score, trust, why\}],
+confidence, abstain, mode, cue, margin, path, candidates\_matched, timeline?,
+fired\_intentions, registered\_intention, latency\_ms\}}.
 The \texttt{why} line per hit is the ``why this surfaced'' annotation; \texttt{fired\_intentions}
-carries any prospective intentions this turn triggered.
+carries any prospective intentions this turn triggered; \texttt{mode} is \texttt{ranked} or
+\texttt{replay} (recency cues bypass ranking for ordered session replay). Verified W2: 32~ms
+over a 100-row store, 10$\times$ inside the 300~ms p95 budget.
 
-\texttt{POST /probe}: \texttt{\{tag|id, owner\}} $\rightarrow$ the room's live, non-quarantined
-memories, most salient first, subject to the same token budget as the card.
+\texttt{GET /probe?tag=\&owner=} $\rightarrow$ the room's live, non-quarantined
+memories, most salient first (a read, so \texttt{GET} like \texttt{/identity}).
 
 \texttt{POST /intend}: \texttt{\{content, owner, event\_cue?, time\_cue?\}} $\rightarrow$
 \texttt{201 \{id\}}. At least one cue is required.
