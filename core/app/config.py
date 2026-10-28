@@ -55,7 +55,8 @@ class Settings(BaseSettings):
     reconcile_cosine: float = Field(default=0.86, alias="TOTTIE_RECONCILE_COSINE")
     active_cosine: float = Field(default=0.60, alias="TOTTIE_ACTIVE_COSINE")
     recall_k: int = Field(default=8, alias="TOTTIE_RECALL_K")
-    surprise_floor: float = Field(default=0.25, alias="TOTTIE_SURPRISE_FLOOR")
+    familiarity_cosine: float = Field(
+        default=0.80, alias="TOTTIE_FAMILIARITY_COSINE")
     utility_half_life_days: int = Field(
         default=30, alias="TOTTIE_UTILITY_HALF_LIFE_DAYS"
     )

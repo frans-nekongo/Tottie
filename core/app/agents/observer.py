@@ -1,8 +1,10 @@
 """Observer+Scribe in ONE shared LLM call: score salience, propose candidates.
 
-Flow: heuristic skip -> embed turn -> surprise gate (first-3 bypass) -> single
-structured-output call -> validate -> persist. Any LLM failure degrades to a RAW
-episodic row flagged needs_curation: never lose the turn, never fake structure.
+Flow: heuristic skip -> embed turn -> familiarity gate (vs the STORE) ->
+single structured-output call (minimal reasoning: a clerk, not a thinker) ->
+validate -> persist. Any LLM failure degrades to a RAW episodic row flagged
+needs_curation: never lose the turn, never fake structure. The verdict names
+the failure class so the ledger stays self-diagnosing.
 LLM latency + token usage ride on the Observation into the event ledger.
 """
 import json
@@ -12,6 +14,7 @@ import time
 from pydantic import BaseModel, Field, ValidationError
 
 from ..config import Settings
+from ..db import pgvector_literal
 from ..providers.base import complete_resilient
 from ..providers.resolve import resolve_provider
 from . import gates
@@ -125,6 +128,25 @@ async def tag_vocabulary(db, owner: str, limit: int = 40) -> list[str]:
     return [r["tag"] for r in rows if r["tag"] not in STOP_TAGS][:limit]
 
 
+async def _familiarity(db, owner: str, vec) -> tuple[float, str | None, bool]:
+    """Nearest live-or-ranked row: (cosine, id, ranked_out). The gate
+    compares input to MEMORY, never to recent chatter: a session-centroid
+    gate punished sustained topical work and dropped the night's most
+    important fact (turn 10 scored 0.25 vs the business centroid while
+    0.68-novel vs the store). Calibrated live: repeat 1.00, paraphrase
+    0.88, topical-novel 0.68, unrelated 0.32 -> floor 0.80."""
+    row = await db.fetchrow(
+        "SELECT id, 1 - (embedding <=> %s::vector) AS cos, ranked_out "
+        "FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "AND NOT quarantined AND embedding IS NOT NULL "
+        "ORDER BY embedding <=> %s::vector LIMIT 1",
+        (pgvector_literal(vec), owner, pgvector_literal(vec)),
+    )
+    if row is None:
+        return 0.0, None, False
+    return float(row["cos"]), str(row["id"]), bool(row["ranked_out"])
+
+
 async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     text = turn.text.strip()
     if gates.is_chitchat(text):
@@ -133,27 +155,24 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
             verdict="heuristic: chitchat", provider="none",
         )
     vec, _ = await embedder.embed(text)
-    recent = await db.fetch(
-        "SELECT utterance AS t FROM memory_events "
-        "WHERE owner = %s AND session_id = %s AND utterance IS NOT NULL "
-        "ORDER BY id DESC LIMIT 10",
-        (turn.owner, turn.session_id),
-    )
-    recent_vecs = []
-    for r in recent:
-        v, _ = await embedder.embed(r["t"])
-        recent_vecs.append(v)
-    score, passed = gates.surprise_score(vec, recent_vecs, settings.surprise_floor)
-    count = await db.fetchval(
-        "SELECT count(*) FROM memory_events WHERE owner = %s AND session_id = %s",
-        (turn.owner, turn.session_id),
-    )
-    if gates.first_turns_bypass(count or 0):
-        passed = True
-    if not passed:
+    fam_cos, fam_id, fam_ranked = await _familiarity(db, turn.owner, vec)
+    score = round(max(0.0, min(1.0, 1.0 - fam_cos)), 3)
+    if fam_id is not None and fam_cos >= settings.familiarity_cosine:
+        # Already known: skip the LLM call, but repetition still rehearses
+        # (confidence + access bump) and revives ranked-out rows — the real
+        # revival path, not the probe nobody calls.
+        await db.execute(
+            "UPDATE memories SET ranked_out = false, "
+            "confidence = LEAST(1.0, confidence + 0.1), "
+            "last_access = now(), access_count = access_count + 1 "
+            "WHERE id = %s::uuid",
+            (fam_id,),
+        )
         return Observation(
             keep=False, salience=0.0, surprise=score, candidates=[],
-            verdict=f"surprise {score:.2f} < {settings.surprise_floor:.2f}",
+            verdict=f"familiar {fam_cos:.2f} >= "
+            f"{settings.familiarity_cosine:.2f} (already known"
+            f"{' + revived' if fam_ranked else ''})",
             provider="none",
         )
     prompt_tokens = completion_tokens = 0
@@ -163,7 +182,8 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
         provider = await resolve_provider()
     except Exception as e:
         log.warning("no provider (%s); raw fallback", e)
-        return _raw_observation(text, 0.5, score, "no provider")
+        return _raw_observation(
+            text, 0.5, score, f"no provider: {type(e).__name__}: {e}")
     try:
         vocab = await tag_vocabulary(db, turn.owner)
         vocab_line = (
@@ -175,10 +195,12 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": f"Turn:\n{text}\n{vocab_line}"},
         ]
-        # 2048 floor (R1): the reasoning model hit finish=length with empty
-        # content on 2/6 live turns at 1024. Cap only pays when needed.
+        # Minimal reasoning: the Observer is a clerk, not a thinker. At
+        # default effort the reasoning model burned 2046/2048 tokens thinking
+        # and returned nothing (6/6 live turns RAW); minimal lands in ~400.
         raw = await complete_resilient(
-            provider, messages, max_tokens=2048, json_object=True)
+            provider, messages, max_tokens=2048, json_object=True,
+            reasoning_effort="minimal")
         resampled = raw.resampled
         prompt_tokens += raw.prompt_tokens
         completion_tokens += raw.completion_tokens
@@ -196,13 +218,16 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
                 ],
                 max_tokens=2048,
                 json_object=True,
+                reasoning_effort="minimal",
             )
             prompt_tokens += repair.prompt_tokens
             completion_tokens += repair.completion_tokens
             out = _parse_output(repair.text)
     except Exception as e:
         log.warning("observe LLM failed (%s); raw fallback", e)
-        return _raw_observation(text, 0.5, score, "llm failed")
+        return _raw_observation(
+            text, 0.5, score,
+            f"llm failed: {type(e).__name__}: {str(e)[:120]}")
     finally:
         await provider.close()
     latency_ms = int((time.monotonic() - t0) * 1000)

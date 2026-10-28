@@ -176,6 +176,7 @@ async def _semanticise(db, embedder, owner, session_id, episodes, by_id,
             provider,
             [{"role": "user", "content": SEMANTICISE % listed}],
             max_tokens=2048, json_object=True,
+            reasoning_effort="minimal",  # extraction clerk, not a thinker
         )
     finally:
         await provider.close()

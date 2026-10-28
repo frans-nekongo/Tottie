@@ -24,20 +24,10 @@ def test_cosine_basics():
     assert gates.cosine([0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
-def test_surprise_centroid_math():
-    recent = [[1.0, 0.0], [0.0, 1.0]]
-    # identical to centroid direction -> low surprise
-    score, passed = gates.surprise_score([1.0, 1.0], recent, floor=0.20)
-    assert score < 0.01 and passed is False
-    # orthogonal-ish to centroid -> high surprise
-    score, passed = gates.surprise_score([-1.0, -1.0], recent, floor=0.20)
-    assert score > 0.9 and passed is True
-    # no history: always passes with full score
-    score, passed = gates.surprise_score([1.0, 0.0], [], floor=0.20)
-    assert (score, passed) == (1.0, True)
-
-
-def test_first_turns_bypass():
-    assert gates.first_turns_bypass(0) is True
-    assert gates.first_turns_bypass(2) is True
-    assert gates.first_turns_bypass(3) is False
+def test_centroid_gate_is_gone():
+    """The session-centroid surprise gate punished sustained topical work
+    and died on dogfood night; familiarity-vs-store replaced it. This pins
+    the removal so nobody resurrects the corpse."""
+    assert not hasattr(gates, "surprise_score")
+    assert not hasattr(gates, "first_turns_bypass")
+    assert not hasattr(gates, "centroid")

@@ -1,5 +1,12 @@
-"""Deterministic gates: heuristic prefilter, attention, surprise. Pure math and
-rules — no LLM. Mirrors the frozen cue-table chitchat pattern."""
+"""Deterministic gates: heuristic prefilter + vector math. Pure math and
+rules — no LLM. Mirrors the frozen cue-table chitchat pattern.
+
+The session-centroid surprise gate lived here until dogfood night proved it
+punished sustained topical work (it dropped the night's most important fact
+at 0.25-vs-centroid while 0.68-novel-vs-store). The gate is now familiarity
+against the STORE (observer._familiarity): the brain compares input to
+memory, never to recent chatter.
+"""
 import math
 import re
 
@@ -10,8 +17,6 @@ CHITCHAT_RE = re.compile(
 )
 # "hey, how are you?" — strip one leading greeting so combos still match.
 _GREET_PREFIX_RE = re.compile(r"^(hi|hello|hey)[,.]?\s+", re.IGNORECASE)
-
-FIRST_TURNS_ALWAYS_LAND = 3
 
 
 def is_chitchat(text: str) -> bool:
@@ -26,25 +31,3 @@ def cosine(a: list[float], b: list[float]) -> float:
     if na == 0.0 or nb == 0.0:
         return 0.0
     return max(-1.0, min(1.0, dot / (na * nb)))
-
-
-def centroid(vecs: list[list[float]]) -> list[float]:
-    n = len(vecs)
-    dim = len(vecs[0])
-    return [sum(v[i] for v in vecs) / n for i in range(dim)]
-
-
-def surprise_score(
-    turn_vec: list[float], recent_vecs: list[list[float]], floor: float
-) -> tuple[float, bool]:
-    """Novelty = 1 - cos(turn, centroid of recent turns). With no history there
-    is nothing to be unsurprising against: score 1.0, always passes."""
-    if not recent_vecs:
-        return 1.0, True
-    score = max(0.0, min(1.0, 1.0 - cosine(turn_vec, centroid(recent_vecs))))
-    return score, score >= floor
-
-
-def first_turns_bypass(session_event_count: int) -> bool:
-    """First real facts always land: new sessions skip the surprise floor."""
-    return session_event_count < FIRST_TURNS_ALWAYS_LAND

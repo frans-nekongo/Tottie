@@ -26,8 +26,12 @@ class LocalProvider(ModelProvider):
             return False
 
     async def complete(
-        self, messages: list[dict], *, max_tokens: int = 1024, json_object: bool = False
+        self, messages: list[dict], *, max_tokens: int = 1024,
+        json_object: bool = False, reasoning_effort: str | None = None,
     ) -> Completion:
+        # Ollama native API has no reasoning-effort knob; accepted and
+        # ignored so clerk callers stay provider-agnostic.
+        _ = reasoning_effort
         body: dict = {
             "model": self._model,
             "messages": messages,

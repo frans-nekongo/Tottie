@@ -13,6 +13,26 @@ import json
 import os
 import sys
 import urllib.request
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """Honor the docstring: Tottie/.env fills what the environment lacks.
+    Stdlib only. Real environment always wins over the file."""
+    env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
 
 CORE = os.environ.get("TOTTIE_CORE_URL", "http://127.0.0.1:8765")
 TOKEN = os.environ.get("TOTTIE_API_TOKEN", "")

@@ -29,7 +29,8 @@ class ModelProvider:
         raise NotImplementedError
 
     async def complete(
-        self, messages: list[dict], *, max_tokens: int = 1024, json_object: bool = False
+        self, messages: list[dict], *, max_tokens: int = 1024,
+        json_object: bool = False, reasoning_effort: str | None = None,
     ) -> Completion:
         raise NotImplementedError
 
@@ -39,16 +40,20 @@ class ModelProvider:
 
 async def complete_resilient(provider: "ModelProvider", messages: list[dict], *,
                              max_tokens: int, json_object: bool = False,
+                             reasoning_effort: str | None = None,
                              retries: int = 1) -> Completion:
     """Complete with resampling on reasoning spirals. A finish=length with
     empty content means the model's reasoning ate the budget, not that the
     input is bad — R1 proved the identical retry then succeeds. Only the
-    surviving attempt's tokens are countable (the error carries no usage)."""
+    surviving attempt's tokens are countable (the error carries no usage).
+    reasoning_effort (e.g. "minimal") is honored by providers that support
+    it and ignored by the rest: clerk tasks must not pay thinker budgets."""
     last: ProviderError | None = None
     for attempt in range(retries + 1):
         try:
             raw = await provider.complete(
-                messages, max_tokens=max_tokens, json_object=json_object)
+                messages, max_tokens=max_tokens, json_object=json_object,
+                reasoning_effort=reasoning_effort)
             raw.resampled = attempt > 0
             return raw
         except ProviderError as e:

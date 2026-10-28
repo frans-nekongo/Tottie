@@ -33,7 +33,8 @@ class MetaProvider(ModelProvider):
             return False
 
     async def complete(
-        self, messages: list[dict], *, max_tokens: int = 1024, json_object: bool = False
+        self, messages: list[dict], *, max_tokens: int = 1024,
+        json_object: bool = False, reasoning_effort: str | None = None,
     ) -> Completion:
         body: dict = {
             "model": self._model,
@@ -43,6 +44,8 @@ class MetaProvider(ModelProvider):
         }
         if json_object:
             body["response_format"] = {"type": "json_object"}
+        if reasoning_effort:
+            body["reasoning_effort"] = reasoning_effort
         try:
             r = await self._client.post(
                 f"{self._base}/chat/completions", json=body, headers=self._headers()
