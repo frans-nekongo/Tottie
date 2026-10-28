@@ -72,6 +72,20 @@ feature, unjudgeable in 9 days); KEEP W6 film+buffer; CUT retrieval-induced forg
 the open-weights bonus chase (API-first stands; local stays fallback). \textbf{Schema frozen:}
 migrations only from here.
 
+\subsection{R3 Outcome (2026-10-28, locked)}
+Harness read as a judge: 22/22 ON, 0.0 OFF leak, contradiction 4/4, hit 22/22,
+1{,}087 vs 817 tokens/query, p50 9.4\,s / p95 13.2\,s
+(\texttt{eval/reports/w5-2026-10-28.json}). No calibration change: floors and weights
+stay (green numbers are not fiddled with). One prompt fix in-gate: semanticise merged
+shallow (``Monday squats 5x5'') --- a prefer-broader-items rule now yields true
+generalisations (``follows a weekly gym routine''), measured 6 episodic $\rightarrow$
+1 semantic with 2 ranked out. Deck cut hard: the unmeasured 91\%/90\%-vs-full-context
+headline is gone (no baseline was ever run), $\sim$40 items $\rightarrow$ 22, ``compresses''
+$\rightarrow$ ``ranks out'', RoomMap $\rightarrow$ chips, the VS-Code money shot reframed as
+the W6 film bet. \textbf{Direction call:} KEEP W6 film+buffer exactly as planned (dev-DB
+wipe+reseed, web3d gates, hallway test, then film); the second-host money shot is a bet
+with a clean fallback (cut the line, film chat+Panel only). Code freeze except bugfixes.
+
 \section{Coverage and Estimation Discipline}
 \textbf{The Joel Test} (notebook audit: 6/11, five gaps closed here): one-step build
 (\texttt{make verify}), CI on every push (\texttt{.github/workflows/ci.yml}: pytest on a pgvector

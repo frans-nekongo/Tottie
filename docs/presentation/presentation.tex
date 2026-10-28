@@ -102,7 +102,7 @@
     \centering
     \begin{tikzpicture}[node distance=0.7cm]
       \node[bx] (ui) {Tottie UI\\chat + panel};
-      \node[bx,right=1.3cm of ui] (ide) {Coding agent\\(VS Code)};
+      \node[bx,right=1.3cm of ui] (ide) {Any MCP host\\(IDE agent, \ldots)};
       \node[pbox,below=0.7cm of ui] (mcp) {MCP server};
       \node[abx,below=0.7cm of mcp] (core) {Surprise Gate $\cdot$ Salience $\cdot$ Scribe $\cdot$ Activator $\cdot$ Ranker $\cdot$ Consolidator};
       \node[abx,below=0.7cm of core] (db) {Postgres + pgvector + links};
@@ -144,7 +144,7 @@
     $\triangleright$ IDENTITY (pinned) user=Frans - girlfriend birthday = Nov 7\\
     $\triangleright$ EPISODIC 2026-10-29 decided: pgvector, not Qdrant \#tottie \#decision\\
     $\triangleright$ KNOWLEDGE (telecom-arch.pdf p.7) Server C behind A/B \#telecom \#infra\\
-    $\rightarrow$ why: cue=COMMAND $\rightarrow$ seed \#tottie $\rightarrow$ spread 1 hop
+    $\rightarrow$ why: COMMAND $\rightarrow$ tag \#2 + vector \#5 (per hit)
   \end{block}
   \begin{itemize}
     \item \textbf{Ambient} --- the card is always there; the agent ``just knows.''
@@ -172,7 +172,7 @@
   \end{block}
   \begin{itemize}
     \item From the cue's nodes, \textbf{activation spreads} along memory links and \textbf{decays}.
-    \item Then \textbf{pattern completion} reconstructs the whole coherent context.
+    \item Then \textbf{pattern completion} groups the coherent context (rule-based clustering).
     \item Three legs, fused: \textbf{semantic + lexical + associative}.
     \item This is why a memory from fifteen years ago surfaces the moment someone mentions a band.
   \end{itemize}
@@ -210,7 +210,7 @@
     \begin{column}{0.48\textwidth}
       \begin{alertblock}{Tottie}
         Everything stays \emph{available}; only the cued subset is \emph{accessible}. We keep the
-        mechanism and drop the bug --- \textbf{the cue always works}.
+        mechanism and drop the bug --- the deliberate cue still works after rank-out (revival check).
       \end{alertblock}
     \end{column}
   \end{columns}
@@ -247,7 +247,8 @@
 \begin{frame}{Then it sleeps --- and generalises.}
   \begin{block}{The Consolidator (``Sleep'')}
     Replays recent episodic memories, extracts recurring structure into \textbf{semantic} knowledge, and
-    compresses what is never used. \emph{12 episodic $\rightarrow$ 3 semantic; 4 ranked out.}
+    ranks out what is never recalled. Measured: \emph{6 episodic $\rightarrow$ 1 semantic;
+    2 ranked out} --- six gym logs became ``follows a weekly gym routine.''
   \end{block}
   \begin{itemize}
     \item The neurological analogue: hippocampal replay during sleep builds neocortical knowledge.
@@ -279,11 +280,12 @@
 \begin{frame}{One brain. Three bodies.}
   \begin{columns}
     \begin{column}{0.33\textwidth}\begin{block}{Tottie}Chat + sprite. Remembers your \emph{life}.\end{block}\end{column}
-    \begin{column}{0.33\textwidth}\begin{block}{Coding agent}Same MCP server in VS Code. Knows your \emph{stack}; autosaves fixes.\end{block}\end{column}
+    \begin{column}{0.33\textwidth}\begin{block}{Any MCP host}One stdio server mounts anywhere --- IDE agents included.\end{block}\end{column}
     \begin{column}{0.33\textwidth}\begin{block}{Memory Panel}The live X-ray. Watch it think.\end{block}\end{column}
   \end{columns}
   \vfill
-  \centering \textbf{The money shot:} add a fact in the chat, then ask your coding agent --- it already knows.
+  \centering \textbf{The money shot (W6 film beat):} add a fact in the chat, then ask from a second
+  host --- it already knows.
 \end{frame}
 
 \begin{frame}{The Memory Panel: the invisible, made visible}
@@ -291,8 +293,8 @@
   \begin{enumerate}
     \item \textbf{Learning now} --- Observer verdict (KEEP/DISCARD, salience, \textbf{surprise}).
     \item \textbf{Memories formed} --- \texttt{NEW} / \texttt{UPDATE} / \texttt{SUPERSEDE} / \texttt{SKIP}, with the text.
-    \item \textbf{Where it inserted them} --- tier chip + tag/room chips + a growing room map.
-    \item \textbf{Why this surfaced} --- \texttt{cue=COMMAND $\rightarrow$ seed $\rightarrow$ spread 1 hop}, plus the card received.
+    \item \textbf{Where it inserted them} --- tier chip + tag/room chips.
+    \item \textbf{Why this surfaced} --- per-hit \texttt{why} lines ride in the card text beside the chat.
   \end{enumerate}
   \vfill
   \begin{block}{Why this is the hero}
@@ -302,15 +304,15 @@
 
 \begin{frame}{We do not ask you to trust it. We measure it.}
   \begin{itemize}
-    \item A \textbf{$\sim$40-item} suite across LongMemEval's categories plus contradiction resolution
-    and abstention.
-    \item Every item runs \textbf{memory ON vs OFF} --- the ablation that proves memory caused the answer.
-    \item Metrics: answer accuracy, memory-hit@k, contradiction-correctness, tokens/query, p50/p95 latency.
+    \item A \textbf{22-scenario} harness: fact recall, contradiction/correction, prospective
+    firing, session replay --- plus revival, surprise-gating, consolidation, quarantine checks.
+    \item Every scenario runs \textbf{memory ON vs OFF} --- the ablation that proves memory caused
+    the answer. Model pinned: \texttt{muse-spark-1.3-contributor}.
   \end{itemize}
   \vfill
-  \begin{alertblock}{The headline}
-    \textbf{91\% lower p95 latency} and \textbf{90\% fewer tokens} than full-context, for a small
-    accuracy trade --- the write-time curation argument, made falsifiable.
+  \begin{alertblock}{Measured, Oct 28 ({\ttfamily eval/reports/w5-2026-10-28.json})}
+    \textbf{22/22} with memory; \textbf{0.0} OFF leak rate; contradiction \textbf{4/4};
+    1{,}087 vs 817 tokens/query; p50 9.4\,s / p95 13.2\,s per answer.
   \end{alertblock}
 \end{frame}
 
@@ -320,9 +322,9 @@
     Component & \\
     \midrule
     \texttt{core/} & Engine: Surprise Gate, Salience, Scribe, Activator, Ranker, Consolidator, Reconciler, Prospective Queue \\
-    \texttt{mcp/} & MCP server: 9 tools, 2 resources, the context-card prompt \\
+    \texttt{core/server.py} & MCP server (stdio): 9 tools, 2 resources, the context-card prompt \\
     \texttt{ui/} & Tottie chat, sprite state machine, live Memory Panel, why-surfaced, Sleep, ablation, pending strip \\
-    \texttt{eval/} & ON/OFF ablation harness + consolidation, surprise-gating and revival checks \\
+    \texttt{eval/} & 22-scenario ON/OFF harness + revival, surprise-gating, consolidation, quarantine checks \\
     \texttt{docs/} & Cognition model, security model, performance model + this deck (LaTeX $\rightarrow$ PDF) \\
     \bottomrule
   \end{tabularx}
