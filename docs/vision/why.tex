@@ -10,6 +10,33 @@ The naive fix is a bigger context window. That is not memory --- it is an expens
 input length grows, cost rises linearly, latency rises super-linearly, and accuracy \emph{drops}
 (the ``lost in the middle'' effect). Long context is a tax with diminishing returns.
 
+\section{A Gallery of Failures (and What Fixes Each)}
+Every row below is a failure the Architect has personally watched an agent commit --- most
+recently, an agent that could not say what it had done a few runs earlier \emph{in the same
+conversation}. That one sent us back to the neuroscience (NotebookLM ``META hackathon''): the
+diagnosis is a \textbf{retrieval failure, not an encoding failure}. The trace is \emph{available}
+(it sits in the session log, and the agent recognises it when shown), but \emph{inaccessible} to
+unprompted recall --- the generate-recognise model fails at Stage~1 (search/generation), while
+recognition bypasses that stage entirely. Humans solve the same problem with \textbf{serial
+recall} over episodic traces; we transfer exactly that, minus the 15--30~second buffer and the
+transposition errors.
+\begin{longtable}{@{}p{0.30\textwidth}p{0.28\textwidth}p{0.32\textwidth}@{}}
+\toprule
+Symptom (user-visible) & Human analogue & Tottie fix \\
+\midrule
+``What did I just do?'' --- forgot work from a few runs ago & Serial recall + recency & Session recap: ordered replay of the session's event chain \\
+``What is my name again?'' --- re-asks settled facts & Identity / autobiographical memory & Identity tier, pinned raw, zero search \\
+Says X on Monday, not-X on Tuesday & Reconsolidation on contradiction & Reconciler: SUPERSEDE + validity window, old kept \\
+Fixes the same bug every week & Procedural memory (skills) & Lessons tier + autosave: error $\rightarrow$ fix \\
+Answers confidently when it knows nothing & Metacognition (feeling of knowing) & Confidence from the margin; abstain below 0.35 \\
+Buries the answer in 200k tokens (lost in the middle) & Attention gating & Write-time curation; 400-token card \\
+Repeats a lie it once read & Source monitoring & Provenance + quarantine; low-trust never injected \\
+Does something 12 times, learns nothing & Sleep consolidation & Consolidator: episodes $\rightarrow$ semantics \\
+``Remind me Friday'' --- Friday comes, silence & Prospective memory & Prospective Queue: cues fire \\
+The chat learns it; the IDE never knows & The shared notebook & One MCP server every host mounts \\
+\bottomrule
+\end{longtable}
+
 \section{The Thesis: Intelligence at Write Time}
 Standard retrieval-augmented generation (RAG) applies intelligence at \textbf{read time}: the agent
 searches when it needs something. Tottie flips that. It applies intelligence at \textbf{write time}:

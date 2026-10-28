@@ -68,6 +68,23 @@ Card, each line annotated with \emph{why it surfaced} (cue type $\rightarrow$ se
 \textbf{Data Flow \& Mutators:} The card is injected into the prompt; a \texttt{recall} event is
 streamed to the Panel.
 
+\section{Temporal Scope: The ``What Did I Just Do'' Branch}
+\textbf{Trigger:} A QUESTION carrying recency markers: \emph{just, just now, so far, last N,
+recent, lately, where were we, recap, what have we done}.
+\textbf{Action / UI State:} The Panel renders an ordered session timeline --- one line per turn,
+oldest first --- instead of a ranked hit list.
+\textbf{System Logic:} Similarity ranking is the wrong tool for a recency question (it returns
+the most \emph{similar} turns, not the \emph{latest} ones). The Retriever therefore takes the
+replay branch: it reads the session's \texttt{memory\_event} rows in monotonic-id order with
+their linked episodic rows, and presents them as ordered chunks (one line per turn from the
+stored \texttt{scribe\_action} summaries). This is machine \textbf{serial recall}: every served
+memory gets its \texttt{access\_count} increment, so the recap doubles as \textbf{rehearsal on
+access} (testing effect). Per the governing principle we copy the solution (ordered replay +
+rehearsal) and refuse the constraints (no 15--30~second buffer, no transposition errors, no
+output interference) --- the machine replay is exact.
+\textbf{Data Flow \& Mutators:} An ordered read of \texttt{(session\_id, id)} plus
+\texttt{access\_count} bumps; no new rows, no similarity search.
+
 \section{Inhibition and Abstention}
 \textbf{Trigger:} Nothing clears the activation floor, or everything retrieved is superseded.
 \textbf{System Logic:} Inhibit the results and inject \emph{nothing}. Abstaining is a correct outcome;
