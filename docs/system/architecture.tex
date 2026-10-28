@@ -1,32 +1,27 @@
 \chapter{System Architecture}
 
 \section{Overview}
-Tottie is a memory layer that any agent can mount. The \textbf{core engine} owns the memory
-lifecycle; the \textbf{MCP server} is the transport that exposes it; the \textbf{Tottie UI} and any
-\textbf{IDE coding agent} are consumers that share the same store. The engine's behaviour is specified
-in the preceding part, \emph{The Cognition Model}.
+Tottie is a memory layer any agent can mount. The \textbf{core engine} owns the memory lifecycle; the
+\textbf{MCP server} is the transport; the \textbf{Tottie UI} and any \textbf{IDE coding agent} are
+consumers that share one store. The engine's behaviour is specified in \emph{The Cognition Model}; its
+security in \emph{Security}; its speed in \emph{Performance}.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[node distance=0.9cm]
+\begin{tikzpicture}[node distance=0.8cm,font=\sffamily\scriptsize]
 \node[uibox] (ui) {Tottie UI\\chat + live Memory Panel};
-\node[uibox,right=1.6cm of ui] (ide) {Coding agent\\(VS Code / Cursor)};
-\node[syncbox,below=1.1cm of ui] (mcp) {MCP server --- stdio\\tools $\cdot$ resources $\cdot$ prompt};
-\node[databox,below=0.9cm of mcp] (core) {Core engine (FastAPI :8765)\\sixteen components (see below)};
-\node[databox,below=0.9cm of core] (db) {Postgres + pgvector\\\texttt{memories} $\cdot$ \texttt{memory\_events} $\cdot$ \texttt{memory\_links} $\cdot$ \texttt{intentions}};
-\draw[flow] (ui) -- (mcp) node[lbl,midway,right]{remember / recall};
-\draw[flow] (ide) |- (mcp);
-\draw[flow] (mcp) -- (core);
-\draw[dataflow] (core) -- (db);
+\node[uibox,right=1.5cm of ui] (ide) {Coding agent\\(VS Code / Cursor)};
+\node[syncbox,below=0.9cm of ui] (mcp) {MCP server (stdio)\\tools $\cdot$ resources $\cdot$ prompt};
+\node[syncbox,right=1.5cm of mcp] (queue) {bounded queue\\+ workers};
+\node[databox,below=0.9cm of mcp] (core) {Core engine (FastAPI :8765)\\sixteen components};
+\node[databox,below=0.9cm of core] (db) {Postgres + pgvector\\memories $\cdot$ events $\cdot$ links $\cdot$ intentions};
+\draw[flow] (ui) -- (mcp); \draw[flow] (ide) |- (mcp); \draw[flow] (mcp) -- (core);
+\draw[flow] (core) -- (queue); \draw[flow] (queue) |- (db); \draw[dataflow] (core) -- (db);
 \end{tikzpicture}
-\caption{Tottie: one brain, three bodies. The UI and any IDE agent mount the same MCP server and
-share one memory store.}
+\caption{One brain, three bodies. Writes are acknowledged immediately and curated asynchronously.}
 \end{figure}
 
 \section{The Component Roster}
-Each component has exactly one job. The primary agent (the ``present thought'') is untouched --- it
-receives better context and can \emph{probe}.
-
 \begin{longtable}{@{}p{0.26\textwidth}p{0.62\textwidth}p{0.10\textwidth}@{}}
 \toprule
 Component & Job & Tier \\
@@ -37,54 +32,43 @@ Cue Classifier & intent type $+$ entities $\rightarrow$ retrieval policy & MUST 
 Observer & is this worth remembering? & MUST \\
 Salience Scorer & the rubric, with surprise as a multiplier & MUST \\
 Scribe & structure, tag, embed, route, sparse-separate & MUST \\
-Reconciler & reconsolidation: patch the labile trace & MUST \\
+Reconciler & reconsolidation: patch the labile trace (non-destructive) & MUST \\
 Retriever & seed $+$ hybrid $+$ graph activation & MUST \\
 Activator & spreading activation, priming, decay & MUST \\
 Curator & assemble the Context Card $+$ ``why surfaced'' & MUST \\
 Completer & pattern completion (cluster reconstruction) & SHOULD \\
-Decayer & adaptive forgetting, utility decay, pruning & SHOULD \\
+Ranker $+$ Compressor & deprioritise $+$ compress --- \textbf{never} shred & SHOULD \\
 Metacognitive Evaluator & confidence from the retrieval margin; gate assertions & SHOULD \\
 Prospective Queue & event/time-triggered intentions & SHOULD \\
-Consolidator & sleep: replay $\rightarrow$ semanticise $\rightarrow$ space $\rightarrow$ prune & SHOULD \\
+Consolidator & sleep: replay $\rightarrow$ semanticise $\rightarrow$ space $\rightarrow$ compress & SHOULD \\
 Transactive Directory & route to where knowledge lives & STRETCH \\
 \bottomrule
 \end{longtable}
 
+\section{Runtime Shape}
+The engine is \textbf{async throughout}. A single \texttt{asyncpg} pool is created at startup; the
+embedder is loaded once and called from a thread pool. The write path is a \textbf{bounded queue}
+drained by a small worker pool, so an Observer model call never blocks a user turn. Recall runs inline
+under a hard wall-clock budget. See \emph{Performance} for the budgets and \emph{Security} for the
+trust controls that guard what may be written and what may be injected.
+
 \section{The Tier Model}
-\begin{itemize}
-  \item \textbf{Identity} --- persona and permanent constraints. Pinned \emph{raw} into the card,
-  zero search overhead. (Example: a partner's birthday.)
-  \item \textbf{Episodic} --- chronological decisions, state changes, and history.
-  \item \textbf{Knowledge} --- ingested documents, files, and references (semantic facts).
-  \item \textbf{Procedural (``Lessons'')} --- mistake $\rightarrow$ problem+solution pairs, surfaced
-  instantly on recurrence (``autosave'').
-  \item \textbf{Prospective} --- intentions with an event or time cue (see the Prospective Queue).
-\end{itemize}
-
-\section{Write Path (summary)}
-Attention gate $\rightarrow$ surprise gate $\rightarrow$ observe and score salience $\rightarrow$
-embed and sparse-separate $\rightarrow$ reconcile
-\texttt{NEW}/\texttt{SKIP}/\texttt{UPDATE}/\texttt{SUPERSEDE} $\rightarrow$ route tier $\rightarrow$
-persist, write links, and emit an event. Full granular flow in \emph{Process Flows: Write Path}.
-
-\section{Recall Path (summary)}
-Classify the cue $\rightarrow$ choose the policy $\rightarrow$ seed nodes $\rightarrow$ run the three
-legs (semantic $\cup$ lexical $\cup$ associative) $\rightarrow$ spread activation with decay
-$\rightarrow$ complete the cluster $\rightarrow$ score confidence (metacognition) $\rightarrow$ curate
-the Context Card $\rightarrow$ emit a recall event. Full granular flow in \emph{Process Flows: Cue
-Typing, Spreading Activation, and Pattern Completion}.
+\textbf{Identity} (persona, pinned, zero search) · \textbf{Episodic} (decisions, state, history) ·
+\textbf{Knowledge} (documents, semantic facts) · \textbf{Procedural} (Lessons / autosave) ·
+\textbf{Prospective} (intentions).
 
 \section{Reuse Map (patterns, not files)}
 \begin{longtable}{@{}p{0.42\textwidth}p{0.48\textwidth}@{}}
 \toprule
 Pattern reused & Source (author's own repo) \\
 \midrule
-Embedding load (FastEmbed bge-small) & \texttt{ask.nkngo/processor/utils/embeddings.py} \\
-pgvector + HNSW + RRF hybrid search & \texttt{ask.nkngo/processor/routers/retrieval.py} \\
+RRF hybrid-search SQL shape (two capped CTEs, $k{=}60$) & \texttt{ask.nkngo/processor/routers/retrieval.py} \\
+Embedding choice (FastEmbed bge-small) & \texttt{ask.nkngo/processor/utils/embeddings.py} \\
 Incremental write + SHA-256 deltas & \texttt{ask.nkngo/processor/routers/sync.py} \\
 Relevance floors / abstention & \texttt{ask.nkngo/processor/utils/grounding.py} \\
 MCP stdio server scaffold & \texttt{Pattern/pattern-vscode-extension/src/mcp-server/index.ts} \\
-Beamer deck preamble & \texttt{Writer/Masters/presentation/.../presentation\_*.tex} \\
-docs/\texttt{master.tex} preamble & \texttt{Pattern/docs/master.tex} \\
 \bottomrule
 \end{longtable}
+\noindent\textbf{Deliberately not reused:} a hardcoded model-cache path, synchronous DB calls inside
+async handlers, a connection per request, string-interpolated full-text queries, and any silent
+\texttt{None} failure path. Those are recorded as defects in the technical audit and are fixed here.

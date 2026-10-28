@@ -1,71 +1,61 @@
-\chapter{Process Flow: The Write Path}
-Every step below is what the \textbf{Memory Panel} renders in its ``LEARNING NOW'' block. This is
-the flow that proves the thesis: intelligence applied at write time.
+\chapter{Process Flow: The Write Path (Non-Blocking)}
+Every step below is what the \textbf{Memory Panel} renders in its ``LEARNING NOW'' block. The write
+never blocks the user's turn: the request is acknowledged, then curated in the background.
 
-\section{The User Says Something Durable}
-\textbf{Trigger:} In the Tottie chat the user types \emph{``my girlfriend's birthday is on the 7th of
-November''} and presses enter. (Equivalently: an IDE agent turn completes and the host forwards it.)
-
-\textbf{Action / UI State:} The Tottie sprite leaves \texttt{idle}, enters \texttt{listening} for the
-duration of the send, then \texttt{thinking}. The Memory Panel prepends a new turn card with an empty
-``LEARNING NOW'' row and a subtle processing shimmer.
-
+\section{The Host Posts a Turn}
+\textbf{Trigger:} The user says something durable --- e.g.\ \emph{``my girlfriend's birthday is on the
+7th of November''}.
+\textbf{Action / UI State:} The sprite enters \texttt{listening} then \texttt{thinking}; the Panel
+prepends a turn card with an empty ``LEARNING NOW'' row.
 \textbf{System Logic:} The host issues \texttt{POST /write} with
-\texttt{\{text, session\_id, turn, owner\}}. The core hands the turn to the \textbf{Observer}, which
-runs \emph{in parallel} with the agent's own response generation.
+\texttt{\{text, session\_id, turn, owner, source\}}. The route validates the token, computes an
+\textbf{idempotency key} from \texttt{(session, turn, content)}, enqueues the turn on a bounded queue,
+and returns \texttt{202 \{event\_id\}} in under 20 ms.
+\textbf{Data Flow \& Mutators:} A queued item plus a \texttt{memory\_event} stub; nothing is written to
+\texttt{memories} yet.
 
-\textbf{Data Flow \& Mutators:} The turn is not yet stored as memory; it exists only as an inbound
-request and a \texttt{memory\_event} row in \texttt{queued} state.
+\section{A Worker Drains the Queue}
+\textbf{Trigger:} A free write worker.
+\textbf{Action / UI State:} The Panel's row begins to fill.
+\textbf{System Logic:} The worker runs the gate chain in order:
+\begin{enumerate}
+  \item \textbf{heuristic pre-filter} --- skip obvious chit-chat without calling a model;
+  \item \textbf{Attention Gate} --- discard noise (heartbeats, acknowledgements);
+  \item \textbf{Surprise Gate} --- compute the prediction error; discard the routine;
+  \item \textbf{Observer} --- score salience and propose candidates.
+\end{enumerate}
+\textbf{Data Flow \& Mutators:} \texttt{observer\_verdict} recorded; a suppressed turn ends here with a
+dimmed chip and no \texttt{memories} row.
 
-\section{The Observer Decides}
-\textbf{Trigger:} The Observer receives the turn tuple.
+\section{Trust and Quarantine}
+\textbf{Trigger:} A candidate whose \texttt{source.trust} is \texttt{tool} or \texttt{web} and whose
+kind is an identity fact or a convention.
+\textbf{Action / UI State:} The Panel shows the memory under a \textbf{PENDING} strip rather than in the
+active list.
+\textbf{System Logic:} The row is written with \texttt{quarantined = true}; it is \textbf{never}
+injected into the Context Card until the user confirms. This is the control that stops memory poisoning.
+\textbf{Data Flow \& Mutators:} \texttt{INSERT} with \texttt{trust} and \texttt{quarantined} set.
 
-\textbf{Action / UI State:} The ``LEARNING NOW'' row fills in: \texttt{Observer: KEEP} (or
-\texttt{DISCARD}), a salience score (e.g.\ 0.82), and a short reason (``durable personal fact'').
-
-\textbf{System Logic:} The Observer calls the resolved LLM provider with a strict JSON contract and
-returns a verdict:
-\begin{Verbatim}[breaklines=true,fontsize=\small]
-{ "keep": true, "salience": 0.82, "reason": "durable personal fact",
-  "candidates": [ { "tier":"identity","kind":"fact","subject":"girlfriend",
-    "predicate":"birthday","object":"2026-11-07",
-    "content":"Girlfriend's birthday is 7 November",
-    "tags":["#person/girlfriend","#topic/birthday"] } ] }
-\end{Verbatim}
-
-\textbf{Data Flow \& Mutators:} The verdict JSON is written into the \texttt{observer\_verdict}
-column of the \texttt{memory\_event} and pushed to the Panel over SSE. If \texttt{keep} is false, the
-flow ends here and the Panel shows a greyed \texttt{DISCARD} chip.
-
-\section{The Scribe Structures and Embeds}
-\textbf{Trigger:} A non-empty candidate list from the Observer.
-
-\textbf{Action / UI State:} The Panel's ``MEMORIES FORMED'' block gains a row per candidate, showing
-the operation badge and the memory text.
-
-\textbf{System Logic:} For each candidate the Scribe (1) composes the human-readable memory, (2)
-computes its embedding with \texttt{bge-small-en-v1.5}, (3) assigns tags, and (4) hands the candidate
-to the reconciler (next chapter).
-
-\textbf{Data Flow \& Mutators:} An embedding vector (384 floats) is computed in memory; the
-candidate is held for the reconcile step.
-
-\section{Reconcile, Route, and Persist}
-\textbf{Trigger:} An embedded candidate.
-
+\section{Structure, Embed, Reconcile}
+\textbf{Trigger:} A non-empty, trusted candidate list.
 \textbf{Action / UI State:} The Panel shows the operation badge (\texttt{NEW} / \texttt{UPDATE} /
-\texttt{SUPERSEDE} / \texttt{SKIP}), the tier chip (e.g.\ \texttt{identity}), and the room chips
-(e.g.\ \texttt{\#person/girlfriend}).
+\texttt{SUPERSEDE} / \texttt{SKIP}), the tier chip, and the room chips.
+\textbf{System Logic:} The Scribe composes the memory, embeds it (thread-pooled, $\leq$ 512 tokens),
+and reconciles against the live rows for \texttt{(owner, subject, predicate)} under the partial unique
+index; the routed tier is recorded.
+\textbf{Data Flow \& Mutators:} \texttt{INSERT/UPDATE memories}; links written on tag/entity/supersede
+events; a \texttt{memory\_event} emitted with a monotonic id.
 
-\textbf{System Logic:} See \emph{Process Flow: Reconcile and Temporal Correctness} for the full
-decision table. The routed tier is recorded, and the live row is inserted with
-\texttt{valid\_from = now()}.
+\section{Failure Fallback}
+\textbf{Trigger:} The Observer or Scribe call fails, times out, or returns invalid JSON.
+\textbf{Action / UI State:} The Panel shows a ``raw --- will curate later'' chip.
+\textbf{System Logic:} The turn is written as a \textbf{raw episodic row} with
+\texttt{needs\_curation = true}; the Consolidator curates it on the next Sleep. A model outage must
+never lose a turn.
+\textbf{Data Flow \& Mutators:} \texttt{INSERT} with \texttt{needs\_curation}; a retry counter on the
+event.
 
-\textbf{Data Flow \& Mutators:} \texttt{INSERT INTO memories (...)}; the
-\texttt{memory\_event.scribe\_action} column is filled; the Panel's ``INSERTED WHERE'' block and the
-\textbf{room map} update; the new memory becomes immediately retrievable.
-
-\section{Why This Order Matters}
-Because the decision is made \emph{at write time}, no read-time query is ever needed to ``know''
-this fact. The next time the user asks anything related, the Retriever simply finds it --- the agent
-never had to remember to save it.
+\section{Streaming Back}
+\textbf{Trigger:} Any of the above completes.
+\textbf{System Logic:} The event is pushed over \texttt{GET /events} (SSE) with a monotonic id, so a
+reconnecting Panel can resume from \texttt{Last-Event-ID} and never miss a step.

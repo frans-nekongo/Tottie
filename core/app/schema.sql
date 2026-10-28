@@ -4,35 +4,40 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS memories (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner       text NOT NULL,
-  tier        text NOT NULL CHECK (tier IN ('identity','episodic','knowledge','procedural')),
-  kind        text NOT NULL,                 -- fact | preference | decision | event | doc | lesson
-  subject     text,
-  predicate   text,
-  object      text,
-  content     text NOT NULL,
-  summary     text,
-  embedding   vector(384),
-  tags        text[] NOT NULL DEFAULT '{}',
-  salience    real NOT NULL DEFAULT 0.5,
-  surprise    real DEFAULT 0.0,              -- prediction error (surprise gate)
-  arousal     real DEFAULT 0.0,              -- moment-of-encoding salience (amygdala analogue)
-  confidence  real DEFAULT 1.0,              -- metacognitive confidence
-  utility     real DEFAULT 1.0,              -- decayed value (Ebbinghaus + access boost)
-  principle   text,                          -- reusable rule behind a decision (memory -> judgment)
-  access_count int DEFAULT 0,                -- consolidation + decay + retrieval practice
-  last_access timestamptz,                   -- decay
-  source      jsonb,
-  supersedes  uuid REFERENCES memories(id),
-  valid_from  timestamptz NOT NULL DEFAULT now(),
-  valid_to    timestamptz,
-  hash        text,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner           text NOT NULL,
+  tier            text NOT NULL CHECK (tier IN ('identity','episodic','knowledge','procedural')),
+  kind            text NOT NULL,             -- fact | preference | decision | event | doc | lesson
+  subject         text,
+  predicate       text,
+  object          text,
+  content         text NOT NULL,
+  summary         text,
+  embedding       vector(384),
+  embedding_model text,                      -- model identity, so a model swap is detected
+  tags            text[] NOT NULL DEFAULT '{}',
+  salience        real NOT NULL DEFAULT 0.5,
+  surprise        real DEFAULT 0.0,          -- prediction error (surprise gate)
+  arousal         real DEFAULT 0.0,          -- moment-of-encoding salience
+  confidence      real DEFAULT 1.0,          -- metacognitive confidence
+  utility         real DEFAULT 1.0,          -- RANKING signal (never a delete signal)
+  trust           text NOT NULL DEFAULT 'user_direct',  -- user_direct | tool | web | model_inferred
+  quarantined     boolean NOT NULL DEFAULT false,       -- low-trust: visible, NOT injected
+  needs_curation  boolean NOT NULL DEFAULT false,       -- raw fallback awaiting the Scribe
+  principle       text,                      -- reusable rule behind a decision
+  access_count    int DEFAULT 0,
+  last_access     timestamptz,
+  source          jsonb,
+  supersedes      uuid REFERENCES memories(id),
+  valid_from      timestamptz NOT NULL DEFAULT now(),
+  valid_to        timestamptz,               -- NULL = currently true
+  hash            text,
+  created_at      timestamptz NOT NULL DEFAULT now()
 );
 
+-- Monotonic event log: doubles as the SSE resume cursor and the eval ledger.
 CREATE TABLE IF NOT EXISTS memory_events (
-  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id               bigserial PRIMARY KEY,
   ts               timestamptz NOT NULL DEFAULT now(),
   session_id       text,
   turn             int,
@@ -67,6 +72,7 @@ CREATE TABLE IF NOT EXISTS intentions (
   fired_at   timestamptz
 );
 
+-- Indexes
 CREATE INDEX IF NOT EXISTS memories_embedding_hnsw
   ON memories USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS memories_tags_gin
@@ -77,8 +83,17 @@ CREATE INDEX IF NOT EXISTS memories_live_owner_tier
   ON memories (owner, tier) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS memories_owner_utility
   ON memories (owner, utility);
+CREATE INDEX IF NOT EXISTS memories_quarantine
+  ON memories (owner) WHERE quarantined;
+CREATE INDEX IF NOT EXISTS memories_needs_curation
+  ON memories (owner) WHERE needs_curation;
 CREATE INDEX IF NOT EXISTS memory_events_session
   ON memory_events (session_id, ts);
 CREATE INDEX IF NOT EXISTS memory_links_src ON memory_links (owner, src);
 CREATE INDEX IF NOT EXISTS memory_links_dst ON memory_links (owner, dst);
 CREATE INDEX IF NOT EXISTS intentions_trigger ON intentions (owner, status, time_cue);
+
+-- Serialise reconcile on a live (subject,predicate): prevents two writers from
+-- both believing they are the "current" value.
+CREATE UNIQUE INDEX IF NOT EXISTS memories_live_sp
+  ON memories (owner, subject, predicate) WHERE valid_to IS NULL AND subject IS NOT NULL;

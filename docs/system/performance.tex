@@ -1,0 +1,78 @@
+\chapter{Performance, Cost, and Resilience}
+
+Memory must be \emph{invisible} in the hot path. This chapter records the budgets and the engineering
+that keeps Tottie fast and cheap, and what happens when a model fails.
+
+\section{The Non-Blocking Write Path}
+An Observer model call on the critical path would add latency to every user turn. So the write path is
+\textbf{decoupled}:
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.7cm,font=\sffamily\scriptsize]
+\node[uibox] (host) {Host / UI};
+\node[syncbox,right=1.2cm of host] (api) {FastAPI (async)\\POST /write $\rightarrow$ 202};
+\node[syncbox,right=1.2cm of api] (q) {bounded\\asyncio.Queue};
+\node[databox,right=1.2cm of q] (w) {N workers\\Observer $\rightarrow$ Scribe $\rightarrow$ DB};
+\draw[flow] (host) -- (api);
+\draw[flow] (api) -- (q);
+\draw[flow] (q) -- (w);
+\end{tikzpicture}
+\caption{The turn is acknowledged immediately; curation happens in the background and streams back to
+the Memory Panel.}
+\end{figure}
+\texttt{POST /write} validates, computes an \textbf{idempotency key}, enqueues, and returns
+\texttt{202 \{event\_id\}} in under 20 ms. The Panel receives the result later over SSE.
+
+\section{Budgets}
+\begin{longtable}{@{}p{0.44\textwidth}p{0.44\textwidth}@{}}
+\toprule
+Metric & Target \\
+\midrule
+\texttt{POST /write} acknowledgement & $<$ 20 ms (enqueue only) \\
+Memory visible in the Panel & $<$ 2 s \\
+\texttt{POST /recall} p95 & $<$ 300 ms \\
+Embedding (bge-small, CPU) & $\approx$ 25 ms per text \\
+Context Card & $\leq$ 400 tokens \\
+LLM calls per turn & $\leq$ 2 on write, \textbf{0} on read (Curator is rules-based) \\
+\bottomrule
+\end{longtable}
+
+\section{Bounded Recall}
+The read path has a hard wall-clock budget. Per-leg candidate caps (50), Reciprocal Rank Fusion with
+$k=60$, a top-8 cut, a graph expansion of at most \textbf{2 hops} and \textbf{50 nodes} with a decay of
+0.5, and a token-capped card. Nothing in recall is unbounded.
+
+\section{Cost Control}
+\begin{itemize}
+  \item A \textbf{heuristic pre-filter} skips the model for obvious chit-chat and fast-paths clear
+  patterns (``my \ldots'', ``always'', ``never'', a date).
+  \item A \textbf{small model} handles the Observer; the strongest model is reserved for the brain.
+  \item Identical turns are cached; token caps are enforced on every call.
+\end{itemize}
+
+\section{Storage Engineering}
+\begin{itemize}
+  \item \textbf{Connection pooling} (asyncpg pool created at startup) instead of a connection per
+  request.
+  \item The embedder is \textbf{loaded once} and all embedding calls run in a thread pool, so the
+  synchronous ONNX call never blocks the event loop.
+  \item \textbf{HNSW} indexes are built with tuned \texttt{m} / \texttt{ef\_construction} and queried
+  with an explicit \texttt{ef\_search}; because pgvector applies filters after the index scan, we
+  \textbf{over-fetch} (top-50) before filtering by owner and validity.
+\end{itemize}
+
+\section{Resilience}
+\begin{itemize}
+  \item \textbf{Idempotency:} a hash of \texttt{(session, turn, content)} prevents duplicate writes on
+  retry.
+  \item \textbf{Raw fallback:} if the Observer or Scribe fails, the turn is written as a raw episodic
+  row with \texttt{needs\_curation = true}; the Consolidator curates it later. A model outage must
+  never lose data.
+  \item \textbf{Backpressure:} a bounded queue with a drop-oldest policy and a metric when it trips.
+  \item \textbf{Reconcile locking:} a partial unique index on
+  \texttt{(owner, subject, predicate) WHERE valid\_to IS NULL} serialises contradicting writes.
+\end{itemize}
+
+\section{Observability}
+Metrics: write and recall latency, tokens per call, queue depth, the surprise and confidence
+distributions, hit rate, and the ranked-out count. Structured logs carry a request id.

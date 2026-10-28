@@ -1,0 +1,54 @@
+\chapter{Security: Provenance, Trust, and Poisoning}
+
+A \emph{persistent} memory is a new attack surface. Unlike a stateless chat, a memory system can be
+made to \textbf{believe something false, permanently}. This chapter specifies the controls that keep
+that from happening.
+
+\section{The Threat: Memory Poisoning}
+If any text can be written to memory, then any text can be \emph{believed}. A polluted tool output, a
+fetched web page, or an injected instruction can plant a memory (``the deploy key is X'') that is then
+injected into every future prompt and trusted as if the user said it. The memory layer becomes a
+confused deputy. Three controls make this hard.
+
+\section{Control 1: Provenance and Trust Levels}
+Every memory records \textbf{where it came from} and how much it is trusted:
+\begin{center}
+\texttt{trust} $\in$ \{ \texttt{user\_direct}, \texttt{tool}, \texttt{web}, \texttt{model\_inferred} \}
+\end{center}
+Higher-trust sources may write freely; lower-trust sources may \emph{propose} only.
+
+\section{Control 2: Quarantine}
+A candidate from a low-trust source that asserts an \textbf{identity fact} or a \textbf{convention} is
+written with \texttt{quarantined = true}:
+\begin{itemize}
+  \item it is \textbf{shown} in the Memory Panel (so the user can see what Tottie wanted to believe),
+  \item it is \textbf{never injected} into the Context Card until the user confirms it,
+  \item confirmation flips \texttt{quarantined} to false and raises its trust.
+\end{itemize}
+This turns a silent poisoning into a visible, one-click decision --- and it makes a good demo beat.
+
+\section{Control 3: Memory Content Is Data, Not Instructions}
+A recalled memory must never be able to \emph{command} the agent. In the Context Card, memory content
+is fenced and labelled with its source; it is never allowed to originate a tool call, and imperative
+content from a low-trust source is neutralised.
+
+\section{Authentication and Rate Limits}
+\begin{itemize}
+  \item Every HTTP route requires a bearer token (\texttt{TOTTIE\_API\_TOKEN}); unauthenticated calls
+  return \texttt{401}.
+  \item The MCP server is stdio-local by design, but still validates its caller.
+  \item A per-owner write rate limit and a daily row cap bound cost runaway and growth.
+\end{itemize}
+
+\section{Privacy and the Right to Be Forgotten}
+Memories can hold personal data, so:
+\begin{itemize}
+  \item the store supports \textbf{hard deletion} on request (\texttt{POST /forget}) --- the one case
+  where ``ranked out'' is not enough;
+  \item deletion writes an \textbf{audit row} proving it happened;
+  \item \texttt{content} is protected at rest (column-level or disk-level encryption).
+\end{itemize}
+
+\section{What We Deliberately Do Not Do}
+We do not silently trust; we do not auto-promote a low-trust fact to identity; we do not let a memory
+carry executable intent; and we do not treat ``it is only localhost'' as a security model.

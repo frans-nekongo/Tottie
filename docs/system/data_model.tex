@@ -2,113 +2,99 @@
 
 \section{Storage Decision (documented exception)}
 Local development across the NKNGO ecosystem uses SQLite. Tottie is an explicit, reasoned
-exception: \textbf{semantic memory requires vector search}, and the ecosystem's canonical RAG
-engine (\texttt{ask.nkngo}) and Pattern already run \textbf{Postgres + pgvector} locally. Tottie
-therefore uses a local \texttt{tottie} database on \texttt{127.0.0.1:5432}. This is a deliberate
-deviation, recorded here per the workspace's non-destructive documentation standard.
+exception: \textbf{semantic memory requires vector search}, and the ecosystem's canonical RAG engine
+(\texttt{ask.nkngo}) and Pattern already run \textbf{Postgres + pgvector} locally. Tottie therefore
+uses a local \texttt{tottie} database on \texttt{127.0.0.1:5432}, accessed through an
+\textbf{asyncpg connection pool} (not a connection per request).
 
 \section{Schema}
 \begin{Verbatim}[breaklines=true,fontsize=\small]
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE memories (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner       text NOT NULL,                 -- user / tenant scope
-  tier        text NOT NULL CHECK (tier IN ('identity','episodic','knowledge','procedural')),
-  kind        text NOT NULL,                 -- fact | preference | decision | event | doc | lesson
-  subject     text,                          -- e.g. 'girlfriend', 'server_c', 'tottie'
-  predicate   text,                          -- e.g. 'birthday', 'uses_db', 'fix'
-  object      text,                          -- e.g. '2026-11-07', 'pgvector'
-  content     text NOT NULL,                 -- human-readable memory
-  summary     text,                          -- short form for the Context Card
-  embedding   vector(384),                   -- bge-small-en-v1.5
-  tags        text[] NOT NULL DEFAULT '{}',  -- the "rooms": #person/frans, #project/tottie
-  salience    real NOT NULL DEFAULT 0.5,     -- write-time importance 0..1
-  surprise    real DEFAULT 0.0,              -- prediction error (surprise gate)
-  arousal     real DEFAULT 0.0,              -- moment-of-encoding salience (amygdala analogue)
-  confidence  real DEFAULT 1.0,              -- metacognitive confidence
-  utility     real DEFAULT 1.0,              -- decayed value (Ebbinghaus + access boost)
-  principle   text,                          -- the reusable rule behind a decision
-  access_count int DEFAULT 0,                -- consolidation + decay + retrieval practice
-  last_access timestamptz,                   -- decay
-  source      jsonb,                         -- {session_id, turn, doc, url, msg_id}
-  supersedes  uuid REFERENCES memories(id),  -- temporal chain
-  valid_from  timestamptz NOT NULL DEFAULT now(),
-  valid_to    timestamptz,                   -- NULL = currently true
-  hash        text,                          -- dedupe / content hash
-  created_at  timestamptz NOT NULL DEFAULT now()
+  id uuid PRIMARY KEY, owner text NOT NULL,
+  tier text NOT NULL CHECK (tier IN ('identity','episodic','knowledge','procedural')),
+  kind text NOT NULL, subject text, predicate text, object text,
+  content text NOT NULL, summary text,
+  embedding vector(384), embedding_model text,      -- model identity: a swap is detected
+  tags text[] NOT NULL DEFAULT '{}',
+  salience real DEFAULT 0.5, surprise real DEFAULT 0.0, arousal real DEFAULT 0.0,
+  confidence real DEFAULT 1.0,
+  utility real DEFAULT 1.0,                          -- RANKING signal, never a delete signal
+  trust text NOT NULL DEFAULT 'user_direct',         -- user_direct | tool | web | model_inferred
+  quarantined boolean NOT NULL DEFAULT false,        -- low-trust: visible, NOT injected
+  needs_curation boolean NOT NULL DEFAULT false,     -- raw fallback awaiting the Scribe
+  principle text, access_count int DEFAULT 0, last_access timestamptz,
+  source jsonb, supersedes uuid REFERENCES memories(id),
+  valid_from timestamptz DEFAULT now(), valid_to timestamptz,
+  hash text, created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE memory_events (                 -- the X-ray feed + the eval ledger
-  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  ts               timestamptz NOT NULL DEFAULT now(),
-  session_id       text, turn int, utterance text,
-  observer_verdict jsonb,                    -- {keep, salience, surprise, reason, candidates}
-  scribe_action    jsonb,                    -- {op, tier, kind, tags, memory_id}
-  cue              jsonb,                    -- {type, entities, policy} for recall events
-  latency_ms       int, tokens int
+CREATE TABLE memory_events (            -- monotonic log: SSE cursor + eval ledger
+  id bigserial PRIMARY KEY, ts timestamptz DEFAULT now(),
+  session_id text, turn int, utterance text,
+  observer_verdict jsonb, scribe_action jsonb, cue jsonb, latency_ms int, tokens int
 );
 
-CREATE TABLE memory_links (                  -- the associative index (hippocampal analogue)
-  id       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner    text NOT NULL,
-  src      uuid NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-  dst      uuid NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-  relation text NOT NULL,                    -- tag | entity | supersedes | temporal | cooccur
-  weight   real NOT NULL DEFAULT 1.0,
+CREATE TABLE memory_links (             -- the associative index ("hippocampus")
+  id uuid PRIMARY KEY, owner text NOT NULL,
+  src uuid REFERENCES memories(id) ON DELETE CASCADE,
+  dst uuid REFERENCES memories(id) ON DELETE CASCADE,
+  relation text NOT NULL, weight real DEFAULT 1.0,
   UNIQUE (owner, src, dst, relation)
 );
 
-CREATE TABLE intentions (                     -- prospective memory ("remind me to...")
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner      text NOT NULL,
-  content    text NOT NULL,                   -- "ask about the deploy"
-  event_cue  text,                            -- fire when this event occurs
-  time_cue   timestamptz,                     -- fire at/after this time
-  status     text NOT NULL DEFAULT 'pending',  -- pending | fired | dismissed
-  created_at timestamptz NOT NULL DEFAULT now(),
-  fired_at   timestamptz
+CREATE TABLE intentions (               -- prospective memory ("remind me to...")
+  id uuid PRIMARY KEY, owner text NOT NULL, content text NOT NULL,
+  event_cue text, time_cue timestamptz,
+  status text NOT NULL DEFAULT 'pending', created_at timestamptz, fired_at timestamptz
 );
 \end{Verbatim}
 
-\section{Indexes}
+\section{Indexes (and why each exists)}
 \begin{Verbatim}[breaklines=true,fontsize=\small]
-CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops);   -- vector recall
-CREATE INDEX ON memories USING gin (tags);                            -- room/tag filter
-CREATE INDEX ON memories USING gin (to_tsvector('english', content)); -- full-text (lexical leg)
-CREATE INDEX ON memories (owner, tier) WHERE valid_to IS NULL;        -- live-slice lookup
-CREATE INDEX ON memories (owner, utility);                            -- decay / pruning
-CREATE INDEX ON memory_links (owner, src);                            -- spreading activation
+CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops);  -- vector leg
+CREATE INDEX ON memories USING gin (tags);                           -- room/tag filter
+CREATE INDEX ON memories USING gin (to_tsvector('english', content));-- lexical leg
+CREATE INDEX ON memories (owner, tier) WHERE valid_to IS NULL;       -- live slice
+CREATE INDEX ON memories (owner, utility);                           -- ranking / decay
+CREATE INDEX ON memories (owner) WHERE quarantined;                  -- pending strip
+CREATE INDEX ON memories (owner) WHERE needs_curation;               -- curation backlog
+CREATE INDEX ON memory_links (owner, src);
 CREATE INDEX ON memory_links (owner, dst);
-CREATE INDEX ON intentions (owner, status, time_cue);                 -- prospective trigger scan
+CREATE INDEX ON intentions (owner, status, time_cue);
+CREATE UNIQUE INDEX ON memories (owner, subject, predicate)
+  WHERE valid_to IS NULL AND subject IS NOT NULL;   -- serialise reconcile
 \end{Verbatim}
+Because pgvector applies \emph{filters after} the index scan, retrieval \textbf{over-fetches} the top
+50 per leg and then filters by owner, validity, and trust --- otherwise a filtered query can return
+fewer than $k$ rows.
 
-\section{Why \texttt{memory\_links} Exists}
-Tags alone give a flat ``room'' model. The associative leg of retrieval needs \emph{edges}: which
-memories share a tag, which entities co-occur, which memory supersedes which, which are temporally
-adjacent. \texttt{memory\_links} is that adjacency structure --- the substrate the Activator walks.
-Links are written only on tag, entity, and supersede events (not every turn), which bounds write
-amplification.
-
-\section{Why \texttt{utility} and \texttt{confidence} Exist}
-\texttt{utility} carries the \textbf{adaptive forgetting} model: it decays with age and rises with
-access (the testing effect), and the Decayer archives rows below the floor. \texttt{confidence} is the
-\textbf{metacognitive} signal computed from the retrieval margin, so the agent can choose to generate,
-verify, or abstain.
+\section{The Field Semantics That Matter}
+\begin{itemize}
+  \item \texttt{utility} is a \textbf{ranking} signal (affects search weight and card inclusion). It is
+  \emph{not} a delete signal --- see \emph{The Cognition Model}.
+  \item \texttt{surprise} is the prediction error recorded at write time; it multiplies salience.
+  \item \texttt{trust} / \texttt{quarantined} are the security controls (see \emph{Security}).
+  \item \texttt{needs\_curation} marks the raw fallback written when a model call fails.
+  \item \texttt{embedding\_model} lets the store refuse to compare vectors from different models.
+\end{itemize}
 
 \section{Temporal Correctness}
 Every fact carries a validity window. When a new fact contradicts an old one --- and especially when
 the old one was \emph{just retrieved} --- the old row's \texttt{valid\_to} is set to \texttt{now()} and
 the new row is inserted with \texttt{supersedes = old.id}. Retrieval filters
-\texttt{valid\_to IS NULL}, so \textbf{stale facts are never returned}. See
-\emph{Process Flows: Reconsolidation on Access}.
+\texttt{valid\_to IS NULL}. The partial unique index on \texttt{(owner, subject, predicate)} for live
+rows serialises concurrent contradictions so two writers cannot both believe they are current.
 
 \section{Owner Scoping}
 All reads and writes are scoped by \texttt{owner}. The demo runs a single owner
-(\texttt{owner\_local}), but the schema is multi-tenant from day one: identity, recall, probe,
-consolidate, and forget all take an owner key.
+(\texttt{owner\_local}), but every operation takes an owner key, so the schema is multi-tenant from
+day one.
 
 \section{Embeddings}
-Real embeddings use FastEmbed \texttt{BAAI/bge-small-en-v1.5} (384-d), loaded from the local model
-cache (\texttt{../../local LLMS}). A clearly-labelled \texttt{TOTTIE\_EMBEDDER=hash} dev fallback
-exists \emph{only} for offline smoke tests and is never presented as production behaviour.
+FastEmbed \texttt{BAAI/bge-small-en-v1.5} (384-d), loaded once from the local cache
+(\texttt{EMBEDDING\_CACHE\_DIR}, default \texttt{../../local LLMS}). The loader \textbf{fails loudly}
+if the model is missing (never a silent \texttt{None}), and every call runs in a thread pool so the
+synchronous ONNX call cannot block the event loop. Input is capped at the model's \textbf{512-token}
+limit --- longer content is summarised or chunked, never silently truncated.

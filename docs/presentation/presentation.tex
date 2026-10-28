@@ -14,11 +14,11 @@
 
 \renewcommand{\familydefault}{\sfdefault}
 
-% ---- palette ----
 \definecolor{NavyBlue}{RGB}{20,45,85}
 \definecolor{SlateBlue}{RGB}{40,80,130}
 \definecolor{AccentGreen}{RGB}{15,118,110}
 \definecolor{AccentAmber}{RGB}{180,83,9}
+\definecolor{RiskRed}{RGB}{185,28,28}
 \definecolor{LightGray}{RGB}{245,247,250}
 \definecolor{DarkCharcoal}{RGB}{35,35,35}
 
@@ -49,12 +49,8 @@
 
 \begin{document}
 
-% ---------- 1. Title ----------
-\begin{frame}[plain]
-  \titlepage
-\end{frame}
+\begin{frame}[plain]\titlepage\end{frame}
 
-% ---------- 2. The problem ----------
 \begin{frame}{A year of conversations. It still doesn't know your name.}
   \begin{block}{The real problem}
     Agents do not have a reasoning problem. They have a \textbf{state persistence} problem.
@@ -68,28 +64,24 @@
   \centering\itshape ``All that intelligence, and it fails the baseline of a mind: continuity.''
 \end{frame}
 
-% ---------- 3. The flip ----------
 \begin{frame}{Everyone searches at read time. We think at write time.}
   \begin{columns}
     \begin{column}{0.48\textwidth}
       \begin{block}{Standard RAG}
-        Intelligence at \textbf{read} time: the agent searches when it needs something. Memory is a
-        pile of notes the agent must juggle.
+        Intelligence at \textbf{read} time: the agent searches when it needs something.
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
       \begin{alertblock}{Tottie}
-        Intelligence at \textbf{write} time: memory curates itself as you live. The agent does not
-        manage memory --- it just remembers.
+        Intelligence at \textbf{write} time: memory curates itself as you live.
       \end{alertblock}
     \end{column}
   \end{columns}
   \vfill
-  This is not a ``basic RAG application.'' The value is the \textbf{ingestion-time decision}, the
-  deliverable is an \textbf{MCP server}, and retrieval is \textbf{associative}, not just similar.
+  Not a ``basic RAG application'': the value is the \textbf{ingestion-time decision}, the deliverable is
+  an \textbf{MCP server}, and retrieval is \textbf{associative}, not merely similar.
 \end{frame}
 
-% ---------- 4. One sentence ----------
 \begin{frame}{What Tottie is}
   \begin{center}
     \Large A self-curating memory architecture that runs the memory lifecycle \textbf{in parallel}
@@ -98,13 +90,12 @@
   \vfill
   \begin{itemize}
     \item Positioned against 2026's \textbf{learned consolidation} field (mem0, Zep-Graphiti, A-Mem).
-    \item Differentiator 1: write-time salience + \textbf{reconciliation} is the product, not a bolt-on.
-    \item Differentiator 2: \textbf{transport-agnostic} --- the same brain in a chat, an IDE, anything.
-    \item Differentiator 3: retrieval is \textbf{cue-driven associative recall}, not one similarity search.
+    \item Differentiator 1: write-time salience + \textbf{reconciliation} is the product.
+    \item Differentiator 2: \textbf{transport-agnostic} --- same brain in a chat, an IDE, anything.
+    \item Differentiator 3: retrieval is \textbf{cue-driven associative recall}.
   \end{itemize}
 \end{frame}
 
-% ---------- 5. The minds ----------
 \begin{frame}{We did not invent the design. We copied it.}
   \begin{figure}
     \centering
@@ -114,10 +105,7 @@
       \node[pbox,below=0.7cm of ui] (mcp) {MCP server};
       \node[abx,below=0.7cm of mcp] (core) {Surprise Gate $\cdot$ Salience $\cdot$ Scribe $\cdot$ Activator $\cdot$ Ranker $\cdot$ Consolidator};
       \node[abx,below=0.7cm of core] (db) {Postgres + pgvector + links};
-      \draw[ar] (ui) -- (mcp);
-      \draw[ar] (ide) |- (mcp);
-      \draw[ar] (mcp) -- (core);
-      \draw[ar] (core) -- (db);
+      \draw[ar] (ui) -- (mcp); \draw[ar] (ide) |- (mcp); \draw[ar] (mcp) -- (core); \draw[ar] (core) -- (db);
     \end{tikzpicture}
   \end{figure}
   \begin{itemize}
@@ -128,7 +116,6 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 6. Tiers ----------
 \begin{frame}{The memory vault has tiers}
   \begin{tabularx}{\textwidth}{@{}l X@{}}
     \toprule
@@ -143,12 +130,11 @@
   \end{tabularx}
   \vfill
   \begin{block}{Why tiers beat a flat vector store}
-    Identity needs no search at all; episodic needs time; knowledge needs semantics; lessons need an
-    error signature. One store, five retrieval policies.
+    Identity needs no search; episodic needs time; knowledge needs semantics; lessons need an error
+    signature. One store, five retrieval policies.
   \end{block}
 \end{frame}
 
-% ---------- 7. The middle (card + probe) ----------
 \begin{frame}{The part everyone leaves out: what reaches the model?}
   \textbf{Dual-path recall}: a card handed over automatically, plus a probe the agent can run.
   \begin{block}{The Context Card (injected every turn)}
@@ -165,29 +151,26 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 8. Reconcile ----------
 \begin{frame}{It changes its mind, correctly}
   \begin{block}{Contradiction at write time, not read time}
-    ``I'm vegetarian now'' $\rightarrow$ the Scribe \textbf{supersedes} the old fact:
-    old row $\texttt{valid\_to} = now$, new row $\texttt{valid\_from} = now$.
+    ``I'm vegetarian now'' $\rightarrow$ the Scribe \textbf{supersedes} the old fact: old row
+    $\texttt{valid\_to} = now$, new row $\texttt{valid\_from} = now$.
   \end{block}
   \begin{itemize}
     \item Retrieval filters \texttt{valid\_to IS NULL}, so a stale fact can never surface.
-    \item A retrieved memory becomes \emph{labile} --- contradict it now and it is \textbf{rewritten}
-    (reconsolidation) --- but \textbf{nothing is lost}: the old version is kept and versioned.
-    \item Exactly LongMemEval's \emph{knowledge update} and MemoryAgentBench's \emph{conflict resolution}.
+    \item The retrieved memory becomes \emph{labile} and is \textbf{rewritten} --- but nothing is lost:
+    the old version is kept and versioned.
+    \item LongMemEval's \emph{knowledge update} and MemoryAgentBench's \emph{conflict resolution}.
   \end{itemize}
 \end{frame}
 
-% ---------- 9. Cue typing + spreading activation ----------
 \begin{frame}{It does not search. It associates.}
   \begin{block}{``Implement feature A'' is not a question}
-    It is a \textbf{COMMAND cue}. Its policy is: \emph{assemble what a competent person needs to act}
-    --- project bindings, conventions, past decisions, lessons, constraints.
+    It is a \textbf{COMMAND cue}. Its policy: \emph{assemble what a competent person needs to act} ---
+    project bindings, conventions, past decisions, lessons, constraints.
   \end{block}
   \begin{itemize}
-    \item From the cue's nodes, \textbf{activation spreads} along memory links and \textbf{decays}
-    with distance.
+    \item From the cue's nodes, \textbf{activation spreads} along memory links and \textbf{decays}.
     \item Then \textbf{pattern completion} reconstructs the whole coherent context.
     \item Three legs, fused: \textbf{semantic + lexical + associative}.
     \item This is why a memory from fifteen years ago surfaces the moment someone mentions a band.
@@ -196,12 +179,11 @@
   \centering\itshape RAG is one leg. This is the whole animal.
 \end{frame}
 
-% ---------- 10. Constraint we refused ----------
 \begin{frame}{The constraint we refused}
   \begin{block}{Simulate the brain's solutions. Never simulate its constraints.}
-    The brain forgets because it is \textbf{bounded} --- finite neurons, metabolic cost, lossy
-    reconstructive storage. Those are \emph{constraints, not features}. We are not bounded: storage is
-    nearly free and search is exhaustive.
+    The brain forgets because it is \textbf{bounded} --- finite neurons, metabolic cost, lossy storage.
+    Those are \emph{constraints, not features}. We are not bounded: storage is nearly free and search
+    is exhaustive.
   \end{block}
   \begin{itemize}
     \item We \textbf{copy} the solutions: spreading activation, consolidation, pattern completion,
@@ -213,11 +195,10 @@
   \centering\itshape Copying Ebbinghaus decay would be copying a limitation to solve a solution problem.
 \end{frame}
 
-% ---------- 11. Availability vs accessibility ----------
 \begin{frame}{But what about forgetting? It is ranking, not deletion.}
   \begin{block}{Availability $\neq$ accessibility (Tulving \& Pearlstone)}
-    \textbf{Available} = stored. \textbf{Accessible} = retrievable \emph{right now}, and that depends on
-    whether the cue matches the encoding. Tip-of-the-tongue is a failure of accessibility.
+    \textbf{Available} = stored. \textbf{Accessible} = retrievable \emph{now}, and that depends on the
+    cue matching the encoding. Tip-of-the-tongue is a failure of accessibility.
   \end{block}
   \begin{columns}
     \begin{column}{0.48\textwidth}
@@ -236,27 +217,36 @@
   \centering So we renamed it: the Decayer is a \textbf{Ranker + Compressor}, not a shredder.
 \end{frame}
 
-% ---------- 12. Surprise + ranking ----------
-\begin{frame}{It only remembers the surprising --- and it never shreds.}
-  \begin{block}{Surprise gating (predictive coding)}
-    The brain encodes the \emph{prediction error}, not the input. Tottie computes a surprise score and
-    refuses to store the routine: \emph{only the unexpected is written}.
+\begin{frame}{Isn't a permanent memory dangerous?}
+  \begin{block}{A persistent memory is an attack surface.}
+    If any text can be written to memory, any text can be \emph{believed} --- a poisoned tool output or
+    web page could plant a fact that is trusted forever. Three controls stop it.
   \end{block}
-  \begin{block}{Ranking (``forgetting'')}
-    \ttfamily\scriptsize utility = exp(-ln2*age/half\_life) * (1 + log(1+access\_count))
-  \end{block}
-  \begin{itemize}
-    \item Unused memories leave the \emph{active set}; used ones strengthen (the testing effect).
-    \item Nothing is destroyed. A deprioritised memory returns the instant the right cue arrives.
-    \item \emph{Forgetting is the feature. Deletion is not.}
-  \end{itemize}
+  \begin{columns}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{Provenance}
+        Every memory records its source and a \textbf{trust level}.
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{alertblock}{Quarantine}
+        Low-trust facts are \emph{shown} but never \emph{injected}.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{Data, not orders}
+        A memory can never originate a tool call.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \vfill
+  \centering\itshape A memory you cannot trust is worse than no memory.
 \end{frame}
 
-% ---------- 13. Consolidation ----------
 \begin{frame}{Then it sleeps --- and generalises.}
   \begin{block}{The Consolidator (``Sleep'')}
-    Replays recent episodic memories, extracts the recurring structure into \textbf{semantic}
-    knowledge, and compresses what is never used. \emph{12 episodic $\rightarrow$ 3 semantic; 4 ranked out.}
+    Replays recent episodic memories, extracts recurring structure into \textbf{semantic} knowledge, and
+    compresses what is never used. \emph{12 episodic $\rightarrow$ 3 semantic; 4 ranked out.}
   \end{block}
   \begin{itemize}
     \item The neurological analogue: hippocampal replay during sleep builds neocortical knowledge.
@@ -265,19 +255,18 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 14. Prospective + metacognition ----------
 \begin{frame}{It remembers the future, and it knows what it doesn't know.}
   \begin{columns}
     \begin{column}{0.48\textwidth}
       \begin{block}{Prospective memory}
-        Intentions with an \textbf{event} or \textbf{time} cue fire proactively ---
-        ``remind me to ask about the deploy on Friday.''
+        Intentions with an \textbf{event} or \textbf{time} cue fire proactively --- ``remind me to ask
+        about the deploy on Friday.''
       \end{block}
     \end{column}
     \begin{column}{0.48\textwidth}
       \begin{block}{Metacognition}
-        A \textbf{confidence} score from the retrieval margin. Low confidence $\rightarrow$ verify,
-        ask, or abstain. The agent knows when it does not know.
+        A \textbf{confidence} score from the retrieval margin. Low confidence $\rightarrow$ verify, ask,
+        or abstain. The agent knows when it does not know.
       \end{block}
     \end{column}
   \end{columns}
@@ -286,38 +275,23 @@
   sense of how sure it is.
 \end{frame}
 
-% ---------- 15. Three bodies ----------
 \begin{frame}{One brain. Three bodies.}
   \begin{columns}
-    \begin{column}{0.33\textwidth}
-      \begin{block}{Tottie}
-        Chat + reacting sprite. Remembers your \emph{life}.
-      \end{block}
-    \end{column}
-    \begin{column}{0.33\textwidth}
-      \begin{block}{Coding agent}
-        Same MCP server in VS Code. Knows your \emph{stack}; autosaves fixes.
-      \end{block}
-    \end{column}
-    \begin{column}{0.33\textwidth}
-      \begin{block}{Memory Panel}
-        The live X-ray. Watch it think.
-      \end{block}
-    \end{column}
+    \begin{column}{0.33\textwidth}\begin{block}{Tottie}Chat + sprite. Remembers your \emph{life}.\end{block}\end{column}
+    \begin{column}{0.33\textwidth}\begin{block}{Coding agent}Same MCP server in VS Code. Knows your \emph{stack}; autosaves fixes.\end{block}\end{column}
+    \begin{column}{0.33\textwidth}\begin{block}{Memory Panel}The live X-ray. Watch it think.\end{block}\end{column}
   \end{columns}
   \vfill
-  \centering
-  \textbf{The money shot:} add a fact in the chat, then ask your coding agent --- it already knows.
+  \centering \textbf{The money shot:} add a fact in the chat, then ask your coding agent --- it already knows.
 \end{frame}
 
-% ---------- 16. The panel ----------
 \begin{frame}{The Memory Panel: the invisible, made visible}
   Real time, four blocks:
   \begin{enumerate}
     \item \textbf{Learning now} --- Observer verdict (KEEP/DISCARD, salience, \textbf{surprise}).
     \item \textbf{Memories formed} --- \texttt{NEW} / \texttt{UPDATE} / \texttt{SUPERSEDE} / \texttt{SKIP}, with the text.
     \item \textbf{Where it inserted them} --- tier chip + tag/room chips + a growing room map.
-    \item \textbf{Why this surfaced} --- \texttt{cue=COMMAND $\rightarrow$ seed $\rightarrow$ spread 1 hop}, plus the exact card received.
+    \item \textbf{Why this surfaced} --- \texttt{cue=COMMAND $\rightarrow$ seed $\rightarrow$ spread 1 hop}, plus the card received.
   \end{enumerate}
   \vfill
   \begin{block}{Why this is the hero}
@@ -325,11 +299,10 @@
   \end{block}
 \end{frame}
 
-% ---------- 17. Proof ----------
 \begin{frame}{We do not ask you to trust it. We measure it.}
   \begin{itemize}
-    \item A \textbf{$\sim$40-item} suite across LongMemEval's categories (knowledge update, temporal,
-    preference) plus contradiction resolution and abstention.
+    \item A \textbf{$\sim$40-item} suite across LongMemEval's categories plus contradiction resolution
+    and abstention.
     \item Every item runs \textbf{memory ON vs OFF} --- the ablation that proves memory caused the answer.
     \item Metrics: answer accuracy, memory-hit@k, contradiction-correctness, tokens/query, p50/p95 latency.
   \end{itemize}
@@ -340,7 +313,6 @@
   \end{alertblock}
 \end{frame}
 
-% ---------- 18. What we built ----------
 \begin{frame}{What was built during the Hackathon (Oct 27 -- Nov 4)}
   \begin{tabularx}{\textwidth}{@{}l X@{}}
     \toprule
@@ -348,9 +320,9 @@
     \midrule
     \texttt{core/} & Engine: Surprise Gate, Salience, Scribe, Activator, Ranker, Consolidator, Reconciler, Prospective Queue \\
     \texttt{mcp/} & MCP server: 8 tools, 2 resources, the context-card prompt \\
-    \texttt{ui/} & Tottie chat, sprite state machine, live Memory Panel, why-surfaced, Sleep, ablation \\
-    \texttt{eval/} & ON/OFF ablation harness + consolidation check \\
-    \texttt{docs/} & Cognition model + architecture + flows + this deck (LaTeX $\rightarrow$ PDF) \\
+    \texttt{ui/} & Tottie chat, sprite state machine, live Memory Panel, why-surfaced, Sleep, ablation, pending strip \\
+    \texttt{eval/} & ON/OFF ablation harness + consolidation, surprise-gating and revival checks \\
+    \texttt{docs/} & Cognition model, security model, performance model + this deck (LaTeX $\rightarrow$ PDF) \\
     \bottomrule
   \end{tabularx}
   \vfill
@@ -358,7 +330,6 @@
   \texttt{docs/business/hackathon\_compliance}.
 \end{frame}
 
-% ---------- 19. The joke + pitch ----------
 \begin{frame}{So what did I actually build it for?}
   \begin{center}
     \Large ``Everything I was mad at my girlfriend for ---\\ and the one thing that matters: her birthday.''
@@ -371,7 +342,6 @@
   \end{itemize}
 \end{frame}
 
-% ---------- 20. Close ----------
 \begin{frame}[plain]
   \begin{center}
     \Huge Tottie\\[3mm]
