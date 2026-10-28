@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     identity_salience: float = Field(default=0.90, alias="TOTTIE_IDENTITY_SALIENCE")
     reconcile_cosine: float = Field(default=0.86, alias="TOTTIE_RECONCILE_COSINE")
     recall_k: int = Field(default=8, alias="TOTTIE_RECALL_K")
-    surprise_floor: float = Field(default=0.20, alias="TOTTIE_SURPRISE_FLOOR")
+    surprise_floor: float = Field(default=0.25, alias="TOTTIE_SURPRISE_FLOOR")
     utility_half_life_days: int = Field(
         default=30, alias="TOTTIE_UTILITY_HALF_LIFE_DAYS"
     )

@@ -40,6 +40,22 @@ Every gate runs the same protocol: (1) demo the slice \emph{live}, never from te
 (2) write the bug list, then fix it; (3) make the direction call out loud; (4) record
 calibration deltas in \texttt{.env.example}; (5) sync \texttt{.tex} + rebuild PDFs; (6) commit.
 
+\subsection{R1 Outcome (2026-10-27, locked)}
+14 live Meta turns on the dev DB. Verdicts sane: identity/preference/decision/lesson kept with
+salience 0.7--0.9, greetings skipped, near-duplicate gated. Deltas: (1)
+\texttt{SURPRISE\_FLOOR} 0.20 $\rightarrow$ \textbf{0.25} --- the duplicate scored 0.19 against a
+novel minimum of 0.57, so 0.20's margin was 0.01; (2) Observer budget 1024 $\rightarrow$
+\textbf{2048} plus \textbf{resample-once} on \texttt{finish=length} --- reasoning spirals are
+non-deterministic even at temperature 0 (identical input failed twice, then succeeded), so one
+identical retry with a \texttt{resampled} verdict marker precedes the RAW backstop; (3) chitchat
+now strips one leading greeting and covers \texttt{how are you} combos (a greeting cost a 4.4~s
+LLM call that skipped anyway); (4) quarantine verified both branches (tool $\rightarrow$
+quarantined, user $\rightarrow$ not). Probed and dropped: \texttt{reasoning\_effort: low} is
+accepted but changes nothing (133 vs $\approx$145 reasoning tokens). Observed cost per curated
+write: $\approx$10~s, $\approx$1500 tokens --- the demo script must let the graph populate behind
+narration. Known limitation: the write queue is in-memory, so queued-but-uncurated turns die with
+a server restart (one continuous server for filming; durable queue deferred past the hackathon).
+
 \section{Coverage and Estimation Discipline}
 \textbf{The Joel Test} (notebook audit: 6/11, five gaps closed here): one-step build
 (\texttt{make verify}), CI on every push (\texttt{.github/workflows/ci.yml}: pytest on a pgvector

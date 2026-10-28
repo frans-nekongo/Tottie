@@ -12,6 +12,7 @@ import time
 from pydantic import BaseModel, Field, ValidationError
 
 from ..config import Settings
+from ..providers.base import ProviderError
 from ..providers.resolve import resolve_provider
 from . import gates
 
@@ -141,6 +142,7 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
             provider="none",
         )
     prompt_tokens = completion_tokens = 0
+    resampled = False
     t0 = time.monotonic()
     try:
         provider = await resolve_provider()
@@ -152,7 +154,23 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": f"Turn:\n{text}"},
         ]
-        raw = await provider.complete(messages, max_tokens=1024, json_object=True)
+        # 2048 floor (R1): the reasoning model hit finish=length with empty
+        # content on 2/6 live turns at 1024. Cap only pays when needed.
+        try:
+            raw = await provider.complete(
+                messages, max_tokens=2048, json_object=True
+            )
+        except ProviderError as e:
+            if "finish=length" not in str(e):
+                raise
+            # Reasoning spiral (R1: same input fails then succeeds on
+            # resample). One identical retry; tokens burned by the dead
+            # attempt are uncountable (the error carries no usage).
+            log.info("length-finish on first sample; resampling once")
+            raw = await provider.complete(
+                messages, max_tokens=2048, json_object=True
+            )
+            resampled = True
         prompt_tokens += raw.prompt_tokens
         completion_tokens += raw.completion_tokens
         try:
@@ -167,7 +185,7 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
                         "content": "That was not valid JSON. Reply with ONLY the JSON object, no fences, no prose.",
                     },
                 ],
-                max_tokens=1024,
+                max_tokens=2048,
                 json_object=True,
             )
             prompt_tokens += repair.prompt_tokens
@@ -185,7 +203,8 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     if not out.keep:
         return Observation(
             keep=False, salience=salience, surprise=score, candidates=[],
-            verdict=f"model keep=false sal={salience:.2f}", provider=provider.name,
+            verdict=f"model keep=false sal={salience:.2f}"
+            + (" resampled" if resampled else ""), provider=provider.name,
             latency_ms=latency_ms, prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
         )
@@ -207,7 +226,8 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     ]
     return Observation(
         keep=True, salience=salience, surprise=score, candidates=structured,
-        verdict=f"keep sal={salience:.2f} sur={score:.2f} n={len(structured)}",
+        verdict=f"keep sal={salience:.2f} sur={score:.2f} n={len(structured)}"
+        + (" resampled" if resampled else ""),
         provider=provider.name, latency_ms=latency_ms,
         prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
     )

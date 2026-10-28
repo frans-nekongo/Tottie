@@ -4,15 +4,19 @@ import math
 import re
 
 CHITCHAT_RE = re.compile(
-    r"^(thanks|thank you|hi|hello|hey|bye|ok|okay|cool|great)[!.]*$",
+    r"^(thanks|thank you|hi|hello|hey|bye|ok|okay|cool|great|"
+    r"how are you|how's it going)[?!.]*$",
     re.IGNORECASE,
 )
+# "hey, how are you?" — strip one leading greeting so combos still match.
+_GREET_PREFIX_RE = re.compile(r"^(hi|hello|hey)[,.]?\s+", re.IGNORECASE)
 
 FIRST_TURNS_ALWAYS_LAND = 3
 
 
 def is_chitchat(text: str) -> bool:
-    return bool(CHITCHAT_RE.match(text.strip()))
+    t = _GREET_PREFIX_RE.sub("", text.strip()).strip()
+    return bool(CHITCHAT_RE.match(t or text.strip()))
 
 
 def cosine(a: list[float], b: list[float]) -> float:

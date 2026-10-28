@@ -9,6 +9,14 @@ def test_chitchat_pattern():
         assert not gates.is_chitchat(t), t
 
 
+def test_chitchat_greeting_combos():
+    # R1: "hey, how are you?" cost a 4.4s LLM call that also skipped.
+    for t in ("How are you?", "hey, how are you?", "Hey how's it going"):
+        assert gates.is_chitchat(t), t
+    for t in ("hey I lost my keys", "hi Ann, my name is Bo", "how are you funding this"):
+        assert not gates.is_chitchat(t), t
+
+
 def test_cosine_basics():
     assert gates.cosine([1.0, 0.0], [1.0, 0.0]) == 1.0
     assert gates.cosine([1.0, 0.0], [0.0, 1.0]) == 0.0
