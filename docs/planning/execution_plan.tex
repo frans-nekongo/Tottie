@@ -56,6 +56,22 @@ write: $\approx$10~s, $\approx$1500 tokens --- the demo script must let the grap
 narration. Known limitation: the write queue is in-memory, so queued-but-uncurated turns die with
 a server restart (one continuous server for filming; durable queue deferred past the hackathon).
 
+\subsection{R2 Outcome (2026-10-28, locked)}
+Live four-step on the dev DB, all Meta: write $\rightarrow$ NEW, recall $\rightarrow$ served at
+0.656, correction $\rightarrow$ SUPERSEDE via the labile route, unknown query $\rightarrow$ abstain.
+One blocking bug found and fixed in-gate: confidence abstained on a known single-leg fact
+(0.311, identical to noise) --- recalibrated to 0.4 margin + 0.4 word-coverage + 0.2 top-1 cosine
+(same store now reads 0.518 vs 0.244). No env deltas (floor stays 0.35; weights are documented
+constants). Known limits: flat restatements across sessions do not contradiction-detect (film
+single-session narratives); dev DB carries triplicate cruft rows (wipe + reseed in W6).
+\textbf{Direction call:} KEEP W4 MCP+UI+3D graph (Demo rubric needs the visible brain; MCP is the
+agentic surface and the Impact story); KEEP a slim W5 eval harness (tokens-per-query ON/OFF for
+the Technical Depth claim and the R3 deck sync) but DEFER the full Ranker/utility-decay (maturity
+feature, unjudgeable in 9 days); KEEP W6 film+buffer; CUT retrieval-induced forgetting
+(unvalidated), web-RAG ingestion (no ingestor; trust labels stay for API-supplied content), and
+the open-weights bonus chase (API-first stands; local stays fallback). \textbf{Schema frozen:}
+migrations only from here.
+
 \section{Coverage and Estimation Discipline}
 \textbf{The Joel Test} (notebook audit: 6/11, five gaps closed here): one-step build
 (\texttt{make verify}), CI on every push (\texttt{.github/workflows/ci.yml}: pytest on a pgvector

@@ -129,26 +129,27 @@ async def _bfs(db, owner: str, seeds: list[str], deadline: float) -> dict[str, d
     return found
 
 
-def _confidence(fused: list[tuple[str, dict]], entities: list[str],
-                rows: dict[str, dict]) -> tuple[float, float]:
-    """margin = (top1-top2)/top1 blended 0.7/0.3 with entity coverage."""
+def _confidence(fused: list[tuple[str, dict]], query: str,
+                rows: dict[str, dict], top1cos: float) -> tuple[float, float]:
+    """0.4 margin + 0.4 word coverage + 0.2 top-1 cosine (R2: ranks alone
+    cannot separate a known single-leg fact from best-of-a-bad-lot noise;
+    absolute similarity + word overlap can)."""
     if not fused:
         return 0.0, 0.0
     top1 = fused[0][1]["score"]
     top2 = fused[1][1]["score"] if len(fused) > 1 else 0.0
     margin = max(0.0, (top1 - top2) / top1) if top1 > 0 else 0.0
-    if not entities:
-        return round(0.7 * margin + 0.3 * 1.0, 3), round(margin, 3)
-    covered = 0
-    bag = " ".join(
-        " ".join((rows[m]["tags"] or [])) + " " + (rows[m]["content"] or "")[:500]
-        for m, _ in fused[:8] if m in rows
-    ).lower()
-    for e in entities:
-        if e.lstrip("#@").lower() in bag:
-            covered += 1
-    cov = covered / len(entities)
-    return round(0.7 * margin + 0.3 * cov, 3), round(margin, 3)
+    words = cues.coverage_entities(query)
+    if not words:
+        cov = 0.5
+    else:
+        bag = " ".join(
+            " ".join((rows[m]["tags"] or [])) + " " + (rows[m]["content"] or "")[:500]
+            for m, _ in fused[:8] if m in rows
+        ).lower()
+        cov = sum(1 for w in words if w in bag) / len(words)
+    conf = 0.4 * margin + 0.4 * cov + 0.2 * max(0.0, min(1.0, top1cos))
+    return round(conf, 3), round(margin, 3)
 
 
 def _why(legs: dict, cue_type: str) -> str:
@@ -328,7 +329,14 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
             fused[mid] = {"score": g["act"] * 0.01, "legs": {},
                           "via": f"associated via {g['via']}"}
     ordered = sorted(fused.items(), key=lambda kv: -kv[1]["score"])
-    confidence, margin = _confidence(ordered, cue.entities, by_id)
+    top1cos = 0.0
+    if ordered:
+        dist = await db.fetchval(
+            "SELECT embedding <=> %s::vector FROM memories WHERE id = %s::uuid",
+            (pgvector_literal(vec), ordered[0][0]),
+        )
+        top1cos = max(0.0, 1.0 - float(dist or 1.0))
+    confidence, margin = _confidence(ordered, query, by_id, top1cos)
     abstain = confidence < settings.confidence_floor
     hits = []
     for mid, slot in ordered[:k]:

@@ -42,13 +42,18 @@ returns what it has rather than failing.
 \section{Confidence (Metacognition)}
 \textbf{Trigger:} The final candidate set.
 \textbf{Action / UI State:} The Panel shows a confidence chip (know / verify / abstain).
-\textbf{System Logic:} \texttt{confidence = 0.7 * clamp((top1 - top2) / top1, 0, 1) + 0.3 *
-coverage}, where coverage is the fraction of query entities found in the hits (vacuously 1.0
-with no entities); below \textbf{0.35} the result is flagged ``verify or abstain''. This is the
+\textbf{System Logic:} \texttt{confidence = 0.4 * margin + 0.4 * coverage + 0.2 * top1cos},
+where \texttt{margin = clamp((top1 - top2) / top1, 0, 1)} is the RRF distinctiveness,
+\texttt{coverage} is the fraction of query content words (stopwords stripped) found in the
+hits' tags+content, and \texttt{top1cos} is the exact top-1 vector cosine. Recalibrated R2:
+ranks alone scored a known single-leg fact (0.311) identically to best-of-bad-lot noise
+(0.311), abstaining on knowledge; the three-signal blend separates them (0.518 vs 0.244 on the
+same store). Below \textbf{0.35} the result is flagged ``verify or abstain''. This is the
 difference between hallucinating and saying ``I don't have that''. Two abstain semantics,
 locked W2: the identity header still rides the card (pinned user truths, not retrieved
 guesses), and \texttt{hits} stay populated for Panel transparency while \texttt{card} carries
-no ranked lines --- the host injects nothing.
+no ranked lines --- the host injects nothing. Known limit: negation is invisible to coverage
+(``not a vegetarian'' covers like ``vegetarian'') --- out of scope for the hackathon.
 \textbf{Data Flow \& Mutators:} A confidence value attached to the recall event.
 
 \section{Curate and Inject}

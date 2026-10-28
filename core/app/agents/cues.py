@@ -45,6 +45,13 @@ RECENCY_RES = [
 TAG_RE = re.compile(r"#([\w/-]+)")
 MENTION_RE = re.compile(r"@([\w/-]+)")
 QUOTED_RE = re.compile(r'"([^"]{1,80})"' r"|‘([^’]{1,80})’")
+WORD_RE = re.compile(r"[a-z][a-z/-]{2,}")
+STOPWORDS = frozenset("""
+what who when where why how which whose whom is are was were do does did
+have has had the a an my your his her its our their of in on to for and or
+but not with from that this these those then than so as at by be been am me
+you we they it them us him her i just really very know tell give get got
+""".split())
 REMIND_RE = re.compile(r"\bremind me to\b(.+)", re.IGNORECASE)
 REMIND_WHEN_RE = re.compile(r"\bwhen\b(.+)", re.IGNORECASE)
 IN_DAYS_RE = re.compile(r"\bin (\d+) days?\b", re.IGNORECASE)
@@ -58,6 +65,13 @@ class Cue:
     recall_cue: bool = False  # loss/need statement: ask the store, don't write
     replay: bool = False  # recency markers: ordered replay, not ranking
     policy: str = "general"  # general|command (assemble-to-act kit)
+
+
+def coverage_entities(text: str) -> list[str]:
+    """Content words for confidence coverage (separate from #/@/quote seeds,
+    which drive retrieval legs and intention cues)."""
+    return [w for w in dict.fromkeys(WORD_RE.findall(text.lower()))
+            if w not in STOPWORDS]
 
 
 def extract_entities(text: str) -> list[str]:
