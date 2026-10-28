@@ -54,9 +54,9 @@ async def persist(*, db, embedder, turn, obs) -> str:
 
 async def _persist_txn(conn, db, turn, obs, embedded, model) -> str:
     cur = await conn.execute(
-        "SELECT 1 FROM memory_events WHERE session_id = %s AND turn = %s "
-        "AND utterance = %s",
-        (turn.session_id, turn.turn, turn.text),
+        "SELECT 1 FROM memory_events WHERE owner = %s AND session_id = %s "
+        "AND turn = %s AND utterance = %s",
+        (turn.owner, turn.session_id, turn.turn, turn.text),
     )
     if await cur.fetchone():
         return "SKIP duplicate-turn"
@@ -84,10 +84,11 @@ async def _persist_txn(conn, db, turn, obs, embedded, model) -> str:
 
 async def _event(db, turn, obs, *, op: str, ops: list, memory_ids: list[str]) -> None:
     await db.execute(
-        "INSERT INTO memory_events (session_id, turn, utterance, observer_verdict, "
-        "scribe_action, latency_ms, tokens) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        "INSERT INTO memory_events (owner, session_id, turn, utterance, "
+        "observer_verdict, scribe_action, latency_ms, tokens) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
         (
-            turn.session_id, turn.turn, turn.text,
+            turn.owner, turn.session_id, turn.turn, turn.text,
             Json({
                 "keep": obs.keep, "salience": obs.salience,
                 "surprise": obs.surprise, "reason": obs.verdict,
@@ -108,10 +109,11 @@ async def _event(db, turn, obs, *, op: str, ops: list, memory_ids: list[str]) ->
 
 async def _event_txn(conn, turn, obs, *, op, ops, memory_ids) -> None:
     await conn.execute(
-        "INSERT INTO memory_events (session_id, turn, utterance, observer_verdict, "
-        "scribe_action, latency_ms, tokens) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        "INSERT INTO memory_events (owner, session_id, turn, utterance, "
+        "observer_verdict, scribe_action, latency_ms, tokens) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
         (
-            turn.session_id, turn.turn, turn.text,
+            turn.owner, turn.session_id, turn.turn, turn.text,
             Json({
                 "keep": obs.keep, "salience": obs.salience,
                 "surprise": obs.surprise, "reason": obs.verdict,

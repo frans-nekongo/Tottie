@@ -96,8 +96,9 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
     event_id = None
     if body.memory:
         turn_no = await request.app.state.db.fetchval(
-            "SELECT max(turn) FROM memory_events WHERE session_id = %s",
-            (body.session_id,),
+            "SELECT max(turn) FROM memory_events WHERE owner = %s "
+            "AND session_id = %s",
+            (owner, body.session_id),
         )
         event_id = request.app.state.queue.enqueue_nowait(WorkerTurn(
             text=text, session_id=body.session_id, turn=(turn_no or -1) + 1,

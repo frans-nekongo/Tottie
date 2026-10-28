@@ -110,6 +110,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS memories_idempotency
 CREATE UNIQUE INDEX IF NOT EXISTS memory_events_turn
   ON memory_events (session_id, turn, utterance)
   WHERE turn IS NOT NULL AND utterance IS NOT NULL;
+-- 005 re-scopes the above to (owner, session_id, turn, utterance) and adds
+-- memory_events_owner; schema.sql stays applicable to pre-005 databases
+-- (same precedent as 004's reason column: migrations carry ADD COLUMN).
 
 -- Migrations ledger: every applier (init_db.sh, app boot) records here.
 CREATE TABLE IF NOT EXISTS schema_migrations (

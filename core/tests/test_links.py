@@ -88,7 +88,8 @@ async def test_category_overlap_links_with_reason(db, emb):
 
 @pytest.mark.asyncio
 async def test_temporal_chain_before_after(db, emb):
-    """Linked list: each memory points at the previous one in its session."""
+    """Linked list: each memory is pointed at by the previous one in its
+    session (arrow runs before -> after, matching the turn story)."""
     ow = f"lk_{uuid.uuid4().hex[:8]}"
     for i, (text, tags) in enumerate([
         ("First thing.", ["aaa"]), ("Second thing.", ["bbb"]),
@@ -107,8 +108,9 @@ async def test_temporal_chain_before_after(db, emb):
     )
     assert len(links) == 2, f"chain must be exactly n-1, got {links}"
     fwd = {str(l["src"]): str(l["dst"]) for l in links}
-    assert fwd[by["Third thing."]] == by["Second thing."]
-    assert fwd[by["Second thing."]] == by["First thing."]
+    # arrow runs before -> after, agreeing with the "turn A -> turn B" story
+    assert fwd[by["First thing."]] == by["Second thing."]
+    assert fwd[by["Second thing."]] == by["Third thing."]
     assert all("turn" in l["reason"] and "session" in l["reason"]
                for l in links), links
 

@@ -50,9 +50,10 @@ async def confirm_memory(db, memory_id: str, owner: str) -> dict:
         (memory_id,),
     )
     await db.execute(
-        "INSERT INTO memory_events (session_id, utterance, observer_verdict, "
-        "scribe_action) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO memory_events (owner, session_id, utterance, "
+        "observer_verdict, scribe_action) VALUES (%s, %s, %s, %s, %s)",
         (
+            owner,
             (row["source"] or {}).get("session"),
             f"[confirm] {memory_id}",
             Json({"recall": False, "confirm": True}),
@@ -96,14 +97,15 @@ async def forget_memory(db, *, owner: str, id: str | None = None,
         (owner, forgot),
     )
     pruned = await db.fetch(
-        "DELETE FROM memory_events "
-        "WHERE (scribe_action->'memory_ids')::jsonb @> %s::jsonb RETURNING id",
-        (Json(forgot),),
+        "DELETE FROM memory_events WHERE owner = %s "
+        "AND (scribe_action->'memory_ids')::jsonb @> %s::jsonb RETURNING id",
+        (owner, Json(forgot)),
     )
     await db.execute(
-        "INSERT INTO memory_events (session_id, utterance, observer_verdict, "
-        "scribe_action) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO memory_events (owner, session_id, utterance, "
+        "observer_verdict, scribe_action) VALUES (%s, %s, %s, %s, %s)",
         (
+            owner,
             targets[0][1],
             f"[forget] {len(forgot)} rows",
             Json({"recall": False, "forget": True}),

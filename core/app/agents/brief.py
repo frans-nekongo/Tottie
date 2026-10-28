@@ -12,26 +12,28 @@ from . import retrieve
 CONTEXT_TURNS = 3
 
 
-async def _stimulus(db, session_id: str, text: str | None) -> str:
+async def _stimulus(db, owner: str, session_id: str,
+                    text: str | None) -> str:
     if (text or "").strip():
         return text.strip()
     rows = await db.fetch(
-        "SELECT utterance FROM memory_events WHERE session_id = %s "
-        "AND cue IS NULL AND utterance IS NOT NULL "
+        "SELECT utterance FROM memory_events WHERE owner = %s "
+        "AND session_id = %s AND cue IS NULL AND utterance IS NOT NULL "
         "ORDER BY id DESC LIMIT %s",
-        (session_id, CONTEXT_TURNS),
+        (owner, session_id, CONTEXT_TURNS),
     )
     return "\n".join(r["utterance"] for r in reversed(rows))
 
 
 async def _new_items(db, owner: str, since: int) -> tuple[list[dict], int]:
-    cur = await db.fetchval("SELECT max(id) FROM memory_events") or 0
+    cur = await db.fetchval(
+        "SELECT max(id) FROM memory_events WHERE owner = %s", (owner,)) or 0
     if since >= cur:
         return [], cur
     rows = await db.fetch(
-        "SELECT scribe_action FROM memory_events WHERE id > %s "
+        "SELECT scribe_action FROM memory_events WHERE owner = %s AND id > %s "
         "ORDER BY id LIMIT 50",
-        (since,),
+        (owner, since),
     )
     mids: list[str] = []
     for r in rows:
@@ -72,7 +74,7 @@ def _block(card, fired, items, event_id) -> str:
 async def brief(*, db, embedder, owner: str, session_id: str,
                 text: str | None, since_event_id: int,
                 settings) -> dict:
-    stimulus = await _stimulus(db, session_id, text)
+    stimulus = await _stimulus(db, owner, session_id, text)
     if not stimulus:
         items, cur = await _new_items(db, owner, since_event_id)
         fired = await retrieve.check_intentions(db, owner, [])

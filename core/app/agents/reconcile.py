@@ -75,6 +75,17 @@ def _norm(value: str | None) -> str | None:
     return " ".join(value.split()).lower()
 
 
+def _norm_tags(tags) -> list[str]:
+    """Tags are machine tokens: strip, lowercase, dedupe, drop empties.
+    Without this "Food" and "food" silently miss a must-link."""
+    out: list[str] = []
+    for t in tags or []:
+        n = _norm(str(t))
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
 async def _find_matches(conn, *, owner, kind, quarantined, cand, vec, floor):
     cur = await conn.execute(
         "SELECT id, kind, subject, predicate, object, content, tags, "
@@ -83,7 +94,8 @@ async def _find_matches(conn, *, owner, kind, quarantined, cand, vec, floor):
         "AND quarantined = %s AND ("
         "  (subject IS NOT DISTINCT FROM %s AND predicate IS NOT DISTINCT FROM %s "
         "   AND %s::text IS NOT NULL AND %s::text IS NOT NULL)"
-        "  OR (embedding <=> %s::vector <= %s AND (tags && %s "
+        "  OR (embedding <=> %s::vector <= %s AND (EXISTS (SELECT 1 FROM "
+        "   unnest(tags) t WHERE lower(btrim(t)) = ANY(%s)) "
         "   OR (subject = %s AND %s::text IS NOT NULL) "
         "   OR (predicate = %s AND %s::text IS NOT NULL)))"
         ") ORDER BY dist LIMIT 5 FOR UPDATE",
@@ -141,13 +153,16 @@ async def _tag_links(conn, *, owner, quarantined, new_id, tags):
         return
     cur = await conn.execute(
         "SELECT id, tags FROM memories WHERE owner = %s AND valid_to IS NULL "
-        "AND quarantined = %s AND id <> %s::uuid AND tags && %s "
+        "AND quarantined = %s AND id <> %s::uuid "
+        "AND EXISTS (SELECT 1 FROM unnest(tags) t "
+        "WHERE lower(btrim(t)) = ANY(%s)) "
         "ORDER BY salience DESC LIMIT %s",
         (owner, quarantined, new_id, tags, TAG_LINK_CAP),
     )
     mine = set(tags)
     for r in await cur.fetchall():
-        shared = sorted((mine & set(r["tags"] or [])) - STOP_TAGS)
+        theirs = {_norm(t) for t in (r["tags"] or [])} - {None}
+        shared = sorted((mine & theirs) - STOP_TAGS)
         if not shared:
             continue  # overlap was kind-names only: no link (mush guard)
         await _link(
@@ -157,22 +172,36 @@ async def _tag_links(conn, *, owner, quarantined, new_id, tags):
         )
 
 
+def _turn_of(source: dict | None) -> int | None:
+    try:
+        return int((source or {}).get("turn"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 async def _temporal_link(conn, *, owner, quarantined, new_id, turn):
-    """Session before/after chain (the linked list): the new memory points at
-    the previously formed live row in the same session, so the graph can
-    narrate what came before and after. One edge per memory: bounded."""
+    """Session before/after chain (the linked list): the previously spoken
+    live row points at the new one, so the arrow and the story agree on
+    before -> after. Predecessor is the greatest logical turn below this
+    one — NEVER created_at: under concurrency created_at is processing
+    order, and the chain ran backwards (turn 1 -> turn 0, seen live).
+    One edge per memory: bounded. Concurrent twins can share one
+    predecessor; relink completes the chain offline."""
     cur = await conn.execute(
         "SELECT id, source FROM memories WHERE owner = %s AND valid_to IS NULL "
         "AND quarantined = %s AND id <> %s::uuid "
-        "AND source->>'session' = %s ORDER BY created_at DESC LIMIT 1",
-        (owner, quarantined, new_id, turn.session_id),
+        "AND source->>'session' = %s "
+        "AND source->>'turn' ~ '^[0-9]+$' "
+        "AND (source->>'turn')::int < %s "
+        "ORDER BY (source->>'turn')::int DESC, created_at DESC LIMIT 1",
+        (owner, quarantined, new_id, turn.session_id, turn.turn),
     )
     prev = await cur.fetchone()
     if prev is None:
         return
-    prev_turn = (prev["source"] or {}).get("turn", "?")
+    prev_turn = _turn_of(prev["source"])
     await _link(
-        conn, owner=owner, src=new_id, dst=str(prev["id"]),
+        conn, owner=owner, src=str(prev["id"]), dst=new_id,
         relation="temporal", weight=0.8,
         reason=f"session order: turn {prev_turn} -> turn {turn.turn}",
     )
@@ -230,6 +259,7 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
 async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                           active_floor, active: set[str]) -> dict:
     """Reconcile one embedded candidate inside the turn's transaction."""
+    cand = {**cand, "tags": _norm_tags(cand.get("tags"))}
     quarantined = is_quarantined(turn.trust, cand["kind"])
     if cand["kind"] == "event" or obs.raw_fallback:
         mid = await _insert_new(

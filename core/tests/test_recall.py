@@ -193,9 +193,9 @@ async def test_replay_branch_orders_session(client, db, emb):
         ("Where is the checklist", ids["deploy"]),
     ]):
         await db.execute(
-            "INSERT INTO memory_events (session_id, turn, utterance, "
-            "observer_verdict, scribe_action) VALUES (%s,%s,%s,%s,%s)",
-            ("rsess", i, utt, Json({"keep": True}),
+            "INSERT INTO memory_events (owner, session_id, turn, utterance, "
+            "observer_verdict, scribe_action) VALUES (%s,%s,%s,%s,%s,%s)",
+            (OWNER, "rsess", i, utt, Json({"keep": True}),
              Json({"op": "NEW", "memory_ids": [mid]})),
         )
     await client.post("/recall", json={  # recall events must not pollute replay

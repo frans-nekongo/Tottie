@@ -149,9 +149,10 @@ async def consolidate(*, db, embedder, owner: str, session_id: str,
         "tokens": tokens,
     }
     await db.execute(
-        "INSERT INTO memory_events (session_id, utterance, observer_verdict, "
-        "scribe_action, tokens) VALUES (%s, %s, %s, %s, %s)",
+        "INSERT INTO memory_events (owner, session_id, utterance, "
+        "observer_verdict, scribe_action, tokens) VALUES (%s, %s, %s, %s, %s, %s)",
         (
+            owner,
             session_id,
             f"Sleep: replayed {len(episodes)} episodes -> "
             f"{len(semantic_ids)} semantic; {len(ranked)} ranked out",

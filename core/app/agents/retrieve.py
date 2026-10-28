@@ -300,16 +300,17 @@ async def _contiguity(db, owner: str, winner: dict) -> list[str]:
     return path
 
 
-async def _recall_event(db, session_id: str, query: str, cue: cues.Cue,
+async def _recall_event(db, owner: str, session_id: str, query: str, cue: cues.Cue,
                         mode: str, confidence: float, abstain: bool,
                         n: int, latency_ms: int) -> None:
     from psycopg.types.json import Json
 
     await db.execute(
-        "INSERT INTO memory_events (session_id, utterance, observer_verdict, "
-        "scribe_action, cue, latency_ms, tokens) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        "INSERT INTO memory_events (owner, session_id, utterance, "
+        "observer_verdict, scribe_action, cue, latency_ms, tokens) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
         (
-            session_id, query,
+            owner, session_id, query,
             Json({"recall": True, "confidence": confidence, "abstain": abstain}),
             Json({"op": "RECALL", "mode": mode, "n": n}),
             Json({"type": cue.type, "entities": cue.entities, "policy": cue.policy}),
@@ -338,7 +339,7 @@ async def recall(*, db, embedder, owner: str, query: str, session_id: str,
     reconcile.note_active(owner, session_id, [h["id"] for h in out["hits"]])
     latency_ms = int((time.monotonic() - t0) * 1000)
     out["latency_ms"] = latency_ms
-    await _recall_event(db, session_id, query, cue, out["mode"],
+    await _recall_event(db, owner, session_id, query, cue, out["mode"],
                         out["confidence"], out["abstain"], len(out["hits"]),
                         latency_ms)
     return out
@@ -441,9 +442,9 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
 async def _replay(db, owner: str, session_id: str, settings) -> dict:
     events = await db.fetch(
         "SELECT id, turn, utterance, scribe_action FROM memory_events "
-        "WHERE session_id = %s AND cue IS NULL AND utterance IS NOT NULL "
-        "ORDER BY id LIMIT %s",
-        (session_id, settings.replay_n),
+        "WHERE owner = %s AND session_id = %s AND cue IS NULL "
+        "AND utterance IS NOT NULL ORDER BY id LIMIT %s",
+        (owner, session_id, settings.replay_n),
     )
     if not events:
         return {

@@ -97,11 +97,14 @@ class Stream:
                 return None
 
 
-async def _seed(db, session_id: str, utterance: str = "seeded") -> None:
+async def _seed(db, session_id: str, utterance: str = "seeded",
+              owner: str = "owner_local") -> None:
     await db.execute(
-        "INSERT INTO memory_events (session_id, turn, utterance, observer_verdict,"
-        " scribe_action, latency_ms, tokens) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-        (session_id, 0, utterance, Json({"keep": True}), Json({"op": "NEW"}), 5, 10),
+        "INSERT INTO memory_events (owner, session_id, turn, utterance, "
+        "observer_verdict, scribe_action, latency_ms, tokens) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+        (owner, session_id, 0, utterance, Json({"keep": True}),
+         Json({"op": "NEW"}), 5, 10),
     )
 
 
@@ -135,3 +138,18 @@ async def test_events_401(client):
     assert r.status_code == 401
     r = await client.get("/events?session_id=sse")
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_events_owner_scoped(booted_app, db):
+    """Same session, two owners: the stream carries only the caller's own
+    rows — the 005 leak, closed at the SSE surface too."""
+    await _seed(db, "sse2", utterance="mine")
+    await _seed(db, "sse2", utterance="theirs", owner="intruder")
+    async with Stream(booted_app, "session_id=sse2&token=test-token") as s:
+        assert s.status == 200
+        frame = await s.next_frame()
+        assert frame is not None, "own row never streamed"
+        assert frame["data"]["utterance"] == "mine"
+        assert await s.next_frame(timeout=2) is None, \
+            "another owner's utterance leaked into the stream"

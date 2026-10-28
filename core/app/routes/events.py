@@ -20,11 +20,13 @@ async def get_events(
     session_id: str = Query(...),
     last_event_id: int = Query(0),
     token: str = Query(""),
+    owner: str = Query(""),
 ):
     settings = request.app.state.settings
     if not settings.api_token or not hmac.compare_digest(token, settings.api_token):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad or missing token")
     db = request.app.state.db
+    who = owner or settings.owner
 
     async def gen():
         last = last_event_id
@@ -34,8 +36,9 @@ async def get_events(
             rows = await db.fetch(
                 "SELECT id, ts, turn, utterance, observer_verdict, scribe_action, "
                 "cue, latency_ms, tokens FROM memory_events "
-                "WHERE session_id = %s AND id > %s ORDER BY id LIMIT 100",
-                (session_id, last),
+                "WHERE owner = %s AND session_id = %s AND id > %s "
+                "ORDER BY id LIMIT 100",
+                (who, session_id, last),
             )
             for r in rows:
                 last = r["id"]

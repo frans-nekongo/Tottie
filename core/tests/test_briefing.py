@@ -40,9 +40,9 @@ async def test_briefing_explicit_text(client, db, emb):
 async def test_briefing_session_context_no_text(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
     await db.execute(
-        "INSERT INTO memory_events (session_id, turn, utterance) "
-        "VALUES (%s, 0, %s)",
-        ("brctx", "Where does Frans live?"),
+        "INSERT INTO memory_events (owner, session_id, turn, utterance) "
+        "VALUES (%s, %s, 0, %s)",
+        (OWNER, "brctx", "Where does Frans live?"),
     )
     r = await client.post("/briefing", json={
         "session_id": "brctx", "owner": OWNER,
@@ -61,9 +61,9 @@ async def test_briefing_since_cursor(client, db, emb):
     }, headers=AUTH)
     cur = r.json()["event_id"]
     await db.execute(
-        "INSERT INTO memory_events (session_id, turn, utterance, scribe_action) "
-        "VALUES (%s, 1, %s, %s)",
-        ("brc", "Frans lives in Windhoek.",
+        "INSERT INTO memory_events (owner, session_id, turn, utterance, "
+        "scribe_action) VALUES (%s, %s, 1, %s, %s)",
+        (OWNER, "brc", "Frans lives in Windhoek.",
          Json({"op": "NEW", "memory_ids": [ids["city"]]})),
     )
     r2 = await client.post("/briefing", json={

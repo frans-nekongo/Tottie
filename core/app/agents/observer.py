@@ -135,9 +135,9 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     vec, _ = await embedder.embed(text)
     recent = await db.fetch(
         "SELECT utterance AS t FROM memory_events "
-        "WHERE session_id = %s AND utterance IS NOT NULL "
+        "WHERE owner = %s AND session_id = %s AND utterance IS NOT NULL "
         "ORDER BY id DESC LIMIT 10",
-        (turn.session_id,),
+        (turn.owner, turn.session_id),
     )
     recent_vecs = []
     for r in recent:
@@ -145,7 +145,8 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
         recent_vecs.append(v)
     score, passed = gates.surprise_score(vec, recent_vecs, settings.surprise_floor)
     count = await db.fetchval(
-        "SELECT count(*) FROM memory_events WHERE session_id = %s", (turn.session_id,)
+        "SELECT count(*) FROM memory_events WHERE owner = %s AND session_id = %s",
+        (turn.owner, turn.session_id),
     )
     if gates.first_turns_bypass(count or 0):
         passed = True

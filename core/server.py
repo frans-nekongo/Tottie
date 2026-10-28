@@ -56,10 +56,11 @@ def _out(obj) -> str:
     return json.dumps(obj, default=str)
 
 
-async def _next_turn(db, session_id: str) -> int:
+async def _next_turn(db, owner: str, session_id: str) -> int:
     n = await db.fetchval(
-        "SELECT max(turn) FROM memory_events WHERE session_id = %s",
-        (session_id,),
+        "SELECT max(turn) FROM memory_events WHERE owner = %s "
+        "AND session_id = %s",
+        (owner, session_id),
     )
     return (n or -1) + 1
 
@@ -73,7 +74,7 @@ async def memory_remember(text: str, session_id: str = "mcp",
         return _out({"error": f"trust must be one of {sorted(TRUSTS)}"})
     turn = WorkerTurn(
         text=text.strip(), session_id=session_id,
-        turn=await _next_turn(st["db"], session_id),
+        turn=await _next_turn(st["db"], st["settings"].owner, session_id),
         owner=st["settings"].owner, trust=trust, origin="mcp",
     )
     obs = await observer.observe(
@@ -97,7 +98,8 @@ async def memory_write(tier: str, content: str, tags: list[str] | None = None,
         return _out({"error": f"tier must be one of {list(TIERS)}"})
     turn = WorkerTurn(
         text=content.strip(), session_id=f"mcp:{st['settings'].owner}",
-        turn=await _next_turn(st["db"], f"mcp:{st['settings'].owner}"),
+        turn=await _next_turn(
+            st["db"], st["settings"].owner, f"mcp:{st['settings'].owner}"),
         owner=st["settings"].owner, trust="user_direct", origin="mcp",
     )
     obs = Observation(

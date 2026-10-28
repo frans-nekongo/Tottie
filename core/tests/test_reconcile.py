@@ -348,9 +348,11 @@ async def test_forget_by_id_true_deletes(client, db, emb):
         (OWNER, keep, gone),
     )
     await db.execute(
-        "INSERT INTO memory_events (session_id, turn, utterance, observer_verdict, "
-        "scribe_action) VALUES ('fs', 0, 'Forget this please.', %s, %s)",
-        (Json({"keep": True}), Json({"op": "NEW", "memory_ids": [gone]})),
+        "INSERT INTO memory_events (owner, session_id, turn, utterance, "
+        "observer_verdict, scribe_action) VALUES (%s, 'fs', 0, "
+        "'Forget this please.', %s, %s)",
+        (OWNER, Json({"keep": True}),
+         Json({"op": "NEW", "memory_ids": [gone]})),
     )
     r = await client.post("/forget", json={"owner": OWNER, "id": gone},
                           headers=AUTH)
