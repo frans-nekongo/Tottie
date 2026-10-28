@@ -387,6 +387,36 @@ async def test_burst_sixty_bounded(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_contiguity_follows_turns_not_commit_order(db):
+    """Winner's before/after path must narrate logical turns even when rows
+    committed out of order (the created_at lie, same class as the
+    backwards temporal chain)."""
+    from psycopg.types.json import Json
+
+    from app.agents import retrieve as ret_agent
+
+    ow = f"lp_{uuid.uuid4().hex[:8]}"
+    ids = {}
+    # turn 2 committed first (oldest created_at), turn 0 last
+    for turn, stamp in [(2, "2026-01-01"), (1, "2026-02-01"),
+                        (0, "2026-03-01")]:
+        row = await db.execute_returning(
+            "INSERT INTO memories (owner, tier, kind, content, tags, source, "
+            "created_at) VALUES (%s, 'episodic', 'event', %s, %s, %s, %s) "
+            "RETURNING id",
+            (ow, f"Episode at turn {turn}.", [f"ep{turn}"],
+             Json({"session": ow, "turn": turn}), stamp),
+        )
+        ids[turn] = str(row["id"])
+    winner = await db.fetchrow(
+        "SELECT id, source, created_at FROM memories WHERE id = %s::uuid",
+        (ids[1],),
+    )
+    path = await ret_agent._contiguity(db, ow, dict(winner))
+    assert path == [ids[0], ids[1], ids[2]], path
+
+
+@pytest.mark.asyncio
 async def test_live_trio_no_mush(client, db):
     """The user's own session through the live pipe: cheese must never
     TAG-link to petite-women, and whatever tag edges the LLM's tags do

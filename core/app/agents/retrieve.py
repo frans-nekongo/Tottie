@@ -163,8 +163,9 @@ def cluster_hits(hits: list[dict]) -> list[dict]:
 
     Each cluster carries its label (most-shared tag), member ids ordered by
     score, and size. Singletons keep their own cluster so every hit is
-    covered exactly once. Pure function of the hit list: deterministic and
-    fixture-testable."""
+    covered exactly once. Kind-namespace words never group (the same mush
+    doctrine as link formation: shared "preference" is not a topic).
+    Pure function of the hit list: deterministic and fixture-testable."""
     parent = list(range(len(hits)))
     tag_first: dict[str, int] = {}
 
@@ -174,8 +175,11 @@ def cluster_hits(hits: list[dict]) -> list[dict]:
             i = parent[i]
         return i
 
+    def _real(h):
+        return [t for t in (h.get("tags") or []) if t not in reconcile.STOP_TAGS]
+
     for i, h in enumerate(hits):
-        for t in h.get("tags") or []:
+        for t in _real(h):
             if t in tag_first:
                 parent[find(i)] = find(tag_first[t])
             else:
@@ -188,7 +192,7 @@ def cluster_hits(hits: list[dict]) -> list[dict]:
         members.sort(key=lambda i: -hits[i].get("score", 0.0))
         counts: dict[str, int] = {}
         for i in members:
-            for t in hits[i].get("tags") or []:
+            for t in _real(hits[i]):
                 counts[t] = counts.get(t, 0) + 1
         label = max(counts, key=lambda t: (counts[t], t)) if counts else "ungrouped"
         clusters.append({
@@ -277,26 +281,35 @@ def _card(identity: list[dict], hits: list[dict], abstain: bool) -> str | None:
 
 
 async def _contiguity(db, owner: str, winner: dict) -> list[str]:
-    """Winner + same-session episodic neighbours by created_at (contiguity)."""
+    """Winner + same-session episodic neighbours in logical turn order
+    (contiguity). NEVER created_at: under concurrency commit order is not
+    narrative order (same repair as the temporal chain)."""
     path = [str(winner["id"])]
     session = (winner.get("source") or {}).get("session")
     if not session:
         return path
     rows = await db.fetch(
-        "SELECT id, created_at FROM memories WHERE owner = %s AND tier = 'episodic' "
-        "AND valid_to IS NULL AND NOT quarantined AND NOT ranked_out "
-        "AND source->>'session' = %s "
-        "AND id <> %s::uuid ORDER BY created_at",
-        (owner, session, path[0]),
+        "SELECT id, source, created_at FROM memories WHERE owner = %s "
+        "AND tier = 'episodic' AND valid_to IS NULL AND NOT quarantined "
+        "AND NOT ranked_out AND source->>'session' = %s",
+        (owner, session),
     )
-    if not rows:
+    if len(rows) < 2:
         return path
-    before = [r for r in rows if r["created_at"] <= winner["created_at"]]
-    after = [r for r in rows if r["created_at"] > winner["created_at"]]
-    if before:
-        path.insert(0, str(before[-1]["id"]))
-    if after:
-        path.append(str(after[0]["id"]))
+    rows.sort(key=lambda r: (
+        reconcile._turn_of(r["source"])
+        if reconcile._turn_of(r["source"]) is not None
+        else float("inf"),
+        r["created_at"],
+    ))
+    idx = next((i for i, r in enumerate(rows)
+                if str(r["id"]) == path[0]), None)
+    if idx is None:
+        return path
+    if idx > 0:
+        path.insert(0, str(rows[idx - 1]["id"]))
+    if idx < len(rows) - 1:
+        path.append(str(rows[idx + 1]["id"]))
     return path
 
 
@@ -347,7 +360,8 @@ async def recall(*, db, embedder, owner: str, query: str, session_id: str,
 
 async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
     vec, _ = await embedder.embed(query, is_query=True)
-    tags = [e[1:] for e in cue.entities if e.startswith(("#", "@"))]
+    tags = reconcile._norm_tags(
+        e[1:] for e in cue.entities if e.startswith(("#", "@")))
     tiered = bool(tiers)
     params: list = [pgvector_literal(vec), owner]
     if tiered:
@@ -443,7 +457,7 @@ async def _replay(db, owner: str, session_id: str, settings) -> dict:
     events = await db.fetch(
         "SELECT id, turn, utterance, scribe_action FROM memory_events "
         "WHERE owner = %s AND session_id = %s AND cue IS NULL "
-        "AND utterance IS NOT NULL ORDER BY id LIMIT %s",
+        "AND utterance IS NOT NULL ORDER BY turn NULLS LAST, id LIMIT %s",
         (owner, session_id, settings.replay_n),
     )
     if not events:

@@ -30,9 +30,11 @@ def row_hash(session_id: str, turn: int, content: str) -> str:
     ).hexdigest()[:32]
 
 QUARANTINE_TRUSTS = {"tool", "web", "model_inferred"}
-# Every claim-kind quarantines; only raw event perception flows unquarantined
-# (the agent loop needs its own observations; it must not inherit beliefs).
-QUARANTINE_KINDS = {"identity", "convention", "decision", "lesson", "preference", "fact"}
+# Trust ALONE gates quarantine. An earlier kind-dimension let any outside
+# claim the LLM happened to label "event" walk past the immune system —
+# a web "event" quarantined False and flaked the suite. The agent's own
+# observations arrive as user_direct, so the "raw perception flows"
+# intent is preserved exactly; kind is the LLM's guess, trust is the fact.
 ACTIVE_TTL_S = 600.0
 TAG_LINK_CAP = 3
 # Kind/tier names leak into tags ("preference") and glue unrelated rows.
@@ -65,8 +67,8 @@ def get_active(owner: str, session_id: str) -> set[str]:
     return set(ids)
 
 
-def is_quarantined(trust: str, kind: str) -> bool:
-    return trust in QUARANTINE_TRUSTS and kind in QUARANTINE_KINDS
+def is_quarantined(trust: str) -> bool:
+    return trust in QUARANTINE_TRUSTS
 
 
 def _norm(value: str | None) -> str | None:
@@ -260,7 +262,7 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                           active_floor, active: set[str]) -> dict:
     """Reconcile one embedded candidate inside the turn's transaction."""
     cand = {**cand, "tags": _norm_tags(cand.get("tags"))}
-    quarantined = is_quarantined(turn.trust, cand["kind"])
+    quarantined = is_quarantined(turn.trust)
     if cand["kind"] == "event" or obs.raw_fallback:
         mid = await _insert_new(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,

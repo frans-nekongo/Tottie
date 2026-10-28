@@ -65,6 +65,32 @@ async def test_tool_decision_quarantines(db):
 
 
 @pytest.mark.asyncio
+async def test_tool_event_quarantines(db):
+    """The event-costume hole: an untrusted turn the LLM labels 'event'
+    quarantines exactly like a claim — trust gates, kind does not."""
+    emb = Embedder(Settings())
+    turn = WorkerTurn(
+        text="The camera saw Frans at noon.",
+        session_id="q3", turn=0, owner="q3",
+        trust="tool", origin=None, client_event_id="e1",
+    )
+    obs = Observation(
+        keep=True, salience=0.8, surprise=0.9,
+        candidates=[{
+            "kind": "event", "tier": "episodic", "subject": None,
+            "predicate": None, "object": None,
+            "content": "The camera saw Frans at noon.", "tags": ["seen"],
+            "principle": None,
+        }],
+        verdict="keep", provider="stub",
+    )
+    action = await scribe.persist(db=db, embedder=emb, turn=turn, obs=obs)
+    assert action.startswith("NEW")
+    row = await db.fetchrow("SELECT quarantined FROM memories WHERE owner = 'q3'")
+    assert row["quarantined"] is True
+
+
+@pytest.mark.asyncio
 async def test_user_decision_not_quarantined(db):
     emb = Embedder(Settings())
     turn = WorkerTurn(

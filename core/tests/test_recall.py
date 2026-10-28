@@ -212,6 +212,63 @@ async def test_replay_branch_orders_session(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_replay_follows_turns_not_insert_order(client, db, emb):
+    """Concurrency inversion: turn 1 committed before turn 0 — replay must
+    still narrate 0 then 1 (logical order, never physical)."""
+    ids = await seed(db, emb, OWNER, [
+        {"name": "a", "content": "First the owner woke up.",
+         "tags": ["morning"]},
+        {"name": "b", "content": "Then the owner ran a mile.",
+         "tags": ["run"]},
+    ])
+    for turn, (utt, mid) in [
+        (1, ("Then the owner ran a mile.", ids["b"])),
+        (0, ("First the owner woke up.", ids["a"])),
+    ]:
+        await db.execute(
+            "INSERT INTO memory_events (owner, session_id, turn, utterance, "
+            "observer_verdict, scribe_action) VALUES (%s,%s,%s,%s,%s,%s)",
+            (OWNER, "inv", turn, utt, Json({"keep": True}),
+             Json({"op": "NEW", "memory_ids": [mid]})),
+        )
+    r = await client.post("/recall", json={
+        "query": "where were we?", "session_id": "inv", "owner": OWNER,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["mode"] == "replay"
+    assert [t["turn"] for t in out["timeline"]] == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_associative_leg_case_insensitive(client, db, emb):
+    """#FOOD in the query must fire the tag leg against stored 'food':
+    the read path honors the same normalization as the write path."""
+    await seed(db, emb, OWNER, [
+        {"name": "ramen", "content": "The user adores midnight ramen.",
+         "tags": ["food"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "anything on #FOOD?", "session_id": "ci", "owner": OWNER,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["abstain"] is False
+    ramen = [h for h in out["hits"] if "ramen" in h["summary"]]
+    assert ramen, out["hits"]
+    assert "tag #" in ramen[0]["why"], ramen[0]["why"]
+
+
+@pytest.mark.asyncio
+async def test_probe_case_insensitive(client, db, emb):
+    await seed(db, emb, OWNER, [
+        {"name": "ramen", "content": "The user adores midnight ramen.",
+         "tags": ["food"]},
+    ])
+    r = await client.get(f"/probe?tag=%23FOOD&owner={OWNER}", headers=AUTH)
+    got = {m["content"] for m in r.json()["memories"]}
+    assert any("ramen" in c for c in got), got
+
+
+@pytest.mark.asyncio
 async def test_identity_and_probe_endpoints(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
     r = await client.get(f"/identity?owner={OWNER}", headers=AUTH)

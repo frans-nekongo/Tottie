@@ -3,6 +3,7 @@ errors (MemoryNotFound / NotOwner); each surface maps them to its own shape."""
 from psycopg.types.json import Json
 
 from . import retrieve
+from .reconcile import _norm_tags
 
 
 class MemoryNotFound(LookupError):
@@ -24,11 +25,14 @@ async def get_identity(db, owner: str, limit: int = 20) -> list[dict]:
 
 
 async def probe_room(db, owner: str, tag: str, limit: int = 20) -> list[dict]:
+    norm = _norm_tags([tag.lstrip("#")])
+    if not norm:
+        return []
     rows = await db.fetch(
         "SELECT id, tier, kind, content, tags, salience FROM memories "
         "WHERE owner = %s AND valid_to IS NULL AND NOT quarantined "
         "AND %s = ANY(tags) ORDER BY salience DESC, utility DESC LIMIT %s",
-        (owner, tag.lstrip("#"), limit),
+        (owner, norm[0], limit),
     )
     return [{**r, "id": str(r["id"])} for r in rows]
 

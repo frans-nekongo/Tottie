@@ -250,3 +250,16 @@ def test_completer_groups_by_shared_tag():
     covered = sorted(i for c in clusters for i in c["ids"])
     assert covered == ["a", "b", "c", "d"]  # every hit exactly once
     assert cluster_hits([]) == []
+
+
+def test_completer_ignores_kind_namespace():
+    """Shared 'preference' is namespace overlap, not a topic: no grouping,
+    no kind-word labels (same mush doctrine as link formation)."""
+    hits = [
+        {"id": "a", "score": 0.9, "tags": ["preference", "food"]},
+        {"id": "b", "score": 0.8, "tags": ["preference", "deploy"]},
+        {"id": "c", "score": 0.7, "tags": ["preference"]},
+    ]
+    clusters = cluster_hits(hits)
+    assert sorted(c["size"] for c in clusters) == [1, 1, 1]
+    assert {c["label"] for c in clusters} == {"food", "deploy", "ungrouped"}
