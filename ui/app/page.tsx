@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Chat, { ChatMsg } from "../components/Chat";
 import GraphView from "../components/GraphView";
 import PendingStrip from "../components/PendingStrip";
 import Timeline, { StreamEvent } from "../components/Timeline";
 import TottieFace, { FaceState } from "../components/TottieFace";
 
+// Agent observatory: no chat here — this view watches memories form as
+// agents work. Timeline streams every memory event live; the 3D brain
+// shows the nodes and links those events create.
 export default function Home() {
   const [session, setSession] = useState("");
   useEffect(() => {
@@ -17,13 +19,9 @@ export default function Home() {
       setTab("graph");
     }
   }, []);
-  const [memory, setMemory] = useState(true);
   const [tab, setTab] = useState<"timeline" | "graph">("timeline");
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [events, setEvents] = useState<StreamEvent[]>([]);
-  const [path, setPath] = useState<string[]>([]);
   const [face, setFace] = useState<FaceState>("idle");
-  const [busy, setBusy] = useState(false);
   const [sleeping, setSleeping] = useState(false);
   const [sleepNote, setSleepNote] = useState<string | null>(null);
   const [graphTick, setGraphTick] = useState(0);
@@ -56,70 +54,17 @@ export default function Home() {
     return () => src.close();
   }, [session]);
 
-  const saidRef = useRef(false);
-  const sendRef = useRef<(t: string) => Promise<void>>(async () => {});
-  useEffect(() => {
-    // ?say= auto-sends once the session exists: fixed film takes + headless gates.
-    if (!session || saidRef.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const say = params.get("say") ?? params.get("q");
-    if (say && say.trim()) {
-      saidRef.current = true;
-      void sendRef.current(say.trim());
-    }
-  }, [session]);
-
-  const send = async (text: string) => {
-    if (!session) return;
-    setMessages((xs) => [...xs, { role: "user", text }]);
-    setBusy(true);
-    setFace("thinking");
-    try {
-      const r = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, session_id: session, memory }),
-      });
-      const j = await r.json();
-      setMessages((xs) => [
-        ...xs,
-        {
-          role: "tottie",
-          text: j.reply ?? "(no reply)",
-          card: j.card ?? null,
-          confidence: j.confidence,
-          abstain: j.abstain,
-          story: j.story ?? null,
-        },
-      ]);
-      setPath(j.path ?? []);
-      flash("speaking");
-    } catch {
-      setMessages((xs) => [...xs, { role: "tottie", text: "(core unreachable)" }]);
-    } finally {
-      setBusy(false);
-    }
-  };
-  sendRef.current = send;
-
   return (
     <main className="h-screen max-w-[1440px] mx-auto flex flex-col px-4 py-3 gap-3">
       <header className="flex items-center gap-3">
         <TottieFace state={face} />
         <div className="flex-1">
           <h1 className="text-lg font-semibold leading-tight">Tottie</h1>
-          <p className="dim text-xs mono">session {session} · live memory</p>
+          <p className="dim text-xs mono">session {session} · agent observatory</p>
         </div>
         <button
           className="action text-sm"
-          onClick={() => setMemory((m) => !m)}
-          title="ON: recall + store every turn. OFF: raw model, nothing stored."
-        >
-          memory {memory ? "ON" : "OFF"}
-        </button>
-        <button
-          className="action text-sm"
-          disabled={sleeping || busy || !session}
+          disabled={sleeping || !session}
           title="Run Sleep: replay episodes into semantic knowledge."
           onClick={async () => {
             setSleeping(true);
@@ -151,38 +96,27 @@ export default function Home() {
         </button>
         {sleepNote && <p className="text-xs dim mono">{sleepNote}</p>}
       </header>
-      {!memory && (
-        <p className="text-xs dim card px-3 py-1">
-          ablation OFF — raw model: no recall, no writes. Flip ON to feel the
-          difference.
-        </p>
-      )}
       <PendingStrip refreshKey={graphTick} />
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[11fr_9fr] gap-3 min-h-0">
-        <section className="card p-3 min-h-0 flex flex-col">
-          <Chat messages={messages} onSend={send} busy={busy} />
-        </section>
-        <section className="card p-3 min-h-0 flex flex-col">
-          <div className="flex gap-2 mb-2">
-            {(["timeline", "graph"] as const).map((t) => (
-              <button
-                key={t}
-                className="action text-sm"
-                disabled={tab === t}
-                onClick={() => setTab(t)}
-              >
-                {t === "timeline" ? "Timeline" : "3D brain"}
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {tab === "timeline" ? (
-              <Timeline events={events} />
-            ) : (
-              <GraphView path={path} fresh={graphTick} />
-            )}
-          </div>
-        </section>
+      <div className="flex-1 min-h-0 flex flex-col card p-3">
+        <div className="flex gap-2 mb-2">
+          {(["timeline", "graph"] as const).map((t) => (
+            <button
+              key={t}
+              className="action text-sm"
+              disabled={tab === t}
+              onClick={() => setTab(t)}
+            >
+              {t === "timeline" ? "Timeline" : "3D brain"}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {tab === "timeline" ? (
+            <Timeline events={events} />
+          ) : (
+            <GraphView path={[]} fresh={graphTick} />
+          )}
+        </div>
       </div>
     </main>
   );
