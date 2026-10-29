@@ -28,7 +28,8 @@ async def seed(db, emb, owner, items):
         row = await db.execute_returning(
             "INSERT INTO memories (owner, tier, kind, content, tags, salience, "
             "trust, source, embedding, embedding_model, hash, quarantined, "
-            "valid_to) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s) "
+            "valid_to, principle) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s,%s) "
             "RETURNING id",
             (
                 owner, it.get("tier", "knowledge"), it.get("kind", "fact"),
@@ -37,6 +38,7 @@ async def seed(db, emb, owner, items):
                 Json({"session": it.get("session", "seed"), "turn": i}),
                 pgvector_literal(vec), emb.model_name, uuid.uuid4().hex,
                 it.get("quarantined", False), it.get("valid_to"),
+                it.get("principle", ""),
             ),
         )
         ids[it.get("name", f"row{i}")] = str(row["id"])
@@ -146,6 +148,42 @@ async def test_command_policy_assembles_kit(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_lexical_leg_stems_and_strips(client, db, emb):
+    """The 'english' config is load-bearing: stemming + stopwords let a
+    WH-question hit lexically (proven: 'simple' misses it)."""
+    ids = await seed(db, emb, OWNER, [
+        {"name": "vault", "content": "The office vault code is 1111.",
+         "tags": ["vault"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "What is the vault code?", "session_id": "s",
+        "owner": OWNER,
+    }, headers=AUTH)
+    hits = {h["id"]: h for h in r.json()["hits"]}
+    assert ids["vault"] in hits
+    assert "lexical #" in hits[ids["vault"]]["why"], hits[ids["vault"]]
+
+
+@pytest.mark.asyncio
+async def test_non_english_question_recalls(client, db, emb):
+    """A German ? question classifies QUESTION and surfaces the German row
+    (presence, not rank: bge is English-tuned; MiniLM ranks it top-1)."""
+    ids = await seed(db, emb, OWNER, [
+        {"name": "de", "content": "Der Tresorcode lautet 2222.",
+         "tags": ["tresor"]},
+        {"name": "en", "content": "The garden grows tomatoes.",
+         "tags": ["garden"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "Wie lautet der Tresorcode?", "session_id": "s",
+        "owner": OWNER,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "QUESTION"
+    assert ids["de"] in {h["id"] for h in out["hits"]}, out["hits"]
+
+
+@pytest.mark.asyncio
 async def test_recall_rehearses_utility(client, db, emb):
     """Serving a hit is retrieval practice (the testing effect): utility
     climbs +0.15 and access is logged."""
@@ -231,6 +269,113 @@ async def test_prospective_fires_and_registers(client, db, emb):
         (OWNER,),
     )
     assert n == 2  # future + newly registered
+
+
+@pytest.mark.asyncio
+async def test_intentions_fire_exactly_once(client, db, emb):
+    """Time and event intentions fire on the matching recall, flip to
+    fired, and never fire again; unrelated queries fire nothing new."""
+    await seed(db, emb, OWNER, SEEDS)
+    await db.execute(
+        "INSERT INTO intentions (owner, content, time_cue) "
+        "VALUES (%s, 'past due', now() - interval '1 hour')",
+        (OWNER,),
+    )
+    await db.execute(
+        "INSERT INTO intentions (owner, content, event_cue) "
+        "VALUES (%s, 'stretch', %s)",
+        (OWNER, Json(["stand up"])),
+    )
+
+    async def _fired(query):
+        r = await client.post("/recall", json={
+            "query": query, "session_id": "s", "owner": OWNER,
+        }, headers=AUTH)
+        return sorted(f["content"] for f in r.json()["fired_intentions"])
+
+    # event cues fire on marked spans (quotes/tags = salient cues)
+    assert await _fired('I "stand up" now, anything for me?') == [
+        "past due", "stretch"]
+    assert await _fired('I "stand up" now, anything for me?') == []
+    assert await _fired("What is the deploy checklist?") == []
+    n = await db.fetchval(
+        "SELECT count(*) FROM intentions WHERE owner = %s AND status = 'fired'",
+        (OWNER,),
+    )
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_commanded_principle_outranks_twin(db, emb, monkeypatch):
+    """COMMAND policy: among near-identical twins the row carrying a
+    reusable principle wins — actionability emerges from the Scribe's
+    principle field, never from a kind list."""
+    from app.agents import retrieve
+
+    ow = f"rc_{uuid.uuid4().hex[:8]}"
+    content = "Deploy procedure ships behind a flag on Fridays."
+    ids = await seed(db, emb, ow, [
+        {"name": "plain", "kind": "decision", "content": content,
+         "tags": ["deploy"]},
+        {"name": "ruled", "kind": "decision", "content": content,
+         "tags": ["deploy"], "principle": "Always ship behind a flag."},
+    ])
+    kw = dict(db=db, embedder=emb, owner=ow, session_id="s", k=8,
+              tiers=None, settings=Settings())
+    boosted = await retrieve.recall(
+        query="Show me the deploy procedure", **kw)
+    hits = boosted["hits"]
+    assert {h["id"] for h in hits} >= set(ids.values())
+    assert hits[0]["id"] == ids["ruled"], [h["id"] for h in hits]
+    score_b = hits[0]["score"]
+    # Ablation: with the boost removed the 1.5x multiplier vanishes
+    # exactly — the twin wins by boost, never by leg luck.
+    monkeypatch.setattr(retrieve, "COMMAND_BOOST", 1.0)
+    unboosted = await retrieve.recall(
+        query="Show me the deploy procedure", **kw)
+    by_id = {h["id"]: h["score"] for h in unboosted["hits"]}
+    assert score_b == pytest.approx(1.5 * by_id[ids["ruled"]], rel=2e-2)
+
+
+@pytest.mark.asyncio
+async def test_recall_k_bounds_only_ranking_k_independent(db, emb):
+    """k bounds output size; ranking and confidence are computed before
+    slicing, so they never depend on k."""
+    from app.agents import retrieve
+
+    # Fresh owner per k: recall bumps utility on serve (rehearsal), and the
+    # UPDATE rewrites heap order, which flips lexical-leg tie ranks between
+    # sequential calls on the same rows. Identical contents on pristine
+    # owners isolate k as the only variable (ids differ, scores don't).
+    # Lexically distinct rows: identical term frequencies tie ts_rank and
+    # ties break by heap order (luck), which would swamp the k comparison.
+    items = [
+        {"name": "n0", "kind": "fact", "tags": ["deploy"],
+         "content": "Deploy runbook master index deploy deploy deploy."},
+        {"name": "n1", "kind": "fact", "tags": ["deploy"],
+         "content": "Deploy runbook note beta with extra context words."},
+        {"name": "n2", "kind": "fact", "tags": ["deploy"],
+         "content": "Deploy checklist note gamma."},
+        {"name": "n3", "kind": "fact", "tags": ["deploy"],
+         "content": "Runbook note delta for staging deploys."},
+        {"name": "n4", "kind": "fact", "tags": ["deploy"],
+         "content": "Friday procedures note epsilon deploy runbook."},
+    ]
+    kw = dict(db=db, embedder=emb, session_id="s",
+              tiers=None, settings=Settings())
+    ow_full = f"rk_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow_full, items)
+    full = await retrieve.recall(query="deploy runbook", k=8, owner=ow_full,
+                                 **kw)
+    ow_cut = f"rk_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow_cut, items)
+    cut = await retrieve.recall(query="deploy runbook", k=1, owner=ow_cut,
+                                **kw)
+    assert len(cut["hits"]) == 1
+    assert cut["hits"][0]["summary"] == full["hits"][0]["summary"]
+    assert cut["hits"][0]["score"] == full["hits"][0]["score"]
+    assert cut["confidence"] == full["confidence"]
+    assert cut["margin"] == full["margin"]
 
 
 @pytest.mark.asyncio
