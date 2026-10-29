@@ -648,3 +648,256 @@ async def test_recall_story_narrates(client, db, emb):
     }, headers=AUTH)
     assert "abstained" in r.json()["story"]
     assert len(ids) == 1
+
+
+@pytest.mark.asyncio
+async def test_reference_resolves_referent_from_session(client, db, emb):
+    """REFERENCE resolution: 'that DB' points at the session episode naming
+    it — overlap beats recency (target at turn 1, distractor at turn 2) —
+    and recall answers from the resolved referent."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    ids = await seed(db, emb, ow, [
+        {"name": "garden", "tier": "episodic", "kind": "event",
+         "session": "rfsess",
+         "content": "The owner watered the garden beds at noon.",
+         "tags": ["garden"]},
+        {"name": "db", "tier": "episodic", "kind": "event",
+         "session": "rfsess",
+         "content": "We discussed using Postgres as the DB for the project.",
+         "tags": ["db"]},
+        {"name": "lunch", "tier": "episodic", "kind": "event",
+         "session": "rfsess",
+         "content": "Lunch was sandwiches on the porch.",
+         "tags": ["lunch"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "use that DB we discussed", "session_id": "rfsess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "REFERENCE"
+    assert out["abstain"] is False, out
+    assert out["referent"]["id"] == ids["db"], out["referent"]
+    assert "that-N 'db'" in out["referent"]["match"]
+    assert out["hits"][0]["id"] == ids["db"], out["hits"]
+    assert "Postgres" in " ".join(h["summary"] for h in out["hits"])
+    assert out["hits"][0]["why"].startswith("REFERENCE -> ")
+    assert "referent" in out["story"]
+
+
+@pytest.mark.asyncio
+async def test_reference_pronoun_falls_back_to_most_recent(client, db, emb):
+    """Bare 'do the same' carries no content words that match — the
+    zero-evidence pronoun resolves to the most recent session episode."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    ids = await seed(db, emb, ow, [
+        {"name": "garden", "tier": "episodic", "kind": "event",
+         "session": "rpsess",
+         "content": "The owner watered the garden beds at noon.",
+         "tags": ["garden"]},
+        {"name": "lunch", "tier": "episodic", "kind": "event",
+         "session": "rpsess",
+         "content": "Lunch was sandwiches on the porch.",
+         "tags": ["lunch"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "Do the same as yesterday", "session_id": "rpsess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "REFERENCE"
+    assert out["abstain"] is False, out
+    assert out["referent"]["id"] == ids["lunch"], out["referent"]
+    assert out["referent"]["match"] == "recency fallback"
+    assert out["hits"][0]["id"] == ids["lunch"], out["hits"]
+
+
+@pytest.mark.asyncio
+async def test_reference_abstains_without_session_referent(client, db, emb):
+    """No session episodes -> no referent -> honest abstain, even though the
+    store holds a matching row (no fallthrough to general recall)."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "db", "kind": "fact", "session": "other",
+         "content": "Postgres is the project DB.", "tags": ["db"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "use that DB we discussed", "session_id": "empty-sess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "REFERENCE"
+    assert out["abstain"] is True, out
+    assert out["hits"] == []
+    assert out["confidence"] == 0.0
+    assert out["card"] is None
+    assert out["referent"] is None
+    assert "no referent" in out["story"]
+
+
+@pytest.mark.asyncio
+async def test_reference_unmatched_definite_abstains(client, db, emb):
+    """'that DB' with a gardening-only session: the definite names something
+    never said here -> abstain rather than recency-guess."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "garden", "tier": "episodic", "kind": "event",
+         "session": "gsess",
+         "content": "The owner watered the garden beds at noon.",
+         "tags": ["garden"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "use that DB we discussed", "session_id": "gsess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "REFERENCE"
+    assert out["abstain"] is True, out
+    assert out["hits"] == []
+    assert out["referent"] is None
+
+
+@pytest.mark.asyncio
+async def test_reference_definite_needs_word_boundary(client, db, emb):
+    """Manager review catch: hint matching must respect word boundaries —
+    'that DB' must NOT match a row only containing 'redblueberries'
+    (substring). No word 'db' anywhere -> honest abstain, no guessing."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "trap", "tier": "episodic", "kind": "event",
+         "session": "rfsess",
+         "content": "We baked redblueberries into the pie.",
+         "tags": ["baking"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "use that DB we discussed", "session_id": "rfsess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["abstain"] is True, out
+    assert out["hits"] == []
+    assert out["referent"] is None
+
+
+@pytest.mark.asyncio
+async def test_reference_plural_those_resolves_all_matching(client, db, emb):
+    """Plural 'those DBs' resolves to ALL matching recent candidates (both
+    DB episodes, not just the top one), most-recent-first; the lunch
+    distractor is excluded and recall answers from both referents."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    ids = await seed(db, emb, ow, [
+        {"name": "pg", "tier": "episodic", "kind": "event",
+         "session": "plsess",
+         "content": "We discussed using Postgres as the DB for the project.",
+         "tags": ["db"]},
+        {"name": "redis", "tier": "episodic", "kind": "event",
+         "session": "plsess",
+         "content": "We discussed using Redis as the DB cache layer.",
+         "tags": ["db"]},
+        {"name": "lunch", "tier": "episodic", "kind": "event",
+         "session": "plsess",
+         "content": "Lunch was sandwiches on the porch.",
+         "tags": ["lunch"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "use those DBs we discussed", "session_id": "plsess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "REFERENCE"
+    assert out["abstain"] is False, out
+    got = [rf["id"] for rf in out["referents"]]
+    assert got == [ids["redis"], ids["pg"]], out["referents"]
+    assert out["referent"]["id"] == ids["redis"]
+    assert all("those-N 'dbs'" in rf["match"] for rf in out["referents"])
+    assert "2 matches" in out["story"]
+    assert "tie-break turn 1" in out["story"], out["story"]
+    hits = {h["id"] for h in out["hits"]}
+    assert {ids["pg"], ids["redis"]} <= hits, out["hits"]
+
+
+@pytest.mark.asyncio
+async def test_reference_plural_pronouns_resolve_all_recent(client, db, emb):
+    """Zero-evidence plural pronouns ('they'/'them' with no content match)
+    resolve to the whole recent window, most-recent-first — the plural
+    analog of the singular recency baseline."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    ids = await seed(db, emb, ow, [
+        {"name": "garden", "tier": "episodic", "kind": "event",
+         "session": "pnsess",
+         "content": "The owner watered the garden beds at noon.",
+         "tags": ["garden"]},
+        {"name": "lunch", "tier": "episodic", "kind": "event",
+         "session": "pnsess",
+         "content": "Lunch was sandwiches on the porch.",
+         "tags": ["lunch"]},
+    ])
+    for query in ("do they still work as we discussed",
+                  "use them as we discussed"):
+        r = await client.post("/recall", json={
+            "query": query, "session_id": "pnsess", "owner": ow,
+        }, headers=AUTH)
+        out = r.json()
+        assert out["cue"]["type"] == "REFERENCE", query
+        assert out["abstain"] is False, (query, out)
+        got = [rf["id"] for rf in out["referents"]]
+        assert got == [ids["lunch"], ids["garden"]], (query, out)
+        assert out["referent"]["id"] == ids["lunch"]
+        assert all(rf["match"] == "recency fallback"
+                   for rf in out["referents"])
+        assert "2 matches" in out["story"], (query, out["story"])
+        assert "tie-break turn 1" in out["story"], (query, out["story"])
+
+
+@pytest.mark.asyncio
+async def test_reference_tie_break_picks_most_recent_turn(client, db, emb):
+    """Tied singular candidates (equal score, equal salience) resolve to
+    the most recent turn, and the story names that turn."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    ids = await seed(db, emb, ow, [
+        {"name": "tune", "tier": "episodic", "kind": "event",
+         "session": "tiesess",
+         "content": "Postgres tuning notes for the project.",
+         "tags": ["db"]},
+        {"name": "backup", "tier": "episodic", "kind": "event",
+         "session": "tiesess",
+         "content": "Postgres backup notes for the project.",
+         "tags": ["db"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "use that DB we discussed", "session_id": "tiesess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "REFERENCE"
+    assert out["abstain"] is False, out
+    assert out["referent"]["id"] == ids["backup"], out["referent"]
+    assert out["referent"]["match"] == "that-N 'db'"
+    assert out["referent"]["turn"] == 1
+    assert [rf["id"] for rf in out["referents"]] == [ids["backup"]]
+    assert "tie-break turn 1" in out["story"], out["story"]
+    assert out["hits"][0]["id"] == ids["backup"], out["hits"]
+
+
+@pytest.mark.asyncio
+async def test_reference_plural_unmatched_definite_abstains(client, db, emb):
+    """'those DBs' with a gardening-only session: the plural definite still
+    denotes — abstain rather than returning the whole window."""
+    ow = f"rf_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "garden", "tier": "episodic", "kind": "event",
+         "session": "pgsess",
+         "content": "The owner watered the garden beds at noon.",
+         "tags": ["garden"]},
+    ])
+    r = await client.post("/recall", json={
+        "query": "use those DBs we discussed", "session_id": "pgsess",
+        "owner": ow,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["cue"]["type"] == "REFERENCE"
+    assert out["abstain"] is True, out
+    assert out["hits"] == []
+    assert out["referent"] is None
+    assert out["referents"] == []
+    assert "no referent" in out["story"]
