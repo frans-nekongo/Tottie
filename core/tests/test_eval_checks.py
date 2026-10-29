@@ -268,10 +268,12 @@ async def test_sleep_curate_failure_stays_flagged(db, emb, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sleep_fades_utility_ebbinghaus(client, db, emb):
-    """Retrieval strength decays exponentially with a 30-day half-life:
-    untouched-for-60-days fades 1.0 -> ~0.25. One episode only, so no LLM
-    runs and the math is exactly checkable."""
+async def test_sleep_fades_utility_power_law(client, db, emb):
+    """Retrieval strength decays by Wickelgren power law (1 + t/30)^-0.5
+    (Wixted: power fits human retention better than exponential):
+    untouched-for-60-days fades 1.0 -> 3^-0.5 = 0.577. Ancient weak rows
+    hit the 0.05 revival floor. One episode replays, so no LLM runs and
+    the math is exactly checkable."""
     from app.config import get_settings
 
     ow = f"eb_{uuid.uuid4().hex[:8]}"
@@ -282,15 +284,26 @@ async def test_sleep_fades_utility_ebbinghaus(client, db, emb):
         "- make_interval(days => 60) WHERE id = %s::uuid",
         (mid,),
     )
+    old = await _seed_episode(
+        db, emb, ow, "Faint trace from years ago.", ["faint"])
+    await db.execute(
+        "UPDATE memories SET tier = 'knowledge', utility = 0.06, "
+        "last_access = now() - make_interval(days => 1825) "
+        "WHERE id = %s::uuid",
+        (old,),
+    )
     r = await client.post("/consolidate", json={
         "session_id": ow, "owner": ow,
     }, headers=AUTH)
     assert r.status_code == 200
-    assert r.json()["utility_faded"] == 1
+    assert r.json()["utility_faded"] == 2
     assert get_settings().utility_half_life_days == 30
     u = await db.fetchval(
         "SELECT utility FROM memories WHERE id = %s::uuid", (mid,))
-    assert abs(u - 0.25) < 0.02, u
+    assert abs(u - 0.5774) < 0.02, u
+    uo = await db.fetchval(
+        "SELECT utility FROM memories WHERE id = %s::uuid", (old,))
+    assert uo == 0.05, uo
 
 
 @pytest.mark.asyncio

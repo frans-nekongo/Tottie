@@ -51,6 +51,12 @@ generalises."""
 
 LINK_DECAY = 0.9
 LINK_FLOOR = 0.1
+# Wickelgren/Wixted power-law decay: R ~ (1 + t/H)^-d. Human retention is
+# steep early and flat late; exponentials fail long-horizon fits. d = 0.5
+# is literature; the 30-day scale H is our calibrated guess. Applied per
+# Sleep multiplicatively to stored utility (same structural shape as the
+# old exponential it replaces), floor 0.05.
+DECAY_D = 0.5
 MERGE_COSINE = 0.90
 MERGE_TAG_CAP = 150
 MERGE_KIND_CAP = 60
@@ -263,8 +269,9 @@ async def consolidate(*, db, embedder, owner: str, session_id: str,
     )
     faded = await db.fetch(
         "UPDATE memories SET utility = GREATEST(0.05, utility * "
-        "EXP(-0.693 * EXTRACT(EPOCH FROM "
-        "(now() - COALESCE(last_access, created_at))) / 86400 / %s)) "
+        "POWER(1.0 + EXTRACT(EPOCH FROM "
+        "(now() - COALESCE(last_access, created_at))) / 86400 / %s, "
+        f"{-DECAY_D})) "
         "WHERE owner = %s AND valid_to IS NULL RETURNING id",
         (settings.utility_half_life_days, owner),
     )
