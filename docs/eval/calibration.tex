@@ -128,6 +128,28 @@ per-embedder floors) ships as the migration path. True
 heritage-language coverage wants bge-m3 + a 1024-dim migration post-film.
 \end{itemize}
 
+\section{Math batch (2026-10-29, literature-grounded)}
+
+\begin{itemize}
+\item \texttt{CORRECTION\_FLOOR = 0.35} --- \textbf{measured}. Sits above
+the Batch-1 unrelated baseline (0.32); corrections match the
+recent-session pool by cue + session + recency + cosine-above-noise, with
+kind/anchor ranking instead of gating (gating flaked 25--50\% live).
+\item \texttt{RECENT\_SESSION\_LIMIT = 5} --- \textbf{guess}: a correction's
+referent is near by.
+\item SP-less correction semantics: journal via UPDATE (history appended,
+summary carries truth), never duplicate, never destroy --- \textbf{measured}
+(Amara Friday$\to$Wednesday pair, 3/3 stable).
+\item \texttt{FAN\_S = 2.0} --- \textbf{literature} (ACT-R association
+$S - \ln(\mathrm{fan})$); associative leg ranks by strongest shared tag.
+\item Power-law fade $(1+t/30)^{-0.5}$ --- \textbf{shape literature}
+(Wickelgren/Wixted), scale 30d \textbf{guess}, floor 0.05 kept. Replaces
+the exponential (60d: 0.577, was 0.25).
+\item Logistic confidence $P = 1/(1+e^{-(A-\tau)/s})$ --- \textbf{shape
+literature} (ACT-R retrieval probability), $s = 0.1$ \textbf{guess}.
+Boundary identical to R2 ($P<0.5 \iff A<\tau$); empty store stays 0.0.
+\end{itemize}
+
 \section{How a guess graduates}
 
 Reproduce the Batch-1 method: measure the quantity live (both sides of the
