@@ -407,6 +407,30 @@ async def test_own_kind_overlap_never_links(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_relink_marks_twin_turns(db):
+    """Same session, same turn (concurrent writers): relink chains the
+    twins in commit order with the tie marked — no gaps, no lies."""
+    from psycopg.types.json import Json
+
+    ow = f"lp_{uuid.uuid4().hex[:8]}"
+    for stamp in ("2026-01-01", "2026-02-01"):
+        await db.execute(
+            "INSERT INTO memories (owner, tier, kind, content, tags, source, "
+            "created_at) VALUES (%s, 'episodic', 'event', %s, %s, %s, %s)",
+            (ow, f"Twin note {stamp}.", ["twin"],
+             Json({"session": ow, "turn": 7}), stamp),
+        )
+    made = await rl_agent.relink(db, ow)
+    assert made["temporal"] == 1, made
+    reason = await db.fetchval(
+        "SELECT reason FROM memory_links WHERE owner = %s "
+        "AND relation = 'temporal'",
+        (ow,),
+    )
+    assert reason == "session order: turn 7 -> turn 7 (twin, commit order) (relink)", reason
+
+
+@pytest.mark.asyncio
 async def test_contiguity_follows_turns_not_commit_order(db):
     """Winner's before/after path must narrate logical turns even when rows
     committed out of order (the created_at lie, same class as the

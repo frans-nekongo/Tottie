@@ -39,14 +39,20 @@ async def relink(db, owner: str) -> dict:
         if sess and sess in prev_by_session:
             p = prev_by_session[sess]
             if (str(p["id"]), mid, "temporal") not in have_set:
+                pt = (p["source"] or {}).get("turn", "?")
+                ct = (r["source"] or {}).get("turn", "?")
+                # Twins (same turn, concurrent writers) chain in commit
+                # order with the tie marked: no gaps, no lies.
+                twin = (" (twin, commit order)"
+                        if pt == ct and pt != "?" else "")
                 await db.execute(
                     "INSERT INTO memory_links (owner, src, dst, relation, "
                     "weight, reason) VALUES (%s, %s::uuid, %s::uuid, "
                     "'temporal', 0.8, %s) ON CONFLICT "
                     "(owner, src, dst, relation) DO NOTHING",
                     (owner, str(p["id"]), mid,
-                     f"session order: turn {(p['source'] or {}).get('turn', '?')} "
-                     f"-> turn {(r['source'] or {}).get('turn', '?')} (relink)"),
+                     f"session order: turn {pt} -> turn {ct}"
+                     f"{twin} (relink)"),
                 )
                 made["temporal"] += 1
                 have_set.add((str(p["id"]), mid, "temporal"))
