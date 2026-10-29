@@ -79,23 +79,26 @@ deletion happens in exactly one case: an explicit right-to-be-forgotten request.
 \section{Worth Remembering I: The Salience Gate}
 The brain retains an experience when activity is strong \emph{and} neuromodulators (amygdala,
 norepinephrine, dopamine) lower the threshold for durable long-term potentiation; weak activity
-produces long-term depression and is pruned. The Observer is that gate:
+produces long-term depression and is pruned. The Observer is that gate. Shipped mechanism:
 \begin{Verbatim}[breaklines=true,fontsize=\small]
-salience = surprise * (w1*persistence + w2*reusability + w3*consequence + w4*arousal)
+salience = LLM_judgment(turn, kind/tag vocabularies)   # 0..1 free score
+salience = max(salience, IDENTITY_SALIENCE) if about the owner
 \end{Verbatim}
-Below threshold $\rightarrow$ DISCARD. The weights are tuned by the evaluation harness.
+Below threshold $\rightarrow$ DISCARD. The multiplicative weight equation
+(\texttt{surprise * (w1*persistence + ...)}) is the Phase-B cascade target, not
+shipped code: weights were never harness-tuned.
 
 \section{Worth Remembering II: Surprise (Prediction Error)}
 Under \textbf{predictive coding} the brain encodes only the \emph{prediction error}; expected input is
-suppressed (repetition suppression). Tottie computes a \textbf{surprise score} before storing:
+suppressed (repetition suppression). Tottie compares each turn against the STORE (never recent
+chatter --- a session-centroid gate failed dogfooding by punishing sustained topical work):
 \begin{Verbatim}[breaklines=true,fontsize=\small]
-prediction_error = 1 - cos(turn_embedding, predicted_embedding)
-encode only if prediction_error >= SURPRISE_FLOOR
+surprise = 1 - max_cos(turn_embedding, store)
+familiar (max_cos >= FAMILIARITY_FLOOR) -> SKIP + rehearse + revive
 \end{Verbatim}
-Routine turns are suppressed; surprising ones are encoded. \textbf{Reward prediction error} tags
-corrections, feedback, and surprising successes or failures for immediate consolidation. Surprise is
-the \emph{multiplicative} term in the salience equation --- the most important mechanism the first
-draft lacked.
+Routine turns are suppressed; surprising ones are encoded. CORRECTION cues bypass the
+familiarity gate (Bayesian surprise: belief change, not event improbability) into SP-level
+reconcile. There is no \texttt{predicted\_embedding} anywhere in the system.
 
 \section{Worth Remembering III: The Content Taxonomy}
 \begin{longtable}{@{}p{0.30\textwidth}p{0.42\textwidth}p{0.16\textwidth}@{}}
@@ -147,54 +150,59 @@ It is not a question. The turn is classified; the type selects the retrieval pol
 \toprule
 Cue type & Example & Retrieval policy \\
 \midrule
-QUESTION & ``When is her birthday?'' & entity facts $+$ identity $+$ knowledge \\
-\textbf{COMMAND / INTENT} & \textbf{``Implement feature A.''} & \textbf{project bindings $+$ conventions $+$ past decisions on A $+$ lessons $+$ constraints} \\
-STATEMENT (new info) & ``I moved to Windhoek.'' & write path; minimal recall \\
-CORRECTION & ``Actually, it is the 8th.'' & recall the contradicted memory $\rightarrow$ supersede \\
-REFERENCE & ``Use that DB we discussed.'' & resolve the referent from recent episodic memory \\
+QUESTION & ``When is her birthday?'' & entity facts $+$ identity $+$ knowledge (tier filters) \\
+\textbf{COMMAND / INTENT} & \textbf{``Implement feature A.''} & \textbf{principle-carrying rows boosted 1.5$\times$ (actionability emerges from the Scribe's \texttt{principle} field) $+$ reminder registration} \\
+STATEMENT (new info) & ``I moved to Windhoek.'' & write path; recall runs, abstains honestly when empty \\
+CORRECTION & ``Actually, it is the 8th.'' & write path bypasses familiarity $\rightarrow$ labile/correction-pool reconcile $\rightarrow$ supersede or journal \\
+REFERENCE & ``Use that DB we discussed.'' & classified only --- NO dedicated referent resolution; falls to general recall (\textbf{gap, deferred}) \\
 CHITCHAT & ``thanks!'' & none (do not pollute) \\
 \bottomrule
 \end{longtable}
 
 \subsection{Spreading Activation, Priming, and Pattern Completion}
 From the seeded nodes, activation propagates along the edges of \texttt{memory\_links}, decaying with
-each hop, and priming lowers the threshold for linked concepts --- why a memory from fifteen years ago
-surfaces the instant someone mentions a band. The \textbf{Completer} then reconstructs the whole
-coherent cluster (\textbf{pattern completion}) rather than three loose chunks.
+each hop (2-hop BFS, decay 0.5, quarter-second budget). Cross-turn \textbf{priming} (lowered
+thresholds for linked concepts) is \textbf{not implemented} --- the Activator spreads and decays
+only. The rule \textbf{Completer} then groups the coherent cluster by shared tags (union-find, no
+LLM) rather than three loose chunks; full cluster reconstruction is deferred.
 
 \subsection{Three Legs, Not One}
 Tottie runs \textbf{semantic} (embeddings), \textbf{lexical} (full-text), and \textbf{associative}
-(graph activation) retrieval in parallel and fuses them. RAG is retained --- it is simply no longer
-alone. If nothing clears the activation floor, Tottie \textbf{abstains} rather than injecting noise.
+(shared-tag overlap, fan-normalized: rare shared tags bind hard, mush sinks) retrieval in parallel
+and fuses them with RRF(60). RAG is retained --- it is simply no longer alone. If nothing clears
+the activation floor, Tottie \textbf{abstains} rather than injecting noise.
 
 \section{Retrieval Is Not a Passive Read}
 \begin{itemize}
   \item \textbf{Testing effect:} a successful recall \emph{increments utility} --- remembering makes a
   memory more likely to be remembered again.
-  \item \textbf{Retrieval-induced forgetting:} a recall \emph{down-weights the near-duplicate
-  competitors} it passed over, sharpening subsequent searches.
-  \item \textbf{Spacing effect:} Tottie schedules \textbf{spaced reviews} at expanding intervals
-  rather than trusting one write.
+  \item \textbf{Retrieval-induced forgetting:} designed and CUT by decision (flag
+  \texttt{TOTTIE\_RIF\_ENABLED} defaults off) --- competitor suppression is not live prose
+  notwithstanding; this paragraph is the annotation saying so.
+  \item \textbf{Spacing effect:} \textbf{deferred} --- no spaced-review scheduler exists; Sleep
+  replays, ranks, fades, and merges, but schedules nothing.
 \end{itemize}
 
 \section{The Ranking Model (``Forgetting'')}
 A memory's \textbf{utility} --- a \emph{ranking} signal, never a delete signal --- decays with age and
-rises with use:
+rises with use (Wickelgren power law per Sleep, additive rehearsal on access; no log-access term):
 \begin{Verbatim}[breaklines=true,fontsize=\small]
-utility = exp(-ln2 * age / half_life) * (1 + log(1 + access_count))
-archive (deprioritise) when utility < MIN_UTILITY   # NOT delete
+utility *= (1 + age_days/30)^-0.5        # per Sleep (d=0.5 literature)
+utility += 0.15 on retrieval-serve; += 0.05 on re-mention
+ranked_out when stale + unfetched + low-salience   # deprioritise, NOT delete
 \end{Verbatim}
 Low-utility memories remain \textbf{available} and simply fall out of the accessible set until a cue
 revives them. \textbf{Interference control} (sparse pattern separation on write, category filtering on
-read) keeps overlapping memories from blending, and \textbf{retrieval-induced forgetting} down-weights
-competitors by using them.
+read) keeps overlapping memories from blending. (Retrieval-induced forgetting was designed and CUT;
+there is no \texttt{MIN\_UTILITY} threshold --- ranked-out is the mechanism.)
 
 \section{Consolidation: The Sleep Job}
 The brain replays the day during sleep (hippocampal sharp-wave ripples driving cortical replay),
 semanticising episodic traces into general knowledge. Tottie's \textbf{Consolidator} is an on-demand
 ``Sleep'' job that (1) replays recent episodic memories, (2) extracts recurring structure into
-\textbf{semantic} memories, (3) schedules \textbf{spaced reviews}, and (4) compresses low-utility
-detail --- \emph{retaining} the raw episodes behind the summary. It can also \textbf{self-test}.
+\textbf{semantic} memories, (3) ranks out stale rows, and (4) decays link weights --- \emph{retaining}
+everything, deleting nothing. Spaced-review scheduling and self-testing are \textbf{deferred}: no
+scheduler and no self-test exist.
 
 \section{Reconsolidation: Updating on Access}
 When a memory is retrieved it is marked labile for the remainder of the turn. If the user then
@@ -233,7 +241,7 @@ Episodic (declarative) & dated personal events & \textbf{episodic} tier \\
 Semantic (declarative) & general facts, meanings & \textbf{knowledge} tier \\
 Autobiographical & episodic $+$ personal semantic & identity $+$ episodic \\
 Procedural (non-decl.) & skills, habits, how-to & \textbf{procedural} (Lessons) tier \\
-Priming (non-decl.) & lowered thresholds after exposure & \textbf{Activator} priming \\
+Priming (non-decl.) & lowered thresholds after exposure & \textbf{Activator} (spread only; priming deferred) \\
 Conditioning (non-decl.) & stimulus--response associations & \texttt{memory\_links} \\
 Working memory & bounded active workspace & the present thought $+$ attention gate \emph{(unbounded)} \\
 Prospective & future intentions & \textbf{Prospective Queue} \\

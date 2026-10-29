@@ -62,27 +62,28 @@ File & Owns \\
 \texttt{core/app/db.py} & pool, migrations ledger, query helpers (bound params only) \\
 \texttt{core/app/embeddings.py} & FastEmbed bge-small, loaded once, fail-loud, thread-pooled \\
 \texttt{core/app/queue.py} & bounded write queue + worker pool + drop-oldest metric \\
-\texttt{core/app/agents/gates.py} & Attention Gate, Surprise Gate, heuristic pre-filter \\
-\texttt{core/app/agents/observer.py} & salience scoring + candidate proposal (one LLM call, shared with the Scribe) \\
+\texttt{core/app/agents/gates.py} & chitchat heuristic + cosine helper (pure rules/math, no LLM) \\
+\texttt{core/app/agents/observer.py} & Attention + Surprise (familiarity-vs-store) + salience scoring + candidate proposal (one LLM call, shared with the Scribe) \\
 \texttt{core/app/agents/scribe.py} & structure, tag, embed, reconcile (\texttt{NEW/UPDATE/SUPERSEDE/SKIP}) \\
-\texttt{core/app/agents/cue\_classifier.py} & deterministic cue rules (rules-only for the hackathon) \\
-\texttt{core/app/agents/retriever.py} & RRF SQL + graph BFS + confidence \\
-\texttt{core/app/agents/curator.py} & rules-based Context Card assembly ($\leq$ 400 tokens) \\
-\texttt{core/app/agents/ranker.py} & utility recompute (SQL-side); compression happens in Sleep \\
-\texttt{core/app/agents/consolidator.py} & on-demand Sleep job \\
-\texttt{core/app/agents/prospective.py} & intention matching on recall/write (no scheduler) \\
+\texttt{core/app/agents/cues.py} & deterministic cue rules: CORRECTION/REFERENCE/QUESTION/COMMAND/CHITCHAT/STATEMENT + policies \\
+\texttt{core/app/agents/retrieve.py} & vector/lexical/tag legs + RRF(60) + graph BFS + confidence/abstain + Context Card (\texttt{\_card}) + intention firing (\texttt{check\_intentions}) \\
+\texttt{core/app/agents/reconcile.py} & SP-identity + labile route + correction pool + link formation + trust partition \\
+\texttt{core/app/agents/consolidate.py} & on-demand Sleep: replay, rank-out SQL, power-law fade, link decay, merges, curation \\
+\texttt{core/app/agents/brief.py} & ambient briefing assembly (card + dues + new-since-cursor) \\
+\texttt{core/app/agents/memories.py} & probe/confirm/forget primitives \\
 \texttt{core/app/routes/*.py} & HTTP surface (see \emph{HTTP API}) + SSE with resume \\
 \texttt{core/app/providers/*.py} & \texttt{MetaProvider}, \texttt{LocalProvider}, \texttt{resolve\_provider()} \\
 \texttt{core/server.py} & thin MCP adapter over the same core (10 tools, 2 resources, 1 prompt) \\
-\texttt{eval/harness.py} & ON/OFF runner, metrics, special checks (see \emph{Roadmap}) \\
+\texttt{core/eval/harness.py} & ON/OFF runner, metrics, special checks (see \emph{Roadmap}) \\
 \texttt{core/scripts/seed\_demo.py} & offline demo seeding (never imported by runtime code) \\
 \bottomrule
 \end{longtable}
 
 \section{The Tier Model}
-\textbf{Identity} (persona, pinned, zero search) · \textbf{Episodic} (decisions, state, history) ·
-\textbf{Knowledge} (documents, semantic facts) · \textbf{Procedural} (Lessons / autosave) ·
-\textbf{Prospective} (intentions).
+Four tiers on \texttt{memories} --- \textbf{Identity} (persona, pinned, zero search) ·
+\textbf{Episodic} (decisions, state, history) · \textbf{Knowledge} (documents, semantic facts) ·
+\textbf{Procedural} (lessons / autosave) --- plus prospective \textbf{intentions} as their own
+table (event/time cues, pending/fired), not a fifth tier.
 
 \section{Reuse Map (patterns, not files)}
 \begin{longtable}{@{}p{0.42\textwidth}p{0.48\textwidth}@{}}

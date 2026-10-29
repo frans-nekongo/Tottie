@@ -22,22 +22,23 @@ class LLMProvider:
 \toprule
 Mind & Model class & Rationale \\
 \midrule
-Observer & small / fast & high-frequency; a cheap classifier wins \\
-Scribe & small / medium & structured extraction + reconcile; JSON output \\
+Observer & shared provider, minimal effort & one clerk call; cheap by effort, not by model \\
+Scribe & shared provider, minimal effort & structured extraction + reconcile; JSON output \\
 Retriever & embeddings only & no LLM in the hot path --- bge-small + RRF \\
-Curator & rules (+ optional small) & deterministic card assembly within a token budget \\
-Brain (the agent) & strongest available & the ``present thought''; quality matters here \\
+Curator & rules (inline in retrieve) & deterministic card assembly within a token budget \\
+Brain (the agent) & shared provider, default effort & the ``present thought''; quality via effort tier \\
 \bottomrule
 \end{longtable}
 
 \section{Meta Depth (the rubric column)}
 The demo routes the Observer/Scribe, the Consolidator, and the chat brain through the
 \textbf{Meta Model API (Muse Spark series)} whenever \texttt{META\_API\_KEY} is set --- Meta is
-the primary path, not a logo. The local fallback prefers a \textbf{Meta open-weights model}
-(Muse Glimmer / Muse Spark Open, or Llama 3.x via Ollama) when one is installed, falling back
-to the bundled \texttt{LOCAL\_LLM\_MODEL} otherwise; this ordering is what the ``Best Build on
-Meta Open-Weight Models'' bonus awards. Every eval run records the exact model ids, so a judge
-can see Meta in the loop rather than taking it on faith.
+the primary path, not a logo. The local fallback is a single configured model
+(\texttt{LOCAL\_LLM\_MODEL}, default a Qwen coder via Ollama) --- API-first stands and the
+open-weights bonus chase was CUT by locked decision R2, so no Meta-weights preference ordering
+exists; adding one plus a Meta open-weights install is the documented path if the bonus is
+pursued. Every eval run records the exact model ids, so a judge can see Meta in the loop rather
+than taking it on faith.
 
 \section{Verified Endpoint (2026-10-27)}
 Live-verified against the real API: base URL \texttt{https://api.meta.ai/v1}, model
