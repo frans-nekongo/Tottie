@@ -61,7 +61,8 @@ export default function Home() {
   useEffect(() => {
     // ?say= auto-sends once the session exists: fixed film takes + headless gates.
     if (!session || saidRef.current) return;
-    const say = new URLSearchParams(window.location.search).get("say");
+    const params = new URLSearchParams(window.location.search);
+    const say = params.get("say") ?? params.get("q");
     if (say && say.trim()) {
       saidRef.current = true;
       void sendRef.current(say.trim());
