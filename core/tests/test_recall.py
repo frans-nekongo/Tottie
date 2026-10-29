@@ -1,6 +1,7 @@
 """Recall over seeded rows: real DB, real embedder, no LLM (except the one
 live round-trip). Seeds embed their content exactly like the Scribe does."""
 import asyncio
+import re
 import uuid
 
 import pytest
@@ -335,6 +336,38 @@ async def test_commanded_principle_outranks_twin(db, emb, monkeypatch):
         query="Show me the deploy procedure", **kw)
     by_id = {h["id"]: h["score"] for h in unboosted["hits"]}
     assert score_b == pytest.approx(1.5 * by_id[ids["ruled"]], rel=2e-2)
+
+
+@pytest.mark.asyncio
+async def test_assoc_leg_fan_effect_specific_beats_mush(db, emb):
+    """ACT-R fan effect (Fix 2): association S - ln(fan). One row sharing
+    a rare tag (fan 1, assoc 2.0) outranks nine rows sharing an overloaded
+    tag (fan 9, assoc -0.2) in the tag leg — even at much lower salience.
+    No LLM: seeded rows, direct recall."""
+    from app.agents import retrieve
+
+    ow = f"fan_{uuid.uuid4().hex[:8]}"
+    items = [
+        {"name": f"d{i}", "kind": "fact",
+         "content": f"Deploy pipeline note number {i}.", "tags": ["deploy"],
+         "salience": 0.9}
+        for i in range(9)
+    ] + [{"name": "rare", "kind": "fact",
+          "content": "The outage postmortem is scheduled.",
+          "tags": ["wednesday-deadline"], "salience": 0.1}]
+    ids = await seed(db, emb, ow, items)
+    out = await retrieve.recall(
+        db=db, embedder=emb, owner=ow, session_id="s", k=20,
+        tiers=None, settings=Settings(),
+        query="status of #deploy #wednesday-deadline")
+    ranks = {}
+    for h in out["hits"]:
+        m = re.search(r"tag #(\d+)", h.get("why") or "")
+        if m:
+            ranks[h["id"]] = int(m.group(1))
+    assert ranks.get(ids["rare"]) == 1, ranks
+    for i in range(9):
+        assert ranks.get(ids[f"d{i}"], 99) >= 2, ranks
 
 
 @pytest.mark.asyncio

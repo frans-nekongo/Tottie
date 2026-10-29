@@ -21,6 +21,10 @@ BFS_DECAY = 0.5
 CARD_CHARS = 1600  # ~400 tokens at the codebase's chars/4 heuristic
 COMMAND_BOOST = 1.5
 BFS_BUDGET_S = 0.25
+# ACT-R fan effect: association S_ji = S - ln(fan_j). A tag shared by many
+# rows spreads ~nothing to each (cue overload); a rare shared tag binds
+# hard. Overloaded glue tags sink themselves negative — no special-casing.
+FAN_S = 2.0
 
 
 def _legs_sql(tiered: bool) -> str:
@@ -48,11 +52,22 @@ SELECT id, leg, rnk FROM (
   ) f
   UNION ALL
   SELECT id, 'a' AS leg, row_number() OVER (
-    ORDER BY salience DESC, utility DESC) AS rnk FROM (
-    SELECT id, salience, utility FROM memories
-    WHERE owner = %s AND valid_to IS NULL AND NOT quarantined
-      AND NOT ranked_out AND tags && %s {tier}
-    ORDER BY salience DESC, utility DESC LIMIT {OVERFETCH}
+    ORDER BY assoc DESC, salience DESC, utility DESC) AS rnk FROM (
+    -- Fan-normalized association: each row scores its STRONGEST shared
+    -- tag (max over S - ln(fan)); fan counts live owner rows carrying
+    -- the query tags. Specific overlap outranks mush overlap even at
+    -- lower salience; salience/utility break assoc ties as before.
+    SELECT m.id, m.salience, m.utility,
+      max({FAN_S} - ln(tc.n)) AS assoc
+    FROM memories m
+    JOIN LATERAL unnest(m.tags) AS t ON t = ANY(%s)
+    JOIN (SELECT t AS tag, count(*) AS n FROM memories, unnest(tags) t
+          WHERE owner = %s AND valid_to IS NULL AND t = ANY(%s)
+          GROUP BY t) tc ON tc.tag = t
+    WHERE m.owner = %s AND m.valid_to IS NULL AND NOT m.quarantined
+      AND NOT m.ranked_out {tier}
+    GROUP BY m.id, m.salience, m.utility
+    ORDER BY assoc DESC, m.salience DESC, m.utility DESC LIMIT {OVERFETCH}
   ) a
 ) u"""
 
@@ -384,7 +399,8 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
     params += [query, owner, query]
     if tiered:
         params.append(tiers)
-    params += [owner, tags]
+    # 'a' leg textual order: tags, owner, tags, owner (+tiers).
+    params += [tags, owner, tags, owner]
     if tiered:
         params.append(tiers)
     rows = await db.fetch(_legs_sql(tiered), tuple(params))
