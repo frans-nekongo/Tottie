@@ -338,6 +338,23 @@ async def test_commanded_principle_outranks_twin(db, emb, monkeypatch):
     assert score_b == pytest.approx(1.5 * by_id[ids["ruled"]], rel=2e-2)
 
 
+def test_retrieval_probability_logistic_mapping():
+    """Fix 4: ACT-R P = logistic((A - tau)/s). Pure math, no DB: floor
+    maps to exactly 0.5, strong recalls saturate near 1, garbage sinks,
+    and the abstain boundary is exactly A < tau (no rounding sliver)."""
+    from app.agents.retrieve import retrieval_probability
+
+    assert retrieval_probability(0.35, 0.35) == 0.5
+    assert retrieval_probability(0.894, 0.35) == pytest.approx(
+        0.9957, rel=1e-3)
+    assert retrieval_probability(0.244, 0.35) == pytest.approx(
+        0.2573, rel=1e-3)
+    assert retrieval_probability(0.0, 0.35) == pytest.approx(
+        0.0293, rel=1e-3)
+    for a, want in ((0.3499, True), (0.35, False), (0.3501, False)):
+        assert (retrieval_probability(a, 0.35) < 0.5) == want
+
+
 @pytest.mark.asyncio
 async def test_assoc_leg_fan_effect_specific_beats_mush(db, emb):
     """ACT-R fan effect (Fix 2): association S - ln(fan). One row sharing

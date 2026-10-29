@@ -7,6 +7,7 @@ Replay branch (recency cues): ordered session events, no similarity search.
 Every recall fires due intentions inline, bumps access_counts (rehearsal on
 access), and appends a recall event to the ledger (cue set, so replay skips it).
 """
+import math
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -25,6 +26,10 @@ BFS_BUDGET_S = 0.25
 # rows spreads ~nothing to each (cue overload); a rare shared tag binds
 # hard. Overloaded glue tags sink themselves negative — no special-casing.
 FAN_S = 2.0
+# ACT-R retrieval noise: P = logistic((A - tau)/s). Sharp near the floor,
+# saturating away from it. s = 0.1 is our guess (literature: fitted ~0.4
+# in log-odds units on lab tasks; ours rescales a 0..1 blend instead).
+CONFIDENCE_S = 0.1
 
 
 def _legs_sql(tiered: bool) -> str:
@@ -173,6 +178,14 @@ def _confidence(fused: list[tuple[str, dict]], query: str,
         cov = sum(1 for w in words if w in bag) / len(words)
     conf = 0.4 * margin + 0.4 * cov + 0.2 * max(0.0, min(1.0, top1cos))
     return round(conf, 3), round(margin, 3)
+
+
+def retrieval_probability(activation: float, floor: float) -> float:
+    """ACT-R retrieval probability P = 1/(1 + e^(-(A - tau)/s)). The R2
+    blend is the activation A; the confidence floor is the threshold tau.
+    Monotonic rescaling: abstain boundary identical (P < 0.5 iff A < tau),
+    numbers gain probabilistic semantics."""
+    return 1.0 / (1.0 + math.exp(-(activation - floor) / CONFIDENCE_S))
 
 
 def cluster_hits(hits: list[dict]) -> list[dict]:
@@ -450,7 +463,12 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
         )
         top1cos = max(0.0, 1.0 - float(dist or 1.0))
     confidence, margin = _confidence(ordered, query, by_id, top1cos)
-    abstain = confidence < settings.confidence_floor
+    if not ordered:
+        prob = 0.0  # no evidence at all: zero, not the logistic floor
+    else:
+        prob = retrieval_probability(confidence, settings.confidence_floor)
+    abstain = prob < 0.5  # unrounded: boundary exactly A < tau, no sliver
+    confidence = round(prob, 3)
     hits = []
     for mid, slot in ordered[:k]:
         row = by_id.get(mid)
