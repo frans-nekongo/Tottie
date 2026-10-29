@@ -9,19 +9,24 @@ New knobs land here as guesses first. No silent magic numbers.
 \section{Encode path (Observer + Scribe)}
 
 \begin{itemize}
-\item \texttt{TOTTIE\_FAMILIARITY\_COSINE = 0.80} --- \textbf{measured}.
-Live calibration: exact repeat 1.00, paraphrase 0.88, topical-novel 0.68,
-unrelated 0.32. Floor sits in the 0.68--0.88 gap. Replaces the dead
-session-centroid surprise gate, which dropped a 0.68-novel turn at 0.25.
+\item \texttt{TOTTIE\_FAMILIARITY\_COSINE} --- \textbf{measured, per
+embedder}. BGE space: 0.80 (repeat 1.00, paraphrase 0.88, topical-novel
+0.68, unrelated 0.32; floor in the 0.68--0.88 gap). MiniLM space: 0.57
+(repeat 1.00, paraphrase 0.651, topical-novel 0.487, unrelated $-$0.005;
+floor in the 0.487--0.651 gap; \texttt{minilm\_calibrate.py}). Floors do
+not transfer across embedding spaces. Replaces the dead session-centroid
+surprise gate, which dropped a 0.68-novel turn at 0.25.
 \item Observer \texttt{max\_tokens = 2048} + \texttt{reasoning\_effort =
 minimal} --- \textbf{measured}. Default effort burned 2046/2048 tokens
 thinking and returned nothing (6/6 live turns RAW); minimal lands in
 \textasciitilde325 reasoning tokens with content. Clerk tasks never pay
 thinker budgets.
-\item \texttt{TOTTIE\_RECONCILE\_COSINE = 0.86} --- \textbf{measured}
-(harness-calibrated per config; see eval reports).
-\item \texttt{TOTTIE\_ACTIVE\_COSINE = 0.60} --- \textbf{measured} (10-pair
-calibration; labile route).
+\item \texttt{TOTTIE\_RECONCILE\_COSINE} --- \textbf{measured, per
+embedder}. BGE space: 0.86 (harness-calibrated). MiniLM space: 0.90
+(near-dupe 0.957, distinct 0.10).
+\item \texttt{TOTTIE\_ACTIVE\_COSINE} --- \textbf{measured, per embedder}.
+BGE space: 0.60 (10-pair calibration; labile route). MiniLM space: 0.45
+(correction-vs-original 0.52).
 \item Kind fallback \texttt{event} and tier fallback \texttt{episodic} ---
 \textbf{guess} (safe defaults for empty model output only).
 \item Tag cap 12 per candidate --- \textbf{guess}, documented DOS guard
@@ -41,9 +46,16 @@ retrieval practice by the testing effect.
 \item \texttt{OVERFETCH = 50} --- \textbf{guess}.
 \item BFS: 2 hops, 50 nodes, decay 0.5, budget 0.25s, activation floor
 0.25, associative score floor 0.01 --- \textbf{all guesses}.
-\item \texttt{TOTTIE\_RECALL\_K = 8} --- \textbf{guess}.
-\item \texttt{COMMAND\_BOOST = 1.5} --- \textbf{guess} (applies to
-principle-carrying rows; actionability is emergent, the multiplier is not).
+\item \texttt{TOTTIE\_RECALL\_K = 8} --- \textbf{value guess, mechanism
+tested}. \texttt{test\_recall\_k\_bounds\_only} proves k bounds output
+size while ranking, scores, confidence, and margin are k-independent
+(fresh owner per k: rehearsal UPDATEs rewrite heap order and flip
+lexical-tie ranks between sequential calls on the same rows).
+\item \texttt{COMMAND\_BOOST = 1.5} --- \textbf{value guess, mechanism
+tested}. \texttt{test\_commanded\_principle\_outranks\_twin} proves the
+principled twin wins by exactly the 1.5$\times$ multiplier (ablation at
+1.0 removes it exactly); actionability is emergent, the multiplier is
+not.
 \item Identity slice: LIMIT 5, vector floor boost 0.90 ---
 \textbf{guesses}.
 \item Card 1600 chars, summaries 300/160 chars --- \textbf{guesses}
@@ -60,7 +72,9 @@ re-mention by the testing effect.
 \begin{itemize}
 \item \texttt{TAG\_LINK\_CAP = TAG\_SCAN\_CAP = 3} --- \textbf{guesses}
 (bounded association; salience-preferred, tested).
-\item \texttt{MERGE\_COSINE = 0.90}, \texttt{MERGE\_TAG\_CAP = 150},
+\item \texttt{MERGE\_COSINE = 0.90} --- \textbf{measured in MiniLM
+space} (food/foods centroids 0.936, food/deploy 0.047); BGE-space value
+unverified. \texttt{MERGE\_TAG\_CAP = 150},
 \texttt{MERGE\_KIND\_CAP = 60} --- \textbf{guesses}.
 \item Link decay $\times$0.9, floor 0.1, associative relations only
 --- \textbf{guess} (temporal/supersedes exempt as structure).
@@ -83,6 +97,28 @@ row: cost control, oldest first).
 \item Chat \texttt{max\_tokens = 2048}, resample-once ---
 \textbf{guesses}. Chat keeps default reasoning effort (the thinker).
 \item Health provider-cache TTL 120s --- \textbf{guess}.
+\end{itemize}
+
+\section{Embedder arms (film week)}
+
+\begin{itemize}
+\item Query prefix (\texttt{query\_prefix\_for}) --- \textbf{measured}.
+Prefix A/B on bare vs \texttt{Represent this sentence for searching
+relevant passages:} MiniLM: bare 5/6 top-1, prefixed 4/6, cosines lower
+across the board, German HIT $\to$ miss. The prefix is BGE-only; MiniLM
+queries go bare.
+\item \texttt{CHAR\_BUDGET = 512} --- \textbf{measured}. 128-token MiniLM
+window $\times$ 4 chars/token keeps the truncation flag honest.
+\item English \texttt{tsvector} kept --- \textbf{measured}. Live psql
+proof: \texttt{simple} misses the WH-question leg, \texttt{english}
+hits; non-English rides the multilingual vector leg, never the stemmer.
+\item Arm A (BGE-small-en-v1.5, inline writes): 22/22 harness scenarios,
+\texttt{eval/reports/ab-bge.json}. Arm B (MiniLM-L12-v2, recalibrated
+floors): pending at time of writing,
+\texttt{eval/reports/ab-minilm.json}. Adoption rule: MiniLM wins only on
+a clean A/B; otherwise BGE stays and the MiniLM machinery (prefix gate,
+reembed script, per-embedder floors) ships as the migration path. True
+heritage-language coverage wants bge-m3 + a 1024-dim migration post-film.
 \end{itemize}
 
 \section{How a guess graduates}
