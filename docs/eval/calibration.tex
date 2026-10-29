@@ -114,10 +114,17 @@ proof: \texttt{simple} misses the WH-question leg, \texttt{english}
 hits; non-English rides the multilingual vector leg, never the stemmer.
 \item Arm A (BGE-small-en-v1.5, inline writes): 22/22 harness scenarios,
 \texttt{eval/reports/ab-bge.json}. Arm B (MiniLM-L12-v2, recalibrated
-floors): pending at time of writing,
-\texttt{eval/reports/ab-minilm.json}. Adoption rule: MiniLM wins only on
-a clean A/B; otherwise BGE stays and the MiniLM machinery (prefix gate,
-reembed script, per-embedder floors) ships as the migration path. True
+floors): 20/22, \texttt{eval/reports/ab-minilm.json}. \textbf{Verdict:
+BGE stays for film.} Root cause of the s18 miss: the rename-vs-original
+pair scores 0.572 in MiniLM space against the 0.57 familiarity floor, so
+the correction is swallowed as a re-mention and never written --- MiniLM
+compresses the paraphrase-vs-correction gap (paraphrase 0.651,
+corrections 0.52--0.57) that BGE keeps wide. s03 retrieved correctly
+(hit) but the answer side dropped the span. Nudging the floor to 0.58
+would thread one scenario, not a measured gap: MiniLM adoption needs a
+correction-pair calibration study (dozens of pairs, both sides)
+post-film. The MiniLM machinery (prefix gate, reembed script,
+per-embedder floors) ships as the migration path. True
 heritage-language coverage wants bge-m3 + a 1024-dim migration post-film.
 \end{itemize}
 
