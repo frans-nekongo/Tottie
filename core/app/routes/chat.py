@@ -7,11 +7,12 @@ Stateless: no history window is sent — memory replaces context stuffing, which
 is the thesis. Assistant replies are never written (the host holds them).
 """
 import time
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from ..agents import retrieve
+from ..agents import observer, retrieve, scribe
 from ..providers.base import NoProviderAvailable, ProviderError, complete_resilient
 from ..providers.resolve import resolve_provider
 from ..queue import WorkerTurn
@@ -100,10 +101,31 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
             "AND session_id = %s",
             (owner, body.session_id),
         )
-        event_id = request.app.state.queue.enqueue_nowait(WorkerTurn(
+        turn = WorkerTurn(
             text=text, session_id=body.session_id, turn=(turn_no or -1) + 1,
             owner=owner, trust="user_direct", origin="chat",
-        ))
+        )
+        if settings.inline_write:
+            # Inline mode starts no workers (main lifespan): curate here,
+            # exactly like /write, or the turn is silently never remembered.
+            turn = WorkerTurn(
+                text=turn.text, session_id=turn.session_id, turn=turn.turn,
+                owner=turn.owner, trust=turn.trust, origin=turn.origin,
+                client_event_id=uuid.uuid4().hex,
+            )
+            obs = await observer.observe(
+                db=request.app.state.db,
+                embedder=request.app.state.embedder,
+                turn=turn, settings=settings,
+            )
+            await scribe.persist(
+                db=request.app.state.db,
+                embedder=request.app.state.embedder,
+                turn=turn, obs=obs,
+            )
+            event_id = turn.client_event_id
+        else:
+            event_id = request.app.state.queue.enqueue_nowait(turn)
     return {
         "reply": raw.text, "card": card, "confidence": confidence,
         "abstain": abstain, "path": path, "hits": hits, "story": story,

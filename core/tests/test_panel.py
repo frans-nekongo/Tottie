@@ -111,3 +111,49 @@ async def test_chat_auth_and_shapes(client):
     assert (await client.post("/chat", json=body)).status_code == 401
     q = dict(body, text="   ")
     assert (await client.post("/chat", json=q, headers=AUTH)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_chat_inline_mode_curates_synchronously(
+        _test_db, _clean_tables, monkeypatch, db, emb):
+    """INLINE_WRITE=1 starts no workers: /chat must curate inline, exactly
+    like /write, or the turn is silently never remembered (the UI amnesia
+    regression). The row exists the moment the response returns: no
+    polling, no queue. Live Meta for observe + reply."""
+    import uuid
+
+    from asgi_lifespan import LifespanManager
+    from httpx import ASGITransport, AsyncClient
+
+    from app.config import get_settings
+    from app.main import create_app
+    from tests.conftest import TEST_CACHE_DIR, TEST_DB_URL
+
+    monkeypatch.setenv("TOTTIE_DB_URL", TEST_DB_URL)
+    monkeypatch.setenv("TOTTIE_API_TOKEN", TEST_TOKEN)
+    monkeypatch.setenv("EMBEDDING_CACHE_DIR", TEST_CACHE_DIR)
+    monkeypatch.setenv("TOTTIE_INLINE_WRITE", "1")
+    get_settings.cache_clear()
+    ow = f"r4_{uuid.uuid4().hex[:8]}"
+    app = create_app()
+    async with LifespanManager(app):
+        assert app.state.queue.depth == 0
+        assert app.state.queue._tasks == []  # no workers in inline mode
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+                transport=transport, base_url="http://test") as c:
+            r = await c.post("/chat", json={
+                "text": "My dog is called Rex.", "session_id": "inline1",
+                "owner": ow, "memory": True,
+            }, headers=AUTH)
+            assert r.status_code == 200, r.text
+            assert r.json()["event_id"] is not None
+    got = await db.fetchval(
+        "SELECT content FROM memories WHERE owner = %s", (ow,))
+    assert got is not None and "Rex" in got, "turn never curated"
+    n = await db.fetchval(
+        "SELECT count(*) FROM memory_events WHERE owner = %s "
+        "AND session_id = 'inline1' AND turn = 0 "
+        "AND scribe_action->>'op' IN "
+        "('NEW','UPDATE','SUPERSEDE','SKIP','RAW')", (ow,))
+    assert n == 1, "curation event missing"
