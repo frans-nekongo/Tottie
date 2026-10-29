@@ -151,6 +151,72 @@ G3 & Honest scope: memory makes it a once-ever failure, not a never-error & reco
 \bottomrule
 \end{longtable}
 
+\section{v12 Implementation Ledger (theory-vs-code audit, 2026-10-29)}
+Every claim below was checked against the running code, not the plan prose.
+Status \texttt{fix} = doc or code change proposed (needs a \texttt{go});
+\texttt{ok} = verified as built; \texttt{cut} = already decided, docs must say so.
+\begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
+\toprule
+ID & Finding & Status \\
+\midrule
+I1 & Module map names 6 files that do not exist
+(\texttt{cue\_classifier}, \texttt{retriever}, \texttt{curator},
+\texttt{ranker}, \texttt{consolidator}, \texttt{prospective}); real homes
+are \texttt{cues.py}, \texttt{retrieve.py} (curator/prospective inline),
+\texttt{consolidate.py} (ranker SQL) & \texttt{fix}: rewrite the map \\
+I2 & Tier Model lists Prospective as a 5th tier; code has 4 tiers +
+\texttt{intentions} table & \texttt{fix}: correct the section \\
+I3 & Salience equation (surprise $\times$ weighted sum, harness-tuned
+weights) never implemented; code uses LLM-judged salience + identity
+floor & \texttt{fix}: document the implemented mechanism \\
+I4 & Surprise formula cites a \texttt{predicted\_embedding} that does not
+exist; code uses novelty-vs-store (dogfood-proven) & \texttt{fix}: update
+the formula \\
+I5 & Utility formula cites a $\log(1+\mathrm{access})$ term that does not
+exist; code uses exp-fade + additive rehearsal bumps & \texttt{fix}:
+update the formula \\
+I6 & Providers chapter promises a Meta open-weights local preference that
+is unimplemented and contradicts the locked R2 CUT of the bonus chase &
+\texttt{fix}: rewrite to API-first + Qwen fallback \\
+I7 & Component-model table (small/fast vs strongest) vs one provider for
+all, effort-tiered (minimal clerk / default thinker) & \texttt{fix}:
+document effort-tiering \\
+I8 & Consolidator claims spaced-review scheduling + self-test; neither
+exists & \texttt{fix}: mark deferred \\
+I9 & REFERENCE is classified but has no referent resolution on the read
+path (falls to general recall) & \texttt{fix}: note or implement \\
+I10 & Activator has spread + decay but no cross-turn priming &
+\texttt{fix}: mark partial \\
+I11 & Ledger promises s23 (YOLO lesson) + s24 (loss cue) scenarios;
+harness holds s01--s22. Loss cue is unit-covered; the YOLO lesson has no
+test at all & \texttt{fix}: add s23 or strike the promise \\
+I12 & Root \texttt{eval/scenarios.jsonl} is a dead legacy format with zero
+references & \texttt{fix}: remove or mark stale \\
+I13 & Docs + validation say \texttt{mcp/server.py}; the live 9-tool server
+is \texttt{core/server.py} (Makefile is correct; \texttt{mcp/} is an empty
+placeholder) & \texttt{fix}: correct paths \\
+I14 & Ledger H2 claims loss patterns take ``QUESTION policy''; only
+\texttt{general}/\texttt{command} policies exist & \texttt{fix}: correct
+the wording \\
+I15 & Emergent kinds verified: vocab-fed reuse/mint, sleep centroid merge,
+STOP\_TAGS is anti-mush not a limiter, \texttt{event} reconcile branch is
+principled dedupe semantics & \texttt{ok} \\
+I16 & Reconciler verified: SP identity, CORRECTION-only labile route,
+trust partition, non-destructive chains, FOR UPDATE + retry concurrency &
+\texttt{ok} \\
+I17 & Forgetting-as-accessibility verified: ranked-out + re-mention
+revival + probe replay; hard delete only via \texttt{/forget} with audit &
+\texttt{ok} \\
+I18 & R2 confidence formula + abstention, exactly-once intentions, 0 LLM
+calls on the read path, MCP 9 tools live-listed & \texttt{ok} \\
+I19 & RIF flag-off and rule Completer match decisions A14/R2, but the
+cognition prose still presents RIF as a live mechanism & \texttt{cut}:
+annotate the prose \\
+I20 & Rate limit is a config knob with no middleware (already deferred
+post-film) & \texttt{cut}: no action pre-film \\
+\bottomrule
+\end{longtable}
+
 \section{v11 Build Ledger (Meta live + keys cascade + W0 green, 2026-10-27)}
 \begin{longtable}{@{}p{0.08\textwidth}p{0.42\textwidth}p{0.40\textwidth}@{}}
 \toprule
