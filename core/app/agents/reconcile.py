@@ -42,10 +42,11 @@ QUARANTINE_TRUSTS = {"tool", "web", "model_inferred"}
 ACTIVE_TTL_S = 600.0
 TAG_LINK_CAP = 3
 # Correction floor: just above measured unrelated baseline (0.32, Batch-1),
-# far below paraphrase. A CORRECTION cue + same kind + shared tag anchor +
-# recent-session pool is four converging signals; cosine only needs to beat
-# noise, then ranks closest-first. Guards casual-'actually' pollution via
-# the anchor requirement, not the cosine.
+# far below paraphrase. The match license is cue + session + recency +
+# cosine-above-noise (all deterministic); kind equality and tag anchors
+# only RANK (free emergent words vary run to run — gating on them flaked
+# 25-50% live). Casual-'actually' turns clear the cue but die on the floor
+# (unrelated pairs sit ~0.1-0.3).
 CORRECTION_FLOOR = 0.35
 RECENT_SESSION_LIMIT = 5  # guess: correction referent is near by
 # Kind/tier names leak into tags ("preference") and glue unrelated rows.
@@ -178,23 +179,24 @@ async def _find_active(conn, *, owner, kind, quarantined, cand, vec, floor,
 
 async def _find_correction(conn, *, owner, kind, quarantined, cand, vec,
                          pool: set[str]):
-    """Correction match: same kind + shared tag anchor + recent-session
-    pool + cosine above noise. SP-less rows (no doer/doing triple) can
-    never SP-match and often sit below the similarity floors (live pair:
-    0.538), yet same-kind + shared-topic + CORRECTION cue + recency is
-    decisive as a conjunction. Cosine ranks, the anchor gates."""
+    """Correction match: CORRECTION cue + recent-session pool + cosine
+    above noise. SP-less rows (no doer/doing triple) can never SP-match
+    and often sit below the similarity floors (live pair: 0.538); kind
+    words and tag choices vary run to run, so they RANK (anchor, then
+    kind, then distance) instead of gating. Fully deterministic given
+    texts: same pair always matches the same row."""
     cur = await conn.execute(
         "SELECT id, kind, subject, predicate, object, content, tags, "
         "salience, valid_to, embedding <=> %s::vector AS dist "
         "FROM memories WHERE owner = %s AND valid_to IS NULL "
         "AND quarantined = %s AND id = ANY(%s::uuid[]) "
-        "AND kind = %s AND embedding <=> %s::vector <= %s "
-        "AND EXISTS (SELECT 1 FROM unnest(tags) t "
-        "WHERE lower(btrim(t)) = ANY(%s)) "
-        "ORDER BY dist LIMIT 5 FOR UPDATE",
-        (pgvector_literal(vec), owner, quarantined, sorted(pool), kind,
+        "AND embedding <=> %s::vector <= %s "
+        "ORDER BY EXISTS (SELECT 1 FROM unnest(tags) t "
+        "WHERE lower(btrim(t)) = ANY(%s)) DESC, (kind = %s) DESC, "
+        "embedding <=> %s::vector LIMIT 5 FOR UPDATE",
+        (pgvector_literal(vec), owner, quarantined, sorted(pool),
          pgvector_literal(vec), 1.0 - CORRECTION_FLOOR,
-         cand["tags"] or []),
+         cand["tags"] or [], kind, pgvector_literal(vec)),
     )
     return await cur.fetchall()
 
