@@ -20,9 +20,9 @@ from tests.conftest import PGHOST, PGUSER, TEST_TOKEN
 CORE_DIR = Path(__file__).resolve().parent.parent
 TEST_DB_URL = f"postgresql://{PGUSER}/tottie_test?host={PGHOST}"
 
-TOOLS = ["memory.confirm", "memory.forget", "memory.identity", "memory.intend",
-         "memory.probe", "memory.recall", "memory.remember", "memory.sleep",
-         "memory.write"]
+TOOLS = ["memory.brief", "memory.confirm", "memory.forget", "memory.identity",
+         "memory.intend", "memory.probe", "memory.recall", "memory.remember",
+         "memory.sleep", "memory.write"]
 
 
 def _env():
@@ -91,6 +91,32 @@ async def test_write_recall_roundtrip(db):
         body = json.loads(_text(out))
         assert body["abstain"] is False
         assert "quokka" in body["hits"][0]["summary"].lower()
+
+
+@pytest.mark.asyncio
+async def test_brief_carries_card_new_items_and_cursor(db):
+    async with _session() as mcp:
+        await mcp.call_tool("memory.write", {
+            "tier": "knowledge", "content": "MCP brief fact about wombats.",
+            "tags": ["mcp"], "subject": "wombat", "predicate": "mood",
+            "object": "sleepy",
+        })
+        out = await mcp.call_tool("memory.brief", {
+            "text": "wombat", "session_id": "mcpbrief", "since_event_id": 0})
+        body = json.loads(_text(out))
+        assert "wombat" in body["briefing"].lower()
+        assert body["abstain"] is False
+        assert body["event_id"] > 0
+        assert any("wombat" in (i["summary"] or "").lower()
+                   for i in body["new_items"])
+        out = await mcp.call_tool("memory.brief", {
+            "text": "wombat", "session_id": "mcpbrief",
+            "since_event_id": body["event_id"]})
+        assert json.loads(_text(out))["new_items"] == []
+        out = await mcp.call_tool("memory.brief", {"session_id": "mcpbrief"})
+        ambient = json.loads(_text(out))
+        assert "new since last briefing" in ambient["briefing"]
+        assert "wombat" in ambient["briefing"].lower()
 
 
 @pytest.mark.asyncio

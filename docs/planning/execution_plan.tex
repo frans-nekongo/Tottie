@@ -15,7 +15,7 @@ W0 skeleton & config, db pool + migrations, embedder, main, auth, CORS, /health,
 W1 write & providers (Meta first), queue + workers, gates, Observer+Scribe one call, /write 202, SSE & 202 $<$ 20~ms; idempotent; raw fallback on dead provider & turn in $\rightarrow$ row + event out \\
 W2 recall & cue rules + temporal scope, RRF + BFS + confidence, Curator card, /recall /identity /probe & command $\rightarrow$ conventions; ``where were we'' $\rightarrow$ ordered replay; honest abstain; p95 $<$ 300~ms & it just knows \\
 W3 reconcile + trust & NEW/UPDATE/SUPERSEDE/SKIP, labile-on-access, confirm, forget + audit, quarantine, links & vegetarian chain; poison visible-not-injected; one live row under concurrency; true delete & correct + safe \\
-W4 MCP + UI + seed & server.py 9/2/1, chat + Panel + 3D brain graph (web3d gates) + ablation + pending strip + sprite placeholders, offline seed & list-tools matches; UI builds + streams; graph nodes pulse + path lights; OFF $\neq$ ON & three bodies visible \\
+W4 MCP + UI + seed & server.py 10/2/1, agent observatory (Timeline + 3D brain graph, web3d gates) + ablation + pending strip + sprite placeholders, offline seed & list-tools matches; UI builds + streams; graph nodes pulse + path lights; OFF $\neq$ ON & three bodies visible \\
 W5 cognition + eval & Sleep, ranker SQL, prospective, rule Completer, harness, 22 $\rightarrow$ 40 scenarios & harness green incl. revival, surprise, consolidation, quarantine & brain + proof \\
 W6 ship & rate limits, logs, backup tested, dry-run, video, README, ledger, public, submit & every shot-list beat filmed; submitted by Nov~4 9~PM ET & done \\
 \bottomrule
@@ -113,7 +113,7 @@ pytest -q                                   # every wave, real DB
 curl -s -o /dev/null -w '%{time_total}\n' -X POST localhost:8765/write -d '{"text":"..."}'
 curl -s -o /dev/null -w '%{http_code}\n' localhost:8765/recall     # 401, no token
 hey -n 200 -c 10 -m POST -d '{"query":"..."}' localhost:8765/recall  # p95 < 0.3
-cd mcp && python3 server.py --list-tools      # 9 tools, 2 resources, 1 prompt
+cd core && python3 server.py --list-tools      # 10 tools, 2 resources, 1 prompt
 curl -s 'localhost:8765/graph?owner=demo' | head -c 200  # nodes+links for the brain
 cd ui && npm run build && npm run dev         # Panel streams live events
 python3 eval/harness.py --on --off            # accuracy, hit@k, tokens, p50/p95

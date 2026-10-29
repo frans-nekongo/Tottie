@@ -1,6 +1,6 @@
 """Tottie MCP server (stdio): the same memory mounted into any host.
 
-In-process core (no HTTP hop): 9 tools / 2 resources / 1 prompt per the MCP
+In-process core (no HTTP hop): 10 tools / 2 resources / 1 prompt per the MCP
 Surface spec. Auth: TOTTIE_API_TOKEN must be present in the real environment
 or the server refuses to start. Owner/scope comes from TOTTIE_OWNER.
 Run: PYTHONPATH=core venv/bin/python core/server.py (cwd=core).
@@ -15,7 +15,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.agents import consolidate, memories, observer, retrieve, scribe
+from app.agents import brief, consolidate, memories, observer, retrieve, scribe
 from app.agents.memories import MemoryNotFound, NotOwner
 from app.agents.observer import Observation
 from app.config import Settings
@@ -126,6 +126,24 @@ async def memory_recall(query: str, tiers: list[str] | None = None,
         db=st["db"], embedder=st["embedder"], owner=st["settings"].owner,
         query=query, session_id=session_id or f"mcp:{st['settings'].owner}",
         k=k, tiers=tiers, settings=st["settings"],
+    )
+    return _out(out)
+
+
+@mcp.tool(name="memory.brief")
+async def memory_brief(text: str | None = None,
+                       session_id: str | None = None,
+                       since_event_id: int = 0,
+                       ctx: Context = None) -> str:
+    """Ambient briefing: the brain surfacing without being asked. Call once
+    per agent turn; paste the briefing block straight into working context.
+    No text: brief on the session's own recent utterances (pure ambient).
+    Always carries due intentions + memories since since_event_id."""
+    st = _state(ctx)
+    out = await brief.brief(
+        db=st["db"], embedder=st["embedder"], owner=st["settings"].owner,
+        session_id=session_id or f"mcp:{st['settings'].owner}",
+        text=text, since_event_id=since_event_id, settings=st["settings"],
     )
     return _out(out)
 
