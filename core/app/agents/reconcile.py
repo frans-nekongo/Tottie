@@ -41,6 +41,13 @@ QUARANTINE_TRUSTS = {"tool", "web", "model_inferred"}
 # intent is preserved exactly; kind is the LLM's guess, trust is the fact.
 ACTIVE_TTL_S = 600.0
 TAG_LINK_CAP = 3
+# Correction floor: just above measured unrelated baseline (0.32, Batch-1),
+# far below paraphrase. A CORRECTION cue + same kind + shared tag anchor +
+# recent-session pool is four converging signals; cosine only needs to beat
+# noise, then ranks closest-first. Guards casual-'actually' pollution via
+# the anchor requirement, not the cosine.
+CORRECTION_FLOOR = 0.35
+RECENT_SESSION_LIMIT = 5  # guess: correction referent is near by
 # Kind/tier names leak into tags ("preference") and glue unrelated rows.
 # They never form links on their own (the cheese-petite repair).
 STOP_TAGS = frozenset({
@@ -69,6 +76,23 @@ def get_active(owner: str, session_id: str) -> set[str]:
         del _ACTIVE[(owner, session_id)]
         return set()
     return set(ids)
+
+
+async def recent_session_ids(conn, owner: str, session_id: str,
+                             limit: int = 5) -> set[str]:
+    """Correction fallback pool: a CORRECTION's referent is near by —
+    same session, just said. When no labile registration exists (nothing
+    was recalled first), the recent live rows of this session become the
+    match pool at the active floor, so 'moved to Wednesday' still finds
+    'due Friday' (0.81 >= 0.60) instead of duplicating it. Labile rows
+    always take precedence; this only fills an empty pool."""
+    cur = await conn.execute(
+        "SELECT id FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "AND NOT quarantined AND source->>'session' = %s "
+        "ORDER BY created_at DESC LIMIT %s",
+        (owner, session_id, limit),
+    )
+    return {str(r["id"]) for r in await cur.fetchall()}
 
 
 def is_quarantined(trust: str) -> bool:
@@ -148,6 +172,29 @@ async def _find_active(conn, *, owner, kind, quarantined, cand, vec, floor,
         f"{cosine_leg}"
         ") ORDER BY dist LIMIT 5 FOR UPDATE",
         tuple(params),
+    )
+    return await cur.fetchall()
+
+
+async def _find_correction(conn, *, owner, kind, quarantined, cand, vec,
+                         pool: set[str]):
+    """Correction match: same kind + shared tag anchor + recent-session
+    pool + cosine above noise. SP-less rows (no doer/doing triple) can
+    never SP-match and often sit below the similarity floors (live pair:
+    0.538), yet same-kind + shared-topic + CORRECTION cue + recency is
+    decisive as a conjunction. Cosine ranks, the anchor gates."""
+    cur = await conn.execute(
+        "SELECT id, kind, subject, predicate, object, content, tags, "
+        "salience, valid_to, embedding <=> %s::vector AS dist "
+        "FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "AND quarantined = %s AND id = ANY(%s::uuid[]) "
+        "AND kind = %s AND embedding <=> %s::vector <= %s "
+        "AND EXISTS (SELECT 1 FROM unnest(tags) t "
+        "WHERE lower(btrim(t)) = ANY(%s)) "
+        "ORDER BY dist LIMIT 5 FOR UPDATE",
+        (pgvector_literal(vec), owner, quarantined, sorted(pool), kind,
+         pgvector_literal(vec), 1.0 - CORRECTION_FLOOR,
+         cand["tags"] or []),
     )
     return await cur.fetchall()
 
@@ -280,7 +327,8 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
 
 
 async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
-                          active_floor, active: set[str]) -> dict:
+                          active_floor, active: set[str],
+                          correction_pool: set[str] | None = None) -> dict:
     """Reconcile one embedded candidate inside the turn's transaction."""
     cand = {**cand, "tags": _norm_tags(cand.get("tags"))}
     quarantined = is_quarantined(turn.trust)
@@ -305,6 +353,12 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                 quarantined=quarantined, cand=cand, vec=vec,
                 floor=active_floor, active=active,
                 identity_only=identity_only,
+            )
+        elif correction_pool:
+            matches = await _find_correction(
+                conn, owner=turn.owner, kind=cand["kind"],
+                quarantined=quarantined, cand=cand, vec=vec,
+                pool=correction_pool,
             )
         if not matches:
             matches = await _find_matches(

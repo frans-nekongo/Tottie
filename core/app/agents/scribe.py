@@ -66,12 +66,21 @@ async def _persist_txn(conn, db, turn, obs, embedded, model) -> str:
         if cue.type == "CORRECTION"
         else set()
     )
+    # Labile registrations match at the active floor; otherwise a
+    # CORRECTION falls back to the recent-session pool with anchor-gated
+    # matching (kept separate: different rule, different floor).
+    correction_pool: set[str] = set()
+    if cue.type == "CORRECTION" and not active:
+        correction_pool = await reconcile.recent_session_ids(
+            conn, turn.owner, turn.session_id,
+            limit=reconcile.RECENT_SESSION_LIMIT)
     ops = []
     for cand, vec in embedded:
         rec = await reconcile.apply_candidate(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
             floor=db._settings.reconcile_cosine,
             active_floor=db._settings.active_cosine, active=active,
+            correction_pool=correction_pool,
         )
         ops.append(rec)
     memory_ids = [o["memory_id"] for o in ops]

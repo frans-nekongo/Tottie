@@ -17,7 +17,7 @@ from ..config import Settings
 from ..db import pgvector_literal
 from ..providers.base import complete_resilient
 from ..providers.resolve import resolve_provider
-from . import gates
+from . import cues, gates
 from .reconcile import STOP_TAGS
 
 log = logging.getLogger("tottie.observer")
@@ -164,7 +164,15 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     vec, _ = await embedder.embed(text)
     fam_cos, fam_id, fam_ranked = await _familiarity(db, turn.owner, vec)
     score = round(max(0.0, min(1.0, 1.0 - fam_cos)), 3)
-    if fam_id is not None and fam_cos >= settings.familiarity_cosine:
+    # CorrectionSniffer (Fix 1): a CORRECTION is Bayesian surprise (belief
+    # change), never Shannon familiarity — the whole-turn cosine that eats
+    # restatements would eat the delta too (live: 0.81 >= 0.80 swallowed a
+    # Friday->Wednesday move). Corrections bypass the gate into LLM+Scribe,
+    # where SP-level compare detects the changed object; the labile route
+    # (scribed via cue type) reconciles it. Gate still records fam/surprise.
+    is_correction = cues.classify(text).type == "CORRECTION"
+    if (fam_id is not None and fam_cos >= settings.familiarity_cosine
+            and not is_correction):
         # Already known: skip the LLM call, but repetition still rehearses
         # (confidence + access + a SMALL utility bump: passive re-mention is
         # maintenance rehearsal, far weaker than retrieval practice) and

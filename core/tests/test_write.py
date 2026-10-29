@@ -90,6 +90,55 @@ async def test_write_chitchat_skips_fast(client, db):
 
 
 @pytest.mark.asyncio
+async def test_write_correction_journals_despite_familiarity(client, db):
+    """Fix 1 (CorrectionSniffer): a CORRECTION is Bayesian surprise, never
+    Shannon familiarity. Live Amara pair: the Friday->Wednesday move scored
+    0.81 >= 0.80 and was swallowed as 'already known'. Now it bypasses the
+    gate and journals onto the same-kind anchor-matched row (SP-less rows
+    have no object to compare, so UPDATE appends history and the summary
+    carries current truth — never a duplicate, never a loss). Live Meta."""
+    ow = "w1corr"
+    r = await client.post("/write", json=_payload(
+        text="The Namib Roasters rebrand is due Friday.",
+        session_id="w1corr", owner=ow, turn=0), headers=AUTH)
+    assert r.status_code == 202
+    for _ in range(120):
+        n = await db.fetchval(
+            "SELECT count(*) FROM memories WHERE owner = %s", (ow,))
+        if n and n >= 1:
+            break
+        await asyncio.sleep(1)
+    assert n == 1, "fact turn never curated"
+    r = await client.post("/write", json=_payload(
+        text="Actually the deadline moved to next Wednesday.",
+        session_id="w1corr", owner=ow, turn=1), headers=AUTH)
+    assert r.status_code == 202
+    ev = None
+    for _ in range(120):
+        ev = await db.fetchrow(
+            "SELECT scribe_action FROM memory_events "
+            "WHERE session_id = 'w1corr' AND turn = 1")
+        if ev:
+            break
+        await asyncio.sleep(1)
+    assert ev is not None, "correction turn never curated"
+    assert ev["scribe_action"]["op"] == "UPDATE", ev["scribe_action"]
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 1, f"duplicated instead of journaled (n={n})"
+    row = await db.fetchrow(
+        "SELECT content, summary FROM memories WHERE owner = %s", (ow,))
+    assert "Wednesday" in (row["summary"] or ""), row
+    assert "Friday" in (row["content"] or ""), row  # history kept
+    r = await client.post("/recall", json={
+        "query": "When is the Namib Roasters rebrand due?",
+        "session_id": "w1corr", "owner": ow}, headers=AUTH)
+    assert r.status_code == 200
+    assert "Wednesday" in (r.json()["card"] or ""), r.json()["card"]
+
+
+@pytest.mark.asyncio
 async def test_write_auth_and_shapes(client):
     p = _payload()
     assert (await client.post("/write", json=p)).status_code == 401
