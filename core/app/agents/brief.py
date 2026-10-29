@@ -7,9 +7,21 @@ memories formed since the caller's cursor (stateless: pass since_event_id,
 get back event_id). The returned `briefing` block is pre-formatted to paste
 straight into an agent's working context.
 """
+import re
+
 from . import retrieve
 
 CONTEXT_TURNS = 3
+# Executive suppression (guess): the pinned identity slice enters an agent
+# brief ONLY on explicit identity frames. Work stimuli get work context;
+# self-referential crosstalk during goal-directed tasks is measured harm
+# (live: Amara rows polluted a code prompt). Identity rows still compete
+# in the legs for every stimulus — pinning is what's gated, not retrieval.
+IDENTITY_FRAME_RE = re.compile(
+    r"\b(who am i|what is my name|my name is|about me|my role|my job"
+    r"|myself|my preferences)\b",
+    re.IGNORECASE,
+)
 
 
 async def _stimulus(db, owner: str, session_id: str,
@@ -87,6 +99,7 @@ async def brief(*, db, embedder, owner: str, session_id: str,
         db=db, embedder=embedder, owner=owner, query=stimulus,
         session_id=session_id, k=settings.recall_k, tiers=None,
         settings=settings,
+        include_identity=bool(IDENTITY_FRAME_RE.search(stimulus)),
     )
     items, cur = await _new_items(db, owner, since_event_id)
     return {

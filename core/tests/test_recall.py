@@ -338,6 +338,29 @@ async def test_commanded_principle_outranks_twin(db, emb, monkeypatch):
     assert score_b == pytest.approx(1.5 * by_id[ids["ruled"]], rel=2e-2)
 
 
+@pytest.mark.asyncio
+async def test_recall_pins_identity_slice_unconditionally(db, emb):
+    """The human path keeps the pinned identity slice on EVERY recall
+    (briefs gate it; recall never does): standing facts about the owner
+    survive any query. The YOLO lesson as a test — s23's standing-fact
+    promise, fulfilled here instead of the harness."""
+    from app.agents import retrieve
+
+    ow = f"rc_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "who", "tier": "identity", "kind": "identity",
+         "content": "Owner is Amara Quietstorm.", "tags": ["owner"]},
+        {"name": "work", "kind": "fact",
+         "content": "Streak counts back from today if done.",
+         "tags": ["streak"]},
+    ])
+    out = await retrieve.recall(
+        db=db, embedder=emb, owner=ow, session_id="s", k=8,
+        tiers=None, settings=Settings(),
+        query="how do streaks count")
+    assert "Amara Quietstorm" in (out["card"] or "")
+
+
 def test_retrieval_probability_logistic_mapping():
     """Fix 4: ACT-R P = logistic((A - tau)/s). Pure math, no DB: floor
     maps to exactly 0.5, strong recalls saturate near 1, garbage sinks,

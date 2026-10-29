@@ -1,6 +1,7 @@
 """Associative recall: three legs, RRF fusion, spreading activation, card.
 
-Ranked branch: identity slice (unconditional) + vector/lexical/associative legs
+Ranked branch: identity slice (pinned on the human path; briefs gate it
+to identity-framed stimuli) + vector/lexical/associative legs
 in ONE statement + RRF(k=60) + 2-hop BFS over memory_links + confidence with
 honest abstain + 400-token Context Card + retrieval story path.
 Replay branch (recency cues): ordered session events, no similarity search.
@@ -376,7 +377,8 @@ async def _recall_event(db, owner: str, session_id: str, query: str, cue: cues.C
 
 
 async def recall(*, db, embedder, owner: str, query: str, session_id: str,
-                 k: int, tiers: list[str] | None, settings) -> dict:
+                 k: int, tiers: list[str] | None, settings,
+                 include_identity: bool = True) -> dict:
     t0 = time.monotonic()
     cue = cues.classify(query)
     fired = await check_intentions(db, owner, cue.entities)
@@ -388,7 +390,8 @@ async def recall(*, db, embedder, owner: str, query: str, session_id: str,
     if cue.replay:
         out = await _replay(db, owner, session_id, settings)
     else:
-        out = await _ranked(db, embedder, owner, query, cue, k, tiers, settings)
+        out = await _ranked(db, embedder, owner, query, cue, k, tiers,
+                            settings, include_identity)
     out["fired_intentions"] = fired
     out["registered_intention"] = registered
     out["cue"] = {"type": cue.type, "entities": cue.entities, "policy": cue.policy}
@@ -401,7 +404,8 @@ async def recall(*, db, embedder, owner: str, query: str, session_id: str,
     return out
 
 
-async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
+async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
+                include_identity: bool = True) -> dict:
     vec, _ = await embedder.embed(query, is_query=True)
     tags = reconcile._norm_tags(
         e[1:] for e in cue.entities if e.startswith(("#", "@")))
@@ -419,12 +423,17 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings) -> dict:
     rows = await db.fetch(_legs_sql(tiered), tuple(params))
     fused = _rrf(rows)
     candidates_matched = len({str(r["id"]) for r in rows})
-    identity = await db.fetch(
-        "SELECT id, content FROM memories WHERE owner = %s AND tier = 'identity' "
-        "AND valid_to IS NULL AND NOT quarantined ORDER BY salience DESC LIMIT 5",
-        (owner,),
-    )
+    identity: list = []
+    if include_identity:
+        identity = await db.fetch(
+            "SELECT id, content FROM memories WHERE owner = %s "
+            "AND tier = 'identity' "
+            "AND valid_to IS NULL AND NOT quarantined "
+            "ORDER BY salience DESC LIMIT 5",
+            (owner,),
+        )
     # Identity bypasses ranking entirely: card header only, never a hit.
+    # Rehearsal follows service: unserved identity is not bumped.
     ordered = sorted(fused.items(), key=lambda kv: -kv[1]["score"])
     fetch_ids = [m for m, _ in ordered[: k + 8]]
     grown: dict[str, dict] = {}

@@ -81,6 +81,55 @@ async def test_briefing_since_cursor(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_briefing_suppresses_identity_on_work_stimulus(client, db, emb):
+    """Executive suppression: a work stimulus briefs work context, not the
+    pinned identity slice (live: Amara rows polluted a code prompt).
+    Steady state (cursor advanced past the news): the identity row appears
+    nowhere, the work fact does."""
+    import uuid
+
+    ow = f"br_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "who", "tier": "identity", "kind": "identity",
+         "content": "Owner is Amara Quietstorm.", "tags": ["owner"]},
+        {"name": "work", "kind": "fact",
+         "content": "Streak counts back from today if done.",
+         "tags": ["streak"]},
+    ])
+    first = await client.post("/briefing", json={
+        "session_id": "brw", "owner": ow,
+        "text": "how do streaks count", "since_event_id": 0,
+    }, headers=AUTH)
+    r = await client.post("/briefing", json={
+        "session_id": "brw", "owner": ow,
+        "text": "how do streaks count",
+        "since_event_id": first.json()["event_id"],
+    }, headers=AUTH)
+    assert r.json()["new_items"] == []
+    assert "Amara Quietstorm" not in (r.json()["card"] or "")
+    assert "Amara Quietstorm" not in r.json()["briefing"]
+    assert "Streak counts back" in (r.json()["card"] or "")
+
+
+@pytest.mark.asyncio
+async def test_briefing_includes_identity_on_identity_frame(client, db, emb):
+    """Gating, not blindness: an explicit identity frame still pins the
+    identity slice into the brief."""
+    import uuid
+
+    ow = f"br_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "who", "tier": "identity", "kind": "identity",
+         "content": "Owner is Amara Quietstorm.", "tags": ["owner"]},
+    ])
+    r = await client.post("/briefing", json={
+        "session_id": "bri", "owner": ow,
+        "text": "tell me who am i", "since_event_id": 0,
+    }, headers=AUTH)
+    assert "Amara Quietstorm" in (r.json()["card"] or "")
+
+
+@pytest.mark.asyncio
 async def test_briefing_empty_abstains(client, db):
     r = await client.post("/briefing", json={
         "session_id": "brempty", "owner": "brempty",
