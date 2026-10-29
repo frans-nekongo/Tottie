@@ -75,7 +75,10 @@ class Settings(BaseSettings):
     # ---- prospective ----
     replay_n: int = Field(default=50, alias="TOTTIE_REPLAY_N")
 
-    # ---- sleep (consolidation) ----
+    # ---- sleep (consolidation; automatic, not a mode) ----
+    sleep_auto: bool = Field(default=True, alias="TOTTIE_SLEEP_AUTO")
+    sleep_interval_min: int = Field(default=30, alias="TOTTIE_SLEEP_INTERVAL_MIN")
+    sleep_idle_min: int = Field(default=10, alias="TOTTIE_SLEEP_IDLE_MIN")
     sleep_window_days: int = Field(default=7, alias="TOTTIE_SLEEP_WINDOW_DAYS")
     sleep_replay_cap: int = Field(default=50, alias="TOTTIE_SLEEP_REPLAY_CAP")
     sleep_rank_salience: float = Field(

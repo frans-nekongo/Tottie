@@ -238,6 +238,48 @@ async def _curate_raw(db, owner: str) -> dict:
     return {"curated": curated, "failed": failed}
 
 
+async def owners_due(db, settings) -> list[str]:
+    """Owners owed a consolidation: idle past sleep_idle_min and holding
+    2+ live, unranked episodes newer than their last CONSOLIDATE. Sleep
+    follows activity: it fires on its own when the owner goes quiet, never
+    on a button and never mid-thought."""
+    rows = await db.fetch(
+        "SELECT m.owner FROM memories m "
+        "JOIN memory_events e ON e.owner = m.owner "
+        "LEFT JOIN (SELECT owner, max(ts) AS slept FROM memory_events "
+        "WHERE scribe_action->>'op' = 'CONSOLIDATE' GROUP BY owner) s "
+        "ON s.owner = m.owner "
+        "WHERE m.tier = 'episodic' AND m.valid_to IS NULL "
+        "AND NOT m.quarantined AND NOT m.ranked_out "
+        "AND (s.slept IS NULL OR m.created_at > s.slept) "
+        "GROUP BY m.owner "
+        "HAVING count(DISTINCT m.id) >= 2 "
+        "AND max(e.ts) < now() - make_interval(mins => %s)",
+        (settings.sleep_idle_min,),
+    )
+    return [r["owner"] for r in rows]
+
+
+async def auto_tick(*, db, embedder, settings) -> list[str]:
+    """One scheduler pass: consolidate every due owner. Never raises —
+    a failed lookup or owner logs and the loop continues next tick."""
+    try:
+        due = await owners_due(db, settings)
+    except Exception as e:
+        log.warning("auto-sleep owners_due failed: %s", e)
+        return []
+    slept = []
+    for owner in due:
+        try:
+            await consolidate(
+                db=db, embedder=embedder, owner=owner,
+                session_id="auto-sleep", settings=settings)
+            slept.append(owner)
+        except Exception as e:  # noqa: BLE001 - one owner's failure
+            log.warning("auto-sleep %s failed: %s", owner, e)
+    return slept
+
+
 async def consolidate(*, db, embedder, owner: str, session_id: str,
                       settings) -> dict:
     episodes = await _replay_episodes(db, owner, settings)

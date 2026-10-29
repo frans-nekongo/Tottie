@@ -3,6 +3,7 @@
 Auth pattern: require_auth lives here (module map) and is attached per-router
 via dependencies=[...] — routes never import main, so no import cycle.
 """
+import asyncio
 import hmac
 import logging
 from collections.abc import AsyncIterator
@@ -14,11 +15,24 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from .agents import consolidate
 from .config import Settings, get_settings
 from .db import Database
 from .embeddings import Embedder, EmbedderUnavailable
 from .queue import WriteQueue
 from .routes import brief, chat, events, graph, health, memories, recall, sleep, write
+
+
+async def _sleep_loop(db: Database, embedder: Embedder, settings: Settings) -> None:
+    """Automatic consolidation heartbeat: every interval, owners gone idle
+    with unconsolidated episodes dream on their own. No button, no mode."""
+    gap = max(1, settings.sleep_interval_min) * 60
+    while True:
+        await asyncio.sleep(gap)
+        slept = await consolidate.auto_tick(
+            db=db, embedder=embedder, settings=settings)
+        for owner in slept:
+            log.info("auto-sleep consolidated %s", owner)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -70,7 +84,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not settings.inline_write:
             await queue.start()
         app.state.queue = queue
+        sleep_task = None
+        if settings.sleep_auto and app.state.embedder is not None:
+            sleep_task = asyncio.create_task(
+                _sleep_loop(db, app.state.embedder, settings))
         yield
+        if sleep_task is not None:
+            sleep_task.cancel()
+            await asyncio.gather(sleep_task, return_exceptions=True)
         await queue.stop()
         await db.close()
 
