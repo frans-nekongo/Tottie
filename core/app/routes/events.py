@@ -17,7 +17,7 @@ router = APIRouter()
 @router.get("/events")
 async def get_events(
     request: Request,
-    session_id: str = Query(...),
+    session_id: str = Query(""),
     last_event_id: int = Query(0),
     token: str = Query(""),
     owner: str = Query(""),
@@ -27,18 +27,25 @@ async def get_events(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad or missing token")
     db = request.app.state.db
     who = owner or settings.owner
+    # Owner-wide watch: empty session streams every session of the owner
+    # (the observatory). A session still narrows when given (old behavior).
+    filt = "owner = %s AND id > %s"
+    params: tuple = (who, last_event_id)
+    if session_id:
+        filt = "owner = %s AND session_id = %s AND id > %s"
+        params = (who, session_id, last_event_id)
 
     async def gen():
-        last = last_event_id
+        last = params[-1]
         while True:
             if await request.is_disconnected():
                 break
             rows = await db.fetch(
                 "SELECT id, ts, turn, utterance, observer_verdict, scribe_action, "
                 "cue, latency_ms, tokens FROM memory_events "
-                "WHERE owner = %s AND session_id = %s AND id > %s "
+                f"WHERE {filt} "
                 "ORDER BY id LIMIT 100",
-                (who, session_id, last),
+                params[:-1] + (last,),
             )
             for r in rows:
                 last = r["id"]

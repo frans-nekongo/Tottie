@@ -11,13 +11,20 @@ import TottieFace, { FaceState } from "../components/TottieFace";
 // shows the nodes and links those events create.
 export default function Home() {
   const [session, setSession] = useState("");
+  // Watch target: ?owner= narrows the owner (default owner_local),
+  // ?session= narrows one session (default: all sessions stream).
+  const [watchOwner, setWatchOwner] = useState("owner_local");
+  const [watchSession, setWatchSession] = useState("");
   useEffect(() => {
     // Client-only: Math.random / location in useState break SSR hydration
     // (React #418: server HTML must match the first client render).
     setSession(`ui-${Math.random().toString(36).slice(2, 8)}`);
-    if (new URLSearchParams(window.location.search).get("tab") === "graph") {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("tab") === "graph") {
       setTab("graph");
     }
+    if (q.get("owner")) setWatchOwner(q.get("owner")!);
+    if (q.get("session")) setWatchSession(q.get("session")!);
   }, []);
   const [tab, setTab] = useState<"timeline" | "graph">("timeline");
   const [events, setEvents] = useState<StreamEvent[]>([]);
@@ -38,7 +45,9 @@ export default function Home() {
     if (new URLSearchParams(window.location.search).get("stream") === "off") {
       return; // headless gates / stills: no infinite stream to settle
     }
-    const src = new EventSource(`/api/events?session_id=${session}`);
+    const q = new URLSearchParams({ owner: watchOwner });
+    if (watchSession) q.set("session_id", watchSession);
+    const src = new EventSource(`/api/events?${q.toString()}`);
     src.onmessage = (m) => {
       try {
         const e = JSON.parse(m.data) as StreamEvent;
@@ -52,7 +61,7 @@ export default function Home() {
       }
     };
     return () => src.close();
-  }, [session]);
+  }, [session, watchOwner, watchSession]);
 
   return (
     <main className="h-screen max-w-[1440px] mx-auto flex flex-col px-4 py-3 gap-3">
@@ -60,7 +69,7 @@ export default function Home() {
         <TottieFace state={face} />
         <div className="flex-1">
           <h1 className="text-lg font-semibold leading-tight">Tottie</h1>
-          <p className="dim text-xs mono">session {session} · agent observatory</p>
+          <p className="dim text-xs mono">watching {watchOwner} · {watchSession || "all sessions"} · agent observatory</p>
         </div>
         <button
           className="action text-sm"
@@ -74,7 +83,7 @@ export default function Home() {
               const r = await fetch("/api/sleep", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ session_id: session }),
+                body: JSON.stringify({ owner: watchOwner, session_id: watchSession || session }),
               });
               const j = await r.json();
               setSleepNote(
@@ -96,7 +105,7 @@ export default function Home() {
         </button>
         {sleepNote && <p className="text-xs dim mono">{sleepNote}</p>}
       </header>
-      <PendingStrip refreshKey={graphTick} />
+      <PendingStrip refreshKey={graphTick} owner={watchOwner} />
       <div className="flex-1 min-h-0 flex flex-col card p-3">
         <div className="flex gap-2 mb-2">
           {(["timeline", "graph"] as const).map((t) => (
@@ -112,9 +121,9 @@ export default function Home() {
         </div>
         <div className="flex-1 min-h-0 overflow-hidden">
           {tab === "timeline" ? (
-            <Timeline events={events} />
+            <Timeline events={events} owner={watchOwner} />
           ) : (
-            <GraphView path={[]} fresh={graphTick} />
+            <GraphView path={[]} fresh={graphTick} owner={watchOwner} />
           )}
         </div>
       </div>

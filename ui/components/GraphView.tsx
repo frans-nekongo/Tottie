@@ -39,9 +39,11 @@ const TIER_COLOR: Record<string, string> = {
 export default function GraphView({
   path,
   fresh,
+  owner,
 }: {
   path: string[];
   fresh: number; // bump to refetch after writes
+  owner: string;
 }) {
   const [data, setData] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -50,19 +52,19 @@ export default function GraphView({
   pathSet.current = new Set(path);
 
   useEffect(() => {
-    fetch("/api/graph")
+    fetch(`/api/graph?owner=${encodeURIComponent(owner)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then(setData)
       .catch((e) => setErr(`graph unavailable (${e})`));
-  }, [fresh]);
+  }, [fresh, owner]);
 
   const onNodeClick = useCallback((n: { id?: string }) => {
     if (!n.id) return;
-    fetch(`/api/memories?id=${n.id}`)
+    fetch(`/api/memories?id=${n.id}&owner=${encodeURIComponent(owner)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => setDetail(j?.memories?.[0] ?? null))
       .catch(() => setDetail(null));
-  }, []);
+  }, [owner]);
 
   if (err) return <p className="dim text-sm">{err}</p>;
   if (!data) return <p className="dim text-sm">growing the brain…</p>;

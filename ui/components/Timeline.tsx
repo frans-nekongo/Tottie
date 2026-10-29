@@ -21,7 +21,7 @@ interface Candidate {
   tags?: string[];
 }
 
-function EventCard({ e }: { e: StreamEvent }) {
+function EventCard({ e, owner }: { e: StreamEvent; owner: string }) {
   const v = (e.verdict ?? {}) as Record<string, unknown>;
   const a = (e.action ?? {}) as Record<string, unknown>;
   const op = String(a.op ?? "?");
@@ -32,7 +32,7 @@ function EventCard({ e }: { e: StreamEvent }) {
   useEffect(() => {
     sup.forEach((id) => {
       if (old[id] !== undefined) return;
-      fetch(`/api/memories?id=${id}`)
+      fetch(`/api/memories?id=${id}&owner=${encodeURIComponent(owner)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((j) =>
           setOld((m) => ({ ...m, [id]: j?.memories?.[0]?.content ?? id.slice(0, 8) }))
@@ -82,13 +82,13 @@ function EventCard({ e }: { e: StreamEvent }) {
   );
 }
 
-export default function Timeline({ events }: { events: StreamEvent[] }) {
+export default function Timeline({ events, owner }: { events: StreamEvent[]; owner: string }) {
   if (events.length === 0)
     return <p className="dim text-sm">No steps yet — the stream lands here.</p>;
   return (
     <div className="space-y-2 overflow-y-auto pr-1">
       {events.map((e) => (
-        <EventCard key={e.id} e={e} />
+        <EventCard key={e.id} e={e} owner={owner} />
       ))}
     </div>
   );

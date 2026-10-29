@@ -9,21 +9,21 @@ interface Pending {
   trust: string;
 }
 
-export default function PendingStrip({ refreshKey }: { refreshKey: number }) {
+export default function PendingStrip({ refreshKey, owner }: { refreshKey: number; owner: string }) {
   const [rows, setRows] = useState<Pending[]>([]);
   const load = useCallback(() => {
-    fetch("/api/memories?quarantined=true&limit=20")
+    fetch(`/api/memories?quarantined=true&limit=20&owner=${encodeURIComponent(owner)}`)
       .then((r) => (r.ok ? r.json() : { memories: [] }))
       .then((j) => setRows(j.memories ?? []))
       .catch(() => setRows([]));
-  }, []);
+  }, [owner]);
   useEffect(load, [load, refreshKey]);
 
   const confirm = async (id: string) => {
     const r = await fetch("/api/confirm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, owner }),
     });
     if (r.ok) setRows((xs) => xs.filter((x) => x.id !== id));
   };

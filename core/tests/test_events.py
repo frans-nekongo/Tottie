@@ -133,6 +133,24 @@ async def test_events_stream_and_resume(booted_app, db):
 
 
 @pytest.mark.asyncio
+async def test_events_owner_wide(booted_app, db):
+    """Empty session_id streams every session of the owner (observatory);
+    a foreign owner's rows never leak in."""
+    await _seed(db, "s1", utterance="one")
+    await _seed(db, "s2", utterance="two")
+    await _seed(db, "s1", utterance="alien", owner="someone_else")
+    async with Stream(booted_app, "token=test-token") as s:
+        assert s.status == 200
+        got = set()
+        for _ in range(2):
+            frame = await s.next_frame()
+            assert frame is not None, "owner-wide stream missed a session"
+            got.add(frame["data"]["utterance"])
+        assert got == {"one", "two"}, got
+        assert await s.next_frame(timeout=2) is None, "leaked or replayed"
+
+
+@pytest.mark.asyncio
 async def test_events_401(client):
     r = await client.get("/events?session_id=sse&token=wrong")
     assert r.status_code == 401
