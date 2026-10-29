@@ -95,6 +95,55 @@ async def test_supersede_same_sp(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_predicate_flip_supersedes(db, emb):
+    """G1 second layer: a correction flipping the PREDICATE with an
+    identical object ("does not drink" -> "drinks", both "alcohol") is a
+    belief change, not a restatement. Object-only compare SKIPped it."""
+    old = await _seed_row(db, emb, OWNER, "Ben does not drink alcohol.",
+                          subject="ben", predicate="does not drink",
+                          obj="alcohol")
+    obs = _obs([_cand("Ben drinks alcohol at parties.", subject="ben",
+                      predicate="drinks", obj="alcohol")])
+    obs.correction_target = old
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Ben drinks alcohol at parties."),
+        obs=obs,
+    )
+    assert action.startswith("SUPERSEDE"), action
+    live = await db.fetch(
+        "SELECT id, content, supersedes FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert len(live) == 1 and "parties" in live[0]["content"]
+    assert str(live[0]["supersedes"]) == old
+
+
+@pytest.mark.asyncio
+async def test_predicate_same_still_skips_in_correction_lane(db, emb):
+    """Same lane, true restatement: identical predicate + object still
+    SKIP-bumps instead of superseding. The lane is not a dupe machine."""
+    old = await _seed_row(db, emb, OWNER, "Ben does not drink alcohol.",
+                          subject="ben", predicate="does not drink",
+                          obj="alcohol")
+    obs = _obs([_cand("Ben does not drink alcohol either.", subject="ben",
+                      predicate="does not drink", obj="alcohol")])
+    obs.correction_target = old
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Ben does not drink alcohol either."),
+        obs=obs,
+    )
+    assert action.startswith("SKIP"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert n == 1
+
+
+@pytest.mark.asyncio
 async def test_skip_same_value_bumps(db, emb):
     await _seed_row(db, emb, OWNER, "I am vegetarian.",
                     subject="user", predicate="diet", obj="vegetarian")

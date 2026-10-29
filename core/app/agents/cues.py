@@ -12,6 +12,30 @@ CORRECTION_RES = [
     re.compile(p, re.IGNORECASE)
     for p in (r"\bactually\b", r"\bno wait\b", r"\bcorrection\b", r"\bi meant\b")
 ]
+# Polarity-flip tripwire (G1 fix): explicit reversal ACTS. Fires ONLY
+# inside the observer's familiar branch (a stored target exists), so bare
+# commands ("kill the server" with no server memory) never misroute.
+# Recall-oriented: false positives cost one LLM call, because the scribe +
+# reconcile still compare objects and SKIP true restatements. Bare
+# negations (don't/isn't/...) are DELIBERATELY absent: "Ben does not drink
+# either" is an entailment and "Ben does not drink on weekdays" is a
+# refinement — only the NLI arbiter judges those correctly (measured).
+POLARITY_FLIP_RES = [
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\bnever\b", r"\bno longer\b", r"\bnot anymore\b",
+        r"\bkill(?:ed|s|ing)?\b", r"\bremov(?:e|ed|al)\b",
+        r"\bstop\b", r"\bundo\b", r"\brevert\b", r"\bcancel(?:led)?\b",
+        r"\bdrop\b", r"\bdelet(?:e|ed|ion)\b",
+        r"\bchanged?\b", r"\bmoved?\b", r"\bswitch(?:ed)?\b",
+        r"\bwrong\b", r"\bincorrect\b", r"\bcontradict",
+        r"\binstead\b",
+    )
+]
+
+
+def polarity_flip(text: str) -> bool:
+    return any(r.search(text) for r in POLARITY_FLIP_RES)
 REFERENCE_RES = [
     re.compile(p, re.IGNORECASE)
     for p in (

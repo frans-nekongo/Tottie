@@ -94,9 +94,12 @@ async def test_write_correction_journals_despite_familiarity(client, db):
     """Fix 1 (CorrectionSniffer): a CORRECTION is Bayesian surprise, never
     Shannon familiarity. Live Amara pair: the Friday->Wednesday move scored
     0.81 >= 0.80 and was swallowed as 'already known'. Now it bypasses the
-    gate and journals onto the same-kind anchor-matched row (SP-less rows
-    have no object to compare, so UPDATE appends history and the summary
-    carries current truth — never a duplicate, never a loss). Live Meta."""
+    gate and reconciles against the anchor-matched row. The op is UPDATE
+    when the clerk scribes SP-less (history appended, summary carries
+    current truth) and SUPERSEDE when it scribes SP triples (old row
+    retired, chain linked) — the LLM picks the shape, so the test pins the
+    invariants, never a duplicate, never a loss: exactly one live row,
+    Wednesday current, Friday preserved, recall serves Wednesday. Live Meta."""
     ow = "w1corr"
     r = await client.post("/write", json=_payload(
         text="The Namib Roasters rebrand is due Friday.",
@@ -122,15 +125,26 @@ async def test_write_correction_journals_despite_familiarity(client, db):
             break
         await asyncio.sleep(1)
     assert ev is not None, "correction turn never curated"
-    assert ev["scribe_action"]["op"] == "UPDATE", ev["scribe_action"]
+    op = ev["scribe_action"]["op"]
+    assert op in ("UPDATE", "SUPERSEDE"), ev["scribe_action"]
     n = await db.fetchval(
         "SELECT count(*) FROM memories WHERE owner = %s "
         "AND valid_to IS NULL", (ow,))
-    assert n == 1, f"duplicated instead of journaled (n={n})"
-    row = await db.fetchrow(
-        "SELECT content, summary FROM memories WHERE owner = %s", (ow,))
-    assert "Wednesday" in (row["summary"] or ""), row
-    assert "Friday" in (row["content"] or ""), row  # history kept
+    assert n == 1, f"duplicated instead of reconciled (n={n})"
+    live = await db.fetchrow(
+        "SELECT id, content, summary, supersedes FROM memories "
+        "WHERE owner = %s AND valid_to IS NULL", (ow,))
+    assert "Wednesday" in (live["content"] or ""), live  # current truth
+    if op == "UPDATE":
+        assert "Wednesday" in (live["summary"] or ""), live
+        assert "Friday" in (live["content"] or ""), live  # history kept
+    else:
+        dead = await db.fetchrow(
+            "SELECT id, content FROM memories WHERE owner = %s "
+            "AND valid_to IS NOT NULL", (ow,))
+        assert dead is not None, "supersede retired nothing"
+        assert "Friday" in (dead["content"] or ""), dead  # history kept
+        assert str(live["supersedes"]) == str(dead["id"]), live
     r = await client.post("/recall", json={
         "query": "When is the Namib Roasters rebrand due?",
         "session_id": "w1corr", "owner": ow}, headers=AUTH)

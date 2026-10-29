@@ -13,6 +13,7 @@ import time
 
 from pydantic import BaseModel, Field, ValidationError
 
+from .. import nli
 from ..config import Settings
 from ..db import pgvector_literal
 from ..providers.base import complete_resilient
@@ -57,6 +58,7 @@ class Observation:
         candidates: list[dict],
         verdict: str,
         provider: str,
+        correction_target: str | None = None,
         raw_fallback: bool = False,
         latency_ms: int = 0,
         prompt_tokens: int = 0,
@@ -68,6 +70,7 @@ class Observation:
         self.candidates = candidates
         self.verdict = verdict
         self.provider = provider
+        self.correction_target = correction_target
         self.raw_fallback = raw_fallback
         self.latency_ms = latency_ms
         self.prompt_tokens = prompt_tokens
@@ -154,6 +157,32 @@ async def _familiarity(db, owner: str, vec) -> tuple[float, str | None, bool]:
     return float(row["cos"]), str(row["id"]), bool(row["ranked_out"])
 
 
+async def _contradiction(db, settings: Settings, fam_id: str,
+                         text: str) -> tuple[str, str]:
+    """Stage 2 (G1 fix): high familiarity is a candidate gate, never a drop
+    gate. Returns (route, detail): contradict -> correction lane against
+    fam_id; entail -> today's SKIP+rehearse; neutral -> normal LLM scribe.
+    Verifier missing -> degrade OPEN (neutral): never lose the turn."""
+    if not settings.nli_enabled:
+        return "entail", "nli flag-off (legacy SKIP)"
+    if cues.polarity_flip(text):
+        return "contradict", "polarity-flip marker"
+    row = await db.fetchrow(
+        "SELECT content FROM memories WHERE id = %s::uuid", (fam_id,))
+    if row is None or not row["content"]:
+        return "neutral", "target died"
+    try:
+        res = await nli.verify(row["content"], text, settings)
+    except nli.NLIError as e:
+        log.warning("nli unavailable (%s); falling through", e)
+        return "neutral", f"nli down: {e}"
+    if res["p_contra"] >= settings.nli_threshold:
+        return "contradict", f"nli contra {res['p_contra']:.2f}"
+    if res["label"] == "entailment":
+        return "entail", f"nli entail {res['p_entail']:.2f}"
+    return "neutral", f"nli neutral {res['p_neutral']:.2f}"
+
+
 async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     text = turn.text.strip()
     if gates.is_chitchat(text):
@@ -171,27 +200,38 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
     # where SP-level compare detects the changed object; the labile route
     # (scribed via cue type) reconciles it. Gate still records fam/surprise.
     is_correction = cues.classify(text).type == "CORRECTION"
+    correction_target: str | None = None
+    contra_detail = ""
     if (fam_id is not None and fam_cos >= settings.familiarity_cosine
             and not is_correction):
-        # Already known: skip the LLM call, but repetition still rehearses
-        # (confidence + access + a SMALL utility bump: passive re-mention is
-        # maintenance rehearsal, far weaker than retrieval practice) and
-        # revives ranked-out rows — the real revival path.
-        await db.execute(
-            "UPDATE memories SET ranked_out = false, "
-            "confidence = LEAST(1.0, confidence + 0.1), "
-            "utility = LEAST(1.0, utility + 0.05), "
-            "last_access = now(), access_count = access_count + 1 "
-            "WHERE id = %s::uuid",
-            (fam_id,),
-        )
-        return Observation(
-            keep=False, salience=0.0, surprise=score, candidates=[],
-            verdict=f"familiar {fam_cos:.2f} >= "
-            f"{settings.familiarity_cosine:.2f} (already known"
-            f"{' + revived' if fam_ranked else ''})",
-            provider="none",
-        )
+        # G1 fix: familiarity is a candidate gate. A highly similar turn
+        # may restate (entail -> SKIP below), contradict (correction lane
+        # against fam_id), or add (neutral -> normal scribe).
+        route, contra_detail = await _contradiction(db, settings, fam_id, text)
+        if route == "contradict":
+            correction_target = fam_id
+        elif route == "entail":
+            # Already known: skip the LLM call, but repetition still
+            # rehearses (confidence + access + a SMALL utility bump:
+            # passive re-mention is maintenance rehearsal, far weaker than
+            # retrieval practice) and revives ranked-out rows — the real
+            # revival path.
+            await db.execute(
+                "UPDATE memories SET ranked_out = false, "
+                "confidence = LEAST(1.0, confidence + 0.1), "
+                "utility = LEAST(1.0, utility + 0.05), "
+                "last_access = now(), access_count = access_count + 1 "
+                "WHERE id = %s::uuid",
+                (fam_id,),
+            )
+            return Observation(
+                keep=False, salience=0.0, surprise=score, candidates=[],
+                verdict=f"familiar {fam_cos:.2f} >= "
+                f"{settings.familiarity_cosine:.2f} (already known"
+                f"{' + revived' if fam_ranked else ''}; {contra_detail})",
+                provider="none",
+            )
+        # neutral: fall through to the LLM scribe below.
     prompt_tokens = completion_tokens = 0
     resampled = False
     t0 = time.monotonic()
@@ -286,10 +326,14 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
         }
         for c in cands
     ]
+    contra_note = (
+        f" contra->{correction_target[:8]} ({contra_detail})"
+        if correction_target else "")
     return Observation(
         keep=True, salience=salience, surprise=score, candidates=structured,
         verdict=f"keep sal={salience:.2f} sur={score:.2f} n={len(structured)}"
-        + (" resampled" if resampled else ""),
+        + (" resampled" if resampled else "") + contra_note,
         provider=provider.name, latency_ms=latency_ms,
         prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+        correction_target=correction_target,
     )

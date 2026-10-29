@@ -61,16 +61,22 @@ async def _persist_txn(conn, db, turn, obs, embedded, model) -> str:
     if await cur.fetchone():
         return "SKIP duplicate-turn"
     cue = cues.classify(turn.text)
+    target = getattr(obs, "correction_target", None)
+    is_corr = cue.type == "CORRECTION" or target is not None
     active = (
         reconcile.get_active(turn.owner, turn.session_id)
-        if cue.type == "CORRECTION"
+        if is_corr
         else set()
     )
     # Labile registrations match at the active floor; otherwise a
     # CORRECTION falls back to the recent-session pool with anchor-gated
-    # matching (kept separate: different rule, different floor).
+    # matching (kept separate: different rule, different floor). A
+    # verifier-caught contradiction names its target exactly (G1 fix):
+    # no pool guessing, works across days, not just recent turns.
     correction_pool: set[str] = set()
-    if cue.type == "CORRECTION" and not active:
+    if target is not None:
+        correction_pool = {target}
+    elif cue.type == "CORRECTION" and not active:
         correction_pool = await reconcile.recent_session_ids(
             conn, turn.owner, turn.session_id,
             limit=reconcile.RECENT_SESSION_LIMIT)

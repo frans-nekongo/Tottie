@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     )
     confidence_floor: float = Field(default=0.35, alias="TOTTIE_CONFIDENCE_FLOOR")
     rif_enabled: bool = Field(default=False, alias="TOTTIE_RIF_ENABLED")
+    # ---- contradiction verifier (G1 fix): familiar>=floor routes to NLI,
+    # never straight to SKIP. Flag-off restores pure old behavior.
+    nli_enabled: bool = Field(default=True, alias="TOTTIE_NLI_ENABLED")
+    nli_threshold: float = Field(default=0.70, alias="TOTTIE_NLI_THRESHOLD")
+    nli_model_dir: str = Field(default="", alias="TOTTIE_NLI_DIR")
     hnsw_ef_search: int = Field(default=100, alias="TOTTIE_HNSW_EF_SEARCH")
 
     # ---- write path ----
