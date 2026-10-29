@@ -4,8 +4,11 @@ Auth pattern: require_auth lives here (module map) and is attached per-router
 via dependencies=[...] — routes never import main, so no import cycle.
 """
 import hmac
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+
+log = logging.getLogger("tottie.main")
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +50,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Boot continues degraded: /health reports loaded=false and routes
             # needing embeddings answer 503. A missing model must be VISIBLE.
             app.state.embedder = None
+        if app.state.embedder is not None:
+            # A model swap is detected, never silent: rows stamped with a
+            # different model need scripts/reembed.py before cosine floors
+            # mean anything again.
+            stale = await db.fetchval(
+                "SELECT count(*) FROM memories "
+                "WHERE embedding IS NOT NULL AND embedding_model "
+                "IS DISTINCT FROM %s",
+                (settings.embed_model,),
+            )
+            if stale:
+                log.warning(
+                    "%d rows embedded by another model (%s active); "
+                    "run scripts/reembed.py", stale, settings.embed_model,
+                )
         app.state.settings = settings
         queue = WriteQueue(settings, db=db, embedder=app.state.embedder)
         if not settings.inline_write:

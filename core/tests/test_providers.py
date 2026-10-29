@@ -75,3 +75,26 @@ async def test_local_skips_when_down():
         assert "OK" in r.text
     finally:
         await p.close()
+
+
+def test_query_prefix_is_bge_only():
+    """MiniLM A/B: bare 5/6 top-1 vs prefixed 4/6, cosines down everywhere,
+    German HIT -> miss. The BGE instruction is BGE's, nobody else's."""
+    from app.embeddings import QUERY_PREFIX, query_prefix_for
+
+    assert query_prefix_for("BAAI/bge-small-en-v1.5") == QUERY_PREFIX
+    assert query_prefix_for("BAAI/bge-m3") == QUERY_PREFIX
+    assert query_prefix_for(
+        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2") == ""
+
+
+def test_clip_budget_fits_smallest_window():
+    """512 chars ~= 128 tokens: honest truncation flag for every model,
+    including MiniLM's 128-token window."""
+    from app.embeddings import CHAR_BUDGET, Embedder
+
+    assert CHAR_BUDGET == 512
+    text, cut = Embedder._clip("x" * 600)
+    assert cut is True and len(text) == 512
+    text, cut = Embedder._clip("short")
+    assert (text, cut) == ("short", False)
