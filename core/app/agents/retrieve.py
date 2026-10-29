@@ -35,6 +35,9 @@ SELECT id, leg, rnk FROM (
   ) v
   UNION ALL
   SELECT id, 'f' AS leg, row_number() OVER (ORDER BY r DESC) AS rnk FROM (
+    -- 'english' is load-bearing, not a default: stemming + stopwords let
+    -- "What is the vault code?" hit (proven: 'simple' misses it, stopwords
+    -- AND-mandatory). Non-English rides the multilingual vector leg.
     SELECT id, ts_rank(to_tsvector('english', content),
       plainto_tsquery('english', %s)) AS r FROM memories
     WHERE owner = %s AND valid_to IS NULL AND NOT quarantined

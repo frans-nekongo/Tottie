@@ -58,6 +58,26 @@ def test_entities():
     assert extract_entities("nothing here") == []
 
 
+def test_word_pattern_sees_unicode():
+    """Coverage words are unicode letters: German compounds and non-Latin
+    scripts match (digits still excluded)."""
+    from app.agents.cues import WORD_RE
+
+    words = WORD_RE.findall("Wie lautet der Tresorcode?")
+    assert "Tresorcode" in words and "lautet" in words, words
+    # spaceless scripts match whole runs (seen, not segmented — splitting
+    # CJK needs a real segmenter, a documented residual)
+    assert WORD_RE.findall("ビールが飲みたい") == ["ビールが飲みたい"]
+    assert WORD_RE.findall("code 1111") == ["code"]
+
+
+def test_entities_see_unicode():
+    """Tags are unicode-aware; a non-English ? question still classifies."""
+    assert "#café" in extract_entities("Meet at #café tomorrow")
+    q = classify("Wie lautet der Tresorcode?")
+    assert q.type == "QUESTION" and q.recall_cue is True
+
+
 def test_parse_reminder():
     d = parse_reminder("Remind me to water the plants tomorrow")
     assert d and d["content"] == "water the plants" and d["days"] == 1

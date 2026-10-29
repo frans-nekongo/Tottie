@@ -45,7 +45,9 @@ RECENCY_RES = [
 TAG_RE = re.compile(r"#([\w/-]+)")
 MENTION_RE = re.compile(r"@([\w/-]+)")
 QUOTED_RE = re.compile(r'"([^"]{1,80})"' r"|‘([^’]{1,80})’")
-WORD_RE = re.compile(r"[a-z][a-z/-]{2,}")
+# Unicode letters (not [a-z]): coverage must see non-Latin scripts too.
+# 3+ chars, digits excluded (codes come through tags/quotes, not prose).
+WORD_RE = re.compile(r"[^\W\d_][^\W\d_/-]{2,}")
 STOPWORDS = frozenset("""
 what who when where why how which whose whom is are was were do does did
 have has had the a an my your his her its our their of in on to for and or
