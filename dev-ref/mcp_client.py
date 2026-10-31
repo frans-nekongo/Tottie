@@ -26,9 +26,9 @@ async def _call(tool: str, args: dict) -> str:
     from mcp import ClientSession
 
     env = {
-        **os.environ,
         "TOTTIE_API_TOKEN": "changeme-local-token",
         "TOTTIE_OWNER": "owner_local",
+        **os.environ,
         "PYTHONPATH": CORE_DIR,
     }
     params = StdioServerParameters(
