@@ -1,0 +1,64 @@
+\chapter{The Connected Loop}
+\label{ch:connected-loop}
+
+There are two honest ways to test Tottie, and one dishonest way that is
+banned. The dishonest way is telling the agent to remember: any turn
+containing a curation instruction (``remember this'', ``store that'') is
+manual curation theater, and any finding that depends on such turns is
+void. Both honest modes below forward raw working turns and let the
+Observer alone decide keep versus drop.
+
+\section{Mode 1: Drill (subagent as developer, manager as human)}
+
+One subagent plays the developer role and the manager plays the human:
+terse instructions, nothing restated, past work referenced the way a
+real user references it. Each turn the harness pastes the
+\verb|memory.brief| block and the human instruction; the subagent builds
+real artifacts on disk. Memory accumulates underneath the work. The
+probe is never scripted: at a natural point the human gives an
+instruction that assumes earlier context, and the run passes or fails on
+whether the brain supplied it. Drill runs 1--2 (roommate expense
+splitter) found G1 (familiarity eating reversals), G1c (active route
+shadowing the verified target), and G3 (entailment swallowing
+extensions) --- all invisible to the green pytest suite.
+
+\section{Mode 2: Connected (the agent works, the brain watches)}
+
+The working agent connects over MCP stdio (\verb|core/server.py|) and
+follows the host contract every turn: \verb|memory.brief| first (paste
+the block into context), raw thinking and output forwarded through
+\verb|memory.remember| (full Observer pipeline, Scribe decides),
+\verb|memory.recall| and \verb|memory.probe| when depth is needed.
+Nothing is ever marked ``to remember''. The Observatory UI watches the
+same owner live: the Timeline streams every event over SSE and the 3D
+brain re-grows on each write, so memories are seen forming as the agent
+learns. Proven 2026-10-31: a connected research run kept 5/5 content
+turns and dropped 2/2 noise turns with zero curation instructions, and
+the owner graph grew to 18 nodes / 55 links during the session.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.9cm,font=\sffamily\scriptsize]
+\node[uibox,minimum width=2.6cm] (agent) {working\\agent};
+\node[syncbox,right=1.6cm of agent,minimum width=2.6cm] (mcp) {MCP stdio\\{\small brief $\cdot$ remember $\cdot$ recall $\cdot$ probe}};
+\node[databox,right=1.6cm of mcp,minimum width=2.8cm] (core) {core pipeline\\{\small observe $\to$ scribe $\to$ reconcile}};
+\node[databox,right=1.6cm of core,minimum width=2.2cm] (db) {Postgres\\+ pgvector};
+\node[uibox,below=1.4cm of core,minimum width=3.2cm] (ui) {Observatory UI\\{\small Timeline SSE + 3D brain}};
+\draw[flow] (agent) -- node[lbl,above] {brief first} (mcp);
+\draw[flow] (mcp) -- node[lbl,above] {turns} (core);
+\draw[dataflow] (core) -- node[lbl,above] {rows+links} (db);
+\draw[dataflow] (db.south) -- ++(0,-0.45) -| node[lbl,pos=0.25,below] {events+graph} (ui.east);
+\draw[flow] (ui.west) -- ++(-0.6,0) |- node[lbl,pos=0.25,left] {human watches live} (agent.south);
+\end{tikzpicture}
+\caption{The connected loop: raw turns flow agent $\to$ MCP $\to$ core $\to$ store; briefings flow back unasked; the human watches formation live. No curation instruction anywhere in the loop.}
+\label{fig:connected-loop}
+\end{figure}
+
+\section{Honesty rules (both modes)}
+
+\begin{enumerate}
+\item Never instruct remembering. Turns carry work, never curation verbs.
+\item Verify independently: rerun the artifact, query the store, read the event ledger. Agent reports are claims, not evidence.
+\item Failures are findings. A dropped reversal or an eaten extension is logged with its verdict signature, never reworded away.
+\item Name the boundary. Thresholds, NLI labels, and LLM scribe output are fuzzy; only the reconcile algebra around them is exact.
+\end{enumerate}
