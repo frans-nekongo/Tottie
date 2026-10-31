@@ -9,6 +9,17 @@ def test_correction_beats_everything():
     assert classify("I meant the other one").type == "CORRECTION"
 
 
+def test_correction_noun_is_not_a_mark():
+    """G4: bare 'correction' mid-sentence is meta-talk about corrections,
+    not a correction act — it routed unrelated rows into the lane and
+    superseded them. Only start-anchored 'Correction: ...' marks."""
+    assert classify("Method correction I was given and accept.").type != \
+        "CORRECTION"
+    assert classify("My correction stands as written.").type != "CORRECTION"
+    assert classify("Correction: the meeting is on Wednesday.").type == \
+        "CORRECTION"
+
+
 def test_reference():
     assert classify("Use that approach again").type == "REFERENCE"
     assert classify("Do the same as yesterday").type == "REFERENCE"

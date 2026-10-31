@@ -1,10 +1,33 @@
 """/write over real HTTP: 202 immediacy, curation lands, idempotent retries,
 chitchat skips, 401/422 shapes. Live Meta calls — the slow honest tests."""
 import asyncio
+import uuid
 
 import pytest
+from psycopg.types.json import Json
+
+from app.config import Settings
+from app.db import pgvector_literal
+from app.embeddings import Embedder
 
 AUTH = {"Authorization": "Bearer test-token"}
+
+
+async def _seed_sp(db, owner, content, subject, predicate, obj):
+    """One SP-stamped row (production shape: LLM-scribed rows always carry
+    SP). The seed text is exact, so pair cosines measured offline hold."""
+    emb = Embedder(Settings())
+    vec, _ = await emb.embed(content)
+    row = await db.execute_returning(
+        'INSERT INTO memories (owner, tier, kind, subject, predicate, "object", '
+        'content, trust, source, embedding, embedding_model, hash) '
+        'VALUES (%s,\'knowledge\',\'fact\',%s,%s,%s,%s,\'user_direct\',%s,'
+        '%s::vector,%s,%s) RETURNING id',
+        (owner, subject, predicate, obj, content,
+         Json({"session": "seed", "turn": 0}), pgvector_literal(vec),
+         emb.model_name, uuid.uuid4().hex),
+    )
+    return str(row["id"])
 
 
 def _payload(**kw):
@@ -150,6 +173,51 @@ async def test_write_correction_journals_despite_familiarity(client, db):
         "session_id": "w1corr", "owner": ow}, headers=AUTH)
     assert r.status_code == 200
     assert "Wednesday" in (r.json()["card"] or ""), r.json()["card"]
+
+
+@pytest.mark.asyncio
+async def test_write_unmarked_move_supersedes_despite_wording(client, db):
+    """G4: the Friday move WITHOUT correction markers must still update.
+    The turn (cos 0.89, "moved" polarity trip) rides the verified lane,
+    which bypasses
+    the string subject gate — scribe wording varies ("rebrand" vs
+    "deadline") while the entity is one. Same invariants as the marked
+    twin: one live row, Wednesday current, Friday kept. Live Meta."""
+    ow = f"w1nli_{uuid.uuid4().hex[:8]}"
+    await _seed_sp(db, ow, "The Namib Roasters rebrand is due Friday.",
+                   "namib roasters rebrand", "due", "friday")
+    r = await client.post("/write", json=_payload(
+        text="The deadline for the Namib Roasters rebrand moved from "
+             "Friday to next Wednesday.",
+        session_id=ow, turn=0, owner=ow), headers=AUTH)
+    assert r.status_code == 202
+    ev = None
+    for _ in range(120):
+        ev = await db.fetchrow(
+            "SELECT observer_verdict, scribe_action FROM memory_events "
+            "WHERE owner = %s AND turn = 0", (ow,))
+        if ev:
+            break
+        await asyncio.sleep(1)
+    assert ev is not None, "move turn never curated"
+    assert ev["observer_verdict"]["keep"] is True
+    assert "contra" in ev["observer_verdict"]["reason"], \
+        ev["observer_verdict"]
+    op = ev["scribe_action"]["op"]
+    assert op in ("UPDATE", "SUPERSEDE"), ev["scribe_action"]
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 1, f"duplicated instead of reconciled (n={n})"
+    live = await db.fetchrow(
+        "SELECT content, summary, supersedes FROM memories "
+        "WHERE owner = %s AND valid_to IS NULL", (ow,))
+    assert "Wednesday" in (live["content"] or ""), live
+    if op == "SUPERSEDE":
+        dead = await db.fetchrow(
+            "SELECT content FROM memories WHERE owner = %s "
+            "AND valid_to IS NOT NULL", (ow,))
+        assert "Friday" in (dead["content"] or ""), dead
 
 
 @pytest.mark.asyncio

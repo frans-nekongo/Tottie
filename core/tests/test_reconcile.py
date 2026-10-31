@@ -144,6 +144,55 @@ async def test_predicate_same_still_skips_in_correction_lane(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_cross_subject_coexists(db, emb):
+    """G4: same claim shape, different entity (owner vs manager accepted,
+    cos 0.962) must NOT supersede on the general path — both facts live.
+    Pre-fix this SKIPped as a restatement and ate a fact."""
+    await _seed_row(
+        db, emb, OWNER,
+        "The owner accepted the new unasked-memory test method for all "
+        "future drill runs starting today.",
+        subject="owner", predicate="accepted", obj="unasked-memory method")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("The manager accepted the new unasked-memory test "
+                   "method for all future drill runs starting today."),
+        obs=_obs([_cand("The manager accepted the new unasked-memory test "
+                        "method for all future drill runs starting today.",
+                        subject="manager", predicate="accepted",
+                        obj="unasked-memory method")]),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert n == 2, f"cross-subject update ate a fact (n={n})"
+
+
+@pytest.mark.asyncio
+async def test_same_subject_general_supersedes(db, emb):
+    """G4 no-regression: same entity, changed object on the general path
+    (Ben New York -> Boston, cos 0.893) still supersedes with a chain."""
+    old = await _seed_row(db, emb, OWNER, "Ben lives in New York.",
+                          subject="ben", predicate="lives in", obj="New York")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Ben lives in Boston."),
+        obs=_obs([_cand("Ben lives in Boston.", subject="ben",
+                        predicate="lives in", obj="Boston")]),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    live = await db.fetch(
+        "SELECT id, content, supersedes FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert len(live) == 1 and "Boston" in live[0]["content"]
+    assert str(live[0]["supersedes"]) == old
+
+
+@pytest.mark.asyncio
 async def test_skip_same_value_bumps(db, emb):
     await _seed_row(db, emb, OWNER, "I am vegetarian.",
                     subject="user", predicate="diet", obj="vegetarian")

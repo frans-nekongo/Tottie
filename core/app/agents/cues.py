@@ -10,8 +10,13 @@ from .gates import is_chitchat
 
 CORRECTION_RES = [
     re.compile(p, re.IGNORECASE)
-    for p in (r"\bactually\b", r"\bno wait\b", r"\bcorrection\b", r"\bi meant\b")
+    for p in (r"\bactually\b", r"\bno wait\b", r"^\s*correction\s*:",
+              r"\bi meant\b")
 ]
+# NOTE (G4): bare "correction" mid-sentence ("method correction I was
+# given") is meta-talk, not a correction act — it routed unrelated rows
+# into the correction lane and superseded them. Only start-anchored
+# "Correction: ..." marks now.
 # Polarity-flip tripwire (G1 fix): explicit reversal ACTS. Fires ONLY
 # inside the observer's familiar branch (a stored target exists), so bare
 # commands ("kill the server" with no server memory) never misroute.

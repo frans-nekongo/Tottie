@@ -350,32 +350,49 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
     via_correction = False
     for _ in range(3):  # re-find if our locked pick died underneath us
         matches: list[dict] = []
-        pooled = False
+        targeted = False
         if active:
+            # Active is non-empty only for corrections (scribe gates it on
+            # cue/target), so an active match is correction-targeted too.
             matches = await _find_active(
                 conn, owner=turn.owner, kind=cand["kind"],
                 quarantined=quarantined, cand=cand, vec=vec,
                 floor=active_floor, active=active,
                 identity_only=identity_only,
             )
+            targeted = bool(matches)
         elif correction_pool:
             matches = await _find_correction(
                 conn, owner=turn.owner, kind=cand["kind"],
                 quarantined=quarantined, cand=cand, vec=vec,
                 pool=correction_pool,
             )
-            pooled = bool(matches)
+            targeted = bool(matches)
         if not matches:
             matches = await _find_matches(
                 conn, owner=turn.owner, kind=cand["kind"],
                 quarantined=quarantined, cand=cand, vec=vec, floor=floor,
                 identity_only=identity_only,
             )
-            pooled = False
+            targeted = False
         match = _pick(matches, active)
         if match is not None or not matches:
-            via_correction = pooled and match is not None
+            via_correction = targeted and match is not None
             break
+    # G4: subject agreement gates every update. A match across different
+    # named subjects is a different fact (entity-linked updating: Mem0,
+    # sentient #268) — except on the correction lane, where marked human
+    # intent / NLI-verified aboutness IS the subject check (scribe wording
+    # varies: "rebrand" vs "deadline" name one entity). SP-less rows can't
+    # gate and journal below.
+    m_sub = _norm(match.get("subject")) if match is not None else None
+    c_sub = _norm(cand.get("subject"))
+    diff_sub = (m_sub is not None and c_sub is not None
+                and m_sub != c_sub)
+    same_sub = (m_sub is not None and c_sub is not None
+                and m_sub == c_sub)
+    if match is not None and diff_sub and not via_correction:
+        match = None
     if match is None:
         mid = await _insert_new(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
@@ -384,18 +401,16 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
         return {"op": "NEW", "memory_id": mid, "superseded_id": None}
     old_id = str(match["id"])
     old_obj, new_obj = _norm(match["object"]), _norm(cand["object"])
-    # G1, second layer: a correction that flips the PREDICATE ("does not
-    # drink" -> "drinks") is a belief change even when the object
-    # ("alcohol") is identical — object-only compare SKIPped it as a
-    # restatement. Correction-lane matches only; the general path keeps
-    # today's semantics.
-    pred_flipped = False
-    if via_correction and old_obj is not None and new_obj is not None:
-        old_pred, new_pred = (
-            _norm(match["predicate"]), _norm(cand["predicate"]))
-        pred_flipped = (
-            old_pred is not None and new_pred is not None
-            and old_pred != new_pred)
+    old_pred, new_pred = (
+        _norm(match.get("predicate")), _norm(cand.get("predicate")))
+    # Same entity + flipped predicate ("does not drink" -> "drinks") is a
+    # belief change even when the object is identical — object-only compare
+    # SKIPped it as a restatement (G1 layer 2). Holds on any path: same
+    # subject plus any SP difference is an update, full SP match a dup.
+    pred_flipped = (
+        same_sub and old_obj is not None and new_obj is not None
+        and old_pred is not None and new_pred is not None
+        and old_pred != new_pred)
     if ((old_obj is not None and new_obj is not None
          and old_obj != new_obj) or pred_flipped):
         await conn.execute(
