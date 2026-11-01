@@ -15,11 +15,18 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .agents import consolidate, linker, ranker, updater
+from .agents import consolidate, curator, linker, ranker, taxonomist, updater
 from .config import Settings, get_settings
 from .db import Database
 from .embeddings import Embedder, EmbedderUnavailable
-from .queue import LINK_ROW, RANK_SWEEP, UPDATE_SWEEP, WriteQueue
+from .queue import (
+    CURATOR_SWEEP,
+    LINK_ROW,
+    RANK_SWEEP,
+    TAXONOMY_SWEEP,
+    UPDATE_SWEEP,
+    WriteQueue,
+)
 from .routes import brief, chat, events, graph, health, memories, recall, sleep, sweep, write
 
 
@@ -27,8 +34,9 @@ async def _sleep_loop(db: Database, embedder: Embedder, settings: Settings,
                     queue: WriteQueue) -> None:
     """Automatic consolidation heartbeat: every interval, owners gone idle
     with unconsolidated episodes dream on their own. No button, no mode.
-    Each slept owner also gets updater + linker + ranker sweeps
-    (queued, non-blocking)."""
+    Each slept owner also gets updater + linker + ranker + curator +
+    taxonomist sweeps (queued, non-blocking). Curator runs first so
+    later sweeps never organize junk."""
     gap = max(1, settings.sleep_interval_min) * 60
     while True:
         await asyncio.sleep(gap)
@@ -36,9 +44,11 @@ async def _sleep_loop(db: Database, embedder: Embedder, settings: Settings,
             db=db, embedder=embedder, settings=settings)
         for owner in slept:
             log.info("auto-sleep consolidated %s", owner)
+            queue.enqueue_job(CURATOR_SWEEP, payload={"owner": owner})
             queue.enqueue_job(UPDATE_SWEEP, payload={"owner": owner})
             queue.enqueue_job(LINK_ROW, payload={"owner": owner})
             queue.enqueue_job(RANK_SWEEP, payload={"owner": owner})
+            queue.enqueue_job(TAXONOMY_SWEEP, payload={"owner": owner})
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -90,6 +100,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         queue.register(UPDATE_SWEEP, updater.handle_job)
         queue.register(LINK_ROW, linker.handle_job)
         queue.register(RANK_SWEEP, ranker.handle_job)
+        queue.register(CURATOR_SWEEP, curator.handle_job)
+        queue.register(TAXONOMY_SWEEP, taxonomist.handle_job)
         if not settings.inline_write:
             await queue.start()
         app.state.queue = queue

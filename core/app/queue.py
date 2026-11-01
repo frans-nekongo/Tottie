@@ -23,6 +23,8 @@ RECONCILE_TURN = "reconcile_turn"
 UPDATE_SWEEP = "update_sweep"
 LINK_ROW = "link_row"
 RANK_SWEEP = "rank_sweep"
+CURATOR_SWEEP = "curator_sweep"
+TAXONOMY_SWEEP = "taxonomy_sweep"
 
 
 class Stages:

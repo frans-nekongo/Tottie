@@ -11,6 +11,11 @@ Checks:
   5. no_dups — zero live pairs above 0.95 per owner
   6. stages_present — latest write event carries stage timings
   7. accept_fast — /write 202s in under 2s (async accept holds)
+  8. junk_free — curator sweep leaves zero rule-junk rows per owner
+  9. topic_coverage — taxonomy sweep tags 100% of live rows per owner
+
+Checks 8-9 run their sweeps inline first (idempotent): the eval
+asserts the steady state, not the timing of the heartbeat.
 
 Usage: ./venv/bin/python scripts/eval_memory.py (from core/)
 Exit code = number of failures.
@@ -72,13 +77,17 @@ def main():
                         "session_id": "eval", "owner": "drill"})
     check("entity_leg", any("entity #" in h["why"] for h in d["hits"]),
           str([h["why"] for h in d["hits"][:3]]))
-    # 5-6. DB checks
+    # 5-6, 8-9. DB checks (+ sweeps for 8-9).
     from app.config import Settings
     from app.db import Database
+    from app.embeddings import Embedder
+    from app.agents import curator, taxonomist
 
     async def db_checks():
-        db = Database(Settings())
+        settings = Settings()
+        db = Database(settings)
         await db.open()
+        emb = Embedder(settings)
         for owner in ("owner_local", "drill"):
             n = await db.fetchval(
                 "SELECT count(*) FROM memories a JOIN memories b "
@@ -93,6 +102,30 @@ def main():
         check("stages_present",
               bool(ev and ev["stage_ms"] and "reconcile" in ev["stage_ms"]),
               str((ev or {}).get("stage_ms")))
+        for owner in ("owner_local", "drill"):
+            for _ in range(5):  # sweeps cap at 15; loop to steady state
+                out = await curator.run_sweep(
+                    db=db, embedder=emb, settings=settings, owner=owner)
+                if not out["capped"] or out["retired"] == 0:
+                    break
+            rows = await db.fetch(
+                "SELECT content FROM memories WHERE owner = %s "
+                "AND valid_to IS NULL", (owner,))
+            junk = [r["content"][:50] for r in rows
+                    if curator.classify(r["content"] or "")]
+            check(f"junk_free_{owner}", not junk,
+                  f"junk={len(junk)} {junk[:2]}")
+            await taxonomist.run_sweep(db=db, embedder=emb, settings=settings,
+                                       owner=owner)
+            total = await db.fetchval(
+                "SELECT count(*) FROM memories WHERE owner = %s "
+                "AND valid_to IS NULL", (owner,))
+            tagged = await db.fetchval(
+                "SELECT count(*) FROM memories WHERE owner = %s "
+                "AND valid_to IS NULL AND tags::text LIKE '%%topic:%%'",
+                (owner,))
+            check(f"topic_coverage_{owner}",
+                  total == tagged, f"{tagged}/{total}")
         await db.close()
 
     asyncio.run(db_checks())
