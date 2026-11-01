@@ -15,17 +15,19 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .agents import consolidate
+from .agents import consolidate, updater
 from .config import Settings, get_settings
 from .db import Database
 from .embeddings import Embedder, EmbedderUnavailable
-from .queue import WriteQueue
-from .routes import brief, chat, events, graph, health, memories, recall, sleep, write
+from .queue import UPDATE_SWEEP, WriteQueue
+from .routes import brief, chat, events, graph, health, memories, recall, sleep, sweep, write
 
 
-async def _sleep_loop(db: Database, embedder: Embedder, settings: Settings) -> None:
+async def _sleep_loop(db: Database, embedder: Embedder, settings: Settings,
+                    queue: WriteQueue) -> None:
     """Automatic consolidation heartbeat: every interval, owners gone idle
-    with unconsolidated episodes dream on their own. No button, no mode."""
+    with unconsolidated episodes dream on their own. No button, no mode.
+    Each slept owner also gets an updater sweep (queued, non-blocking)."""
     gap = max(1, settings.sleep_interval_min) * 60
     while True:
         await asyncio.sleep(gap)
@@ -33,6 +35,7 @@ async def _sleep_loop(db: Database, embedder: Embedder, settings: Settings) -> N
             db=db, embedder=embedder, settings=settings)
         for owner in slept:
             log.info("auto-sleep consolidated %s", owner)
+            queue.enqueue_job(UPDATE_SWEEP, payload={"owner": owner})
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -81,13 +84,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
         app.state.settings = settings
         queue = WriteQueue(settings, db=db, embedder=app.state.embedder)
+        queue.register(UPDATE_SWEEP, updater.handle_job)
         if not settings.inline_write:
             await queue.start()
         app.state.queue = queue
         sleep_task = None
         if settings.sleep_auto and app.state.embedder is not None:
             sleep_task = asyncio.create_task(
-                _sleep_loop(db, app.state.embedder, settings))
+                _sleep_loop(db, app.state.embedder, settings, queue))
         yield
         if sleep_task is not None:
             sleep_task.cancel()
@@ -111,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(graph.router, dependencies=[Depends(require_auth)])
     app.include_router(chat.router, dependencies=[Depends(require_auth)])
     app.include_router(sleep.router, dependencies=[Depends(require_auth)])
+    app.include_router(sweep.router, dependencies=[Depends(require_auth)])
     app.include_router(brief.router, dependencies=[Depends(require_auth)])
     return app
 
