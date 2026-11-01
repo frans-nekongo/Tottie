@@ -1,21 +1,34 @@
-"""The Taxonomist: discovered hierarchy. No fixed map: topics and areas
-emerge bottom-up from embedding similarity, so school/masters and
-company/business-docs shape themselves out of the owner's data.
+"""The Taxonomist: discovered topics. No fixed map: topics emerge
+bottom-up from embedding similarity, so habits rows, splitter rows,
+and Lean rows group themselves out of the owner's data.
 
 Method (deterministic, no LLM, no NLI): topics are connected
 components of the TOPIC_COSINE pair graph (tight embedding pairs).
-Areas are connected components over SHARED DISTINCTIVE TERMS —
-embedding cosine cannot see areas (0.60 chains the whole store into
-one mega-area via background dev vocabulary; 0.65+ shatters into
-singletons), but rare shared words ("splitter", "habits.py", "lean")
-carve life buckets cleanly. Singletons keep their own topic and area
-(every live row ends tagged). Names are top terms of member contents
-(stop-filtered); LLM naming is deferred — names are labels, never
-structure.
+Singletons keep their own topic (every live row ends tagged). Names
+are top member terms (stop-filtered); LLM naming is deferred — names
+are labels, never structure.
 
-Writes `topic:<slug>` + `area:<slug>` tags (old topic:/area: tags are
-replaced, making sweeps idempotent). The tag-assoc retrieval leg and
-the UI group on these tags for free.
+Areas (the level above topics: school/company) are DELIBERATELY CUT
+from v1. Three discriminants were tried on the live 210-row store
+and all failed honestly:
+  1. cosine union-find: 0.60 chains everything into one mega-area,
+     0.65+ shatters into singletons — no valley in between;
+  2. centroid coherence: every term scores 0.75-0.83, including
+     "being"/"after" (MiniLM anisotropy — random rows already sit
+     in a narrow cone);
+  3. co-term entropy ratio: "test" looks focused (0.87, terse
+     report rows) while "lean" looks random (1.01, diverse rows) —
+     it measures terseness, not topicality.
+The store is one single-project blob; no unsupervised signal can
+manufacture life buckets that are not in the data. Revisit when the
+store spans distinct life areas (measurable trigger: drill seeds
+with school + company + health rows that topics alone cannot
+separate for navigation). Until then, topics ARE the taxonomy.
+
+Writes `topic:<slug>` tags (old topic:/area: tags are replaced,
+making sweeps idempotent — stale area: tags from earlier sweeps are
+scrubbed). The tag-assoc retrieval leg and the UI group on these
+tags for free.
 """
 import logging
 import re
@@ -28,10 +41,6 @@ log = logging.getLogger("tottie.taxonomist")
 TOPIC_COSINE = 0.75
 PAIR_CAP = 5000
 ROW_CAP = 500
-# Distinctive = appears in 2..8 rows: shared enough to join, rare
-# enough to mean something. "test"/"verify" (df 50+) never area.
-AREA_DF_MIN = 2
-AREA_DF_MAX = 8
 
 STOPS = frozenset(
     "the and for with from that this these those then than them they you "
@@ -78,21 +87,6 @@ def _components(ids, edges):
     return list(groups.values())
 
 
-def _area_groups(by_id):
-    """Areas = components over shared distinctive terms."""
-    terms: dict[str, set[str]] = {}
-    for i, r in by_id.items():
-        for t in set(_terms(r["content"] or "")):
-            terms.setdefault(t, set()).add(i)
-    edges = []
-    for holders in terms.values():
-        if AREA_DF_MIN <= len(holders) <= AREA_DF_MAX:
-            holders = sorted(holders)
-            edges += [(holders[k], holders[k + 1])
-                      for k in range(len(holders) - 1)]
-    return _components(list(by_id), edges)
-
-
 async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
     rows = await db.fetch(
         "SELECT id, content, tags FROM memories WHERE owner = %s "
@@ -116,14 +110,7 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
     topic_edges = [(str(p["a"]), str(p["b"])) for p in pairs
                    if p["cos"] >= TOPIC_COSINE]
     topics = _components(ids, topic_edges)
-    areas = _area_groups(by_id)
     taken: set[str] = set()
-    area_name: dict[str, str] = {}
-    for members in areas:
-        contents = [by_id[i]["content"] or "" for i in members]
-        name = _name(contents, taken, f"area-{len(taken)}")
-        for i in members:
-            area_name[i] = name
     tagged = 0
     for members in topics:
         contents = [by_id[i]["content"] or "" for i in members]
@@ -131,18 +118,17 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
         for i in members:
             tags = [t for t in (by_id[i]["tags"] or [])
                     if not t.startswith("topic:") and not t.startswith("area:")]
-            tags += [f"topic:{topic}", f"area:{area_name[i]}"]
+            tags += [f"topic:{topic}"]
             await db.execute(
                 "UPDATE memories SET tags = %s WHERE id = %s::uuid",
                 (tags, i),
             )
             tagged += 1
-    summary = {"topics": len(topics), "areas": len(areas),
-               "tagged": tagged, "rows": len(rows)}
+    summary = {"topics": len(topics), "tagged": tagged, "rows": len(rows)}
     await db.execute(
         "INSERT INTO memory_events (owner, session_id, turn, utterance, "
         "observer_verdict, scribe_action) VALUES (%s,'sweep',NULL,%s,%s,%s)",
-        (owner, f"taxonomy sweep: {len(topics)} topics, {len(areas)} areas, "
+        (owner, f"taxonomy sweep: {len(topics)} topics, "
                 f"{tagged} rows tagged",
          Json({"keep": True, "reason": "taxonomy sweep"}),
          Json({"op": "TAXONOMY_SWEEP", **summary})),
