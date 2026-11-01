@@ -116,3 +116,27 @@ async def test_user_decision_not_quarantined(db):
     await scribe.persist(db=db, embedder=emb, turn=turn, obs=_decision_obs())
     row = await db.fetchrow("SELECT quarantined FROM memories WHERE owner = 'q2'")
     assert row["quarantined"] is False
+
+
+@pytest.mark.asyncio
+async def test_long_turn_persists_and_dedups_by_hash(db):
+    """006: a 5KB turn must persist (btree v4 caps index rows at 2704B;
+    the old full-utterance index 500d and wedged auto-capture), and a
+    same-(owner,session,turn,text) retry must still SKIP duplicate-turn."""
+    emb = Embedder(Settings())
+    text = "Long decision record. " * 250  # ~5KB
+    assert len(text) > 2704
+    turn = WorkerTurn(
+        text=text, session_id="long1", turn=0, owner="long1",
+        trust="user_direct", origin=None, client_event_id="e1",
+    )
+    action = await scribe.persist(
+        db=db, embedder=emb, turn=turn, obs=_decision_obs())
+    assert action.startswith("NEW"), action
+    ev = await db.fetchrow(
+        "SELECT utterance_hash, length(utterance) AS n FROM memory_events "
+        "WHERE session_id = 'long1'")
+    assert ev["n"] == len(text) and len(ev["utterance_hash"]) == 32
+    action2 = await scribe.persist(
+        db=db, embedder=emb, turn=turn, obs=_decision_obs())
+    assert action2 == "SKIP duplicate-turn", action2
