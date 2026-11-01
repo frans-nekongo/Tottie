@@ -29,7 +29,6 @@ BFS_NODES = 50
 BFS_DECAY = 0.5
 CARD_CHARS = 1600  # ~400 tokens at the codebase's chars/4 heuristic
 COMMAND_BOOST = 1.5
-CURRENTNESS_BOOST = 1.2
 BFS_BUDGET_S = 0.25
 # ACT-R fan effect: association S_ji = S - ln(fan_j). A tag shared by many
 # rows spreads ~nothing to each (cue overload); a rare shared tag binds
@@ -735,18 +734,11 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
     if want:
         for r in await db.fetch(
             "SELECT id, tier, kind, content, summary, tags, trust, salience, "
-            "utility, source, created_at, principle, supersedes FROM memories "
+            "utility, source, created_at, principle FROM memories "
             "WHERE id = ANY(%s::uuid[])",
             (want,),
         ):
             by_id[str(r["id"])] = r
-    # Currentness: rows that superseded another row are newer truth than
-    # rows that never updated. Small boost, applied before BFS growth so
-    # current truth also seeds stronger association spread.
-    for mid, slot in fused.items():
-        row = by_id.get(mid)
-        if row is not None and row.get("supersedes") is not None:
-            slot["score"] *= CURRENTNESS_BOOST
     if cue.policy == "command":
         # Actionability emerges from the Scribe's principle field (rows that
         # carry a reusable rule), never from a fixed kind list: kinds are
