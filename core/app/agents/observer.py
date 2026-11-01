@@ -183,15 +183,20 @@ async def _contradiction(db, settings: Settings, fam_id: str,
     return "neutral", f"nli neutral {res['p_neutral']:.2f}"
 
 
-async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
+async def observe(*, db, embedder, turn, settings: Settings,
+                  stages=None) -> Observation:
+    from ..queue import Stages as _Stages  # lazy: queue imports observer
+    stages = stages or _Stages()
     text = turn.text.strip()
     if gates.is_chitchat(text):
         return Observation(
             keep=False, salience=0.0, surprise=0.0, candidates=[],
             verdict="heuristic: chitchat", provider="none",
         )
-    vec, _ = await embedder.embed(text)
-    fam_cos, fam_id, fam_ranked = await _familiarity(db, turn.owner, vec)
+    with stages.span("embed_turn"):
+        vec, _ = await embedder.embed(text)
+    with stages.span("familiarity"):
+        fam_cos, fam_id, fam_ranked = await _familiarity(db, turn.owner, vec)
     score = round(max(0.0, min(1.0, 1.0 - fam_cos)), 3)
     # CorrectionSniffer (Fix 1): a CORRECTION is Bayesian surprise (belief
     # change), never Shannon familiarity — the whole-turn cosine that eats
@@ -207,7 +212,9 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
         # G1 fix: familiarity is a candidate gate. A highly similar turn
         # may restate (entail -> SKIP below), contradict (correction lane
         # against fam_id), or add (neutral -> normal scribe).
-        route, contra_detail = await _contradiction(db, settings, fam_id, text)
+        with stages.span("nli_verify"):
+            route, contra_detail = await _contradiction(
+                db, settings, fam_id, text)
         if route == "contradict":
             correction_target = fam_id
         elif route == "entail":
@@ -262,28 +269,30 @@ async def observe(*, db, embedder, turn, settings: Settings) -> Observation:
         # Minimal reasoning: the Observer is a clerk, not a thinker. At
         # default effort the reasoning model burned 2046/2048 tokens thinking
         # and returned nothing (6/6 live turns RAW); minimal lands in ~400.
-        raw = await complete_resilient(
-            provider, messages, max_tokens=2048, json_object=True,
-            reasoning_effort="minimal")
+        with stages.span("llm_scribe"):
+            raw = await complete_resilient(
+                provider, messages, max_tokens=2048, json_object=True,
+                reasoning_effort="minimal")
         resampled = raw.resampled
         prompt_tokens += raw.prompt_tokens
         completion_tokens += raw.completion_tokens
         try:
             out = _parse_output(raw.text)
         except (ValidationError, ValueError):
-            repair = await provider.complete(
-                messages
-                + [
-                    {"role": "assistant", "content": raw.text},
-                    {
-                        "role": "user",
-                        "content": "That was not valid JSON. Reply with ONLY the JSON object, no fences, no prose.",
-                    },
-                ],
-                max_tokens=2048,
-                json_object=True,
-                reasoning_effort="minimal",
-            )
+            with stages.span("llm_scribe"):
+                repair = await provider.complete(
+                    messages
+                    + [
+                        {"role": "assistant", "content": raw.text},
+                        {
+                            "role": "user",
+                            "content": "That was not valid JSON. Reply with ONLY the JSON object, no fences, no prose.",
+                        },
+                    ],
+                    max_tokens=2048,
+                    json_object=True,
+                    reasoning_effort="minimal",
+                )
             prompt_tokens += repair.prompt_tokens
             completion_tokens += repair.completion_tokens
             out = _parse_output(repair.text)

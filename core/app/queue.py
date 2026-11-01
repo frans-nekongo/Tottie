@@ -7,7 +7,9 @@ the ledger shows the loss instead of swallowing it.
 """
 import asyncio
 import logging
+import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 
 from psycopg.types.json import Json
@@ -15,6 +17,47 @@ from psycopg.types.json import Json
 from .agents import observer, scribe
 
 log = logging.getLogger("tottie.queue")
+
+
+class Stages:
+    """Per-turn stopwatch: named spans in ms, ledged on the event row.
+    Shared by the queue worker and the inline route so both paths cost
+    the same shape. Optional everywhere (None = don't time)."""
+
+    def __init__(self) -> None:
+        self.ms: dict[str, int] = {}
+
+    @contextmanager
+    def span(self, name: str):
+        t0 = time.monotonic()
+        try:
+            yield
+        finally:
+            self.ms[name] = self.ms.get(name, 0) + int(
+                (time.monotonic() - t0) * 1000)
+
+    def as_dict(self) -> dict[str, int]:
+        return dict(self.ms)
+
+
+async def curate_turn(*, db, embedder, turn, settings,
+                      stages: Stages | None = None) -> str:
+    """One turn through observe + persist with stage timing. The single
+    curation entry for both the queue worker and the inline route."""
+    own = stages is None
+    stages = stages or Stages()
+    with stages.span("observe"):
+        obs = await observer.observe(
+            db=db, embedder=embedder, turn=turn, settings=settings,
+            stages=stages,
+        )
+    with stages.span("persist"):
+        action = await scribe.persist(
+            db=db, embedder=embedder, turn=turn, obs=obs, stages=stages,
+        )
+    if own:
+        log.debug("turn %d stages: %s", turn.turn, stages.as_dict())
+    return action
 
 
 @dataclass(frozen=True)
@@ -73,12 +116,9 @@ class WriteQueue:
         while True:
             turn = await self._q.get()
             try:
-                obs = await observer.observe(
+                action = await curate_turn(
                     db=self._db, embedder=self._embedder, turn=turn,
                     settings=self._settings,
-                )
-                action = await scribe.persist(
-                    db=self._db, embedder=self._embedder, turn=turn, obs=obs
                 )
                 log.info("worker %d curated turn %d: %s", i, turn.turn, action)
             except asyncio.CancelledError:

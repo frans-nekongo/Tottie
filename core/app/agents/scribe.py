@@ -27,24 +27,29 @@ async def _maybe_register_intention(db, turn) -> None:
         await retrieve.register_reminder(db, turn.owner, draft)
 
 
-async def persist(*, db, embedder, turn, obs) -> str:
+async def persist(*, db, embedder, turn, obs, stages=None) -> str:
+    from ..queue import Stages as _Stages  # lazy: queue imports scribe
+    stages = stages or _Stages()
     await _maybe_register_intention(db, turn)
     if not obs.keep:
         try:
-            await _event(db, turn, obs, op="SKIP", ops=[], memory_ids=[])
+            await _event(db, turn, obs, op="SKIP", ops=[], memory_ids=[],
+                         stages=stages)
         except UniqueViolation:
             return "SKIP duplicate-turn"  # twin recorded the skip first
         return f"SKIP {obs.verdict}"
     embedded = []
-    for cand in obs.candidates:
-        vec, _ = await embedder.embed(cand["content"])
-        embedded.append((cand, vec))
+    with stages.span("embed_candidates"):
+        for cand in obs.candidates:
+            vec, _ = await embedder.embed(cand["content"])
+            embedded.append((cand, vec))
     last: Exception | None = None
     for _ in range(4):
         try:
             async with db.transaction() as conn:
                 return await _persist_txn(
-                    conn, db, turn, obs, embedded, embedder.model_name
+                    conn, db, turn, obs, embedded, embedder.model_name,
+                    stages=stages,
                 )
         except UniqueViolation as e:
             last = e  # twin won the race; retry reconciles against it
@@ -53,7 +58,7 @@ async def persist(*, db, embedder, turn, obs) -> str:
     # retries means a true race (G7 co-retire handles the visible case)
 
 
-async def _persist_txn(conn, db, turn, obs, embedded, model) -> str:
+async def _persist_txn(conn, db, turn, obs, embedded, model, stages=None) -> str:
     cur = await conn.execute(
         "SELECT 1 FROM memory_events WHERE owner = %s AND session_id = %s "
         "AND turn = %s AND utterance_hash = md5(%s)",
@@ -82,27 +87,32 @@ async def _persist_txn(conn, db, turn, obs, embedded, model) -> str:
             conn, turn.owner, turn.session_id,
             limit=reconcile.RECENT_SESSION_LIMIT)
     ops = []
-    for cand, vec in embedded:
-        rec = await reconcile.apply_candidate(
-            conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
-            floor=db._settings.reconcile_cosine,
-            active_floor=db._settings.active_cosine, active=active,
-            correction_pool=correction_pool,
-        )
-        ops.append(rec)
+    with stages.span("reconcile"):
+        for cand, vec in embedded:
+            rec = await reconcile.apply_candidate(
+                conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+                floor=db._settings.reconcile_cosine,
+                active_floor=db._settings.active_cosine, active=active,
+                correction_pool=correction_pool,
+            )
+            ops.append(rec)
     memory_ids = [o["memory_id"] for o in ops]
     op = next((o["op"] for o in ops if o["op"] != "SKIP"), "SKIP")
     if obs.raw_fallback:
         op = "RAW"
-    await _event_txn(conn, turn, obs, op=op, ops=ops, memory_ids=memory_ids)
+    with stages.span("event_write"):
+        await _event_txn(conn, turn, obs, op=op, ops=ops,
+                         memory_ids=memory_ids, stages=stages)
     return f"{op} n={len(memory_ids)} {obs.verdict}"
 
 
-async def _event(db, turn, obs, *, op: str, ops: list, memory_ids: list[str]) -> None:
+async def _event(db, turn, obs, *, op: str, ops: list, memory_ids: list[str],
+               stages=None) -> None:
     await db.execute(
         "INSERT INTO memory_events (owner, session_id, turn, utterance, "
-        "utterance_hash, observer_verdict, scribe_action, latency_ms, tokens) "
-        "VALUES (%s,%s,%s,%s,md5(%s),%s,%s,%s,%s)",
+        "utterance_hash, observer_verdict, scribe_action, latency_ms, tokens,"
+        " stage_ms) "
+        "VALUES (%s,%s,%s,%s,md5(%s),%s,%s,%s,%s,%s)",
         (
             turn.owner, turn.session_id, turn.turn, turn.text, turn.text,
             Json({
@@ -119,15 +129,18 @@ async def _event(db, turn, obs, *, op: str, ops: list, memory_ids: list[str]) ->
                 "provider": obs.provider,
             }),
             obs.latency_ms, obs.prompt_tokens + obs.completion_tokens,
+            Json(stages.as_dict() if stages is not None else {}),
         ),
     )
 
 
-async def _event_txn(conn, turn, obs, *, op, ops, memory_ids) -> None:
+async def _event_txn(conn, turn, obs, *, op, ops, memory_ids,
+                   stages=None) -> None:
     await conn.execute(
         "INSERT INTO memory_events (owner, session_id, turn, utterance, "
-        "utterance_hash, observer_verdict, scribe_action, latency_ms, tokens) "
-        "VALUES (%s,%s,%s,%s,md5(%s),%s,%s,%s,%s)",
+        "utterance_hash, observer_verdict, scribe_action, latency_ms, tokens,"
+        " stage_ms) "
+        "VALUES (%s,%s,%s,%s,md5(%s),%s,%s,%s,%s,%s)",
         (
             turn.owner, turn.session_id, turn.turn, turn.text, turn.text,
             Json({
@@ -144,5 +157,6 @@ async def _event_txn(conn, turn, obs, *, op, ops, memory_ids) -> None:
                 "provider": obs.provider,
             }),
             obs.latency_ms, obs.prompt_tokens + obs.completion_tokens,
+            Json(stages.as_dict() if stages is not None else {}),
         ),
     )

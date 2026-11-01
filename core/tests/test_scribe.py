@@ -140,3 +140,29 @@ async def test_long_turn_persists_and_dedups_by_hash(db):
     action2 = await scribe.persist(
         db=db, embedder=emb, turn=turn, obs=_decision_obs())
     assert action2 == "SKIP duplicate-turn", action2
+
+
+@pytest.mark.asyncio
+async def test_stage_timings_ledged_on_event(db):
+    """007: spans recorded during curation land on the event row."""
+    from app.queue import Stages
+    emb = Embedder(Settings())
+    turn = WorkerTurn(
+        text="Stage timing probe turn.",
+        session_id="stages", turn=0, owner="stages",
+        trust="user_direct", origin=None, client_event_id="e1",
+    )
+    stages = Stages()
+    with stages.span("probe_span"):
+        pass
+    await scribe.persist(
+        db=db, embedder=emb, turn=turn, obs=_decision_obs(),
+        stages=stages)
+    ev = await db.fetchrow(
+        "SELECT stage_ms FROM memory_events WHERE session_id = 'stages'")
+    assert ev["stage_ms"]["probe_span"] == 0
+    assert "embed_candidates" in ev["stage_ms"]
+    assert "reconcile" in ev["stage_ms"]
+    # Enclosing spans (event_write, persist, observe) close after the
+    # insert, so they ride the debug log, never the row.
+    assert "event_write" not in ev["stage_ms"]

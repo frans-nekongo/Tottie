@@ -8,8 +8,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from ..agents import observer, scribe
-from ..queue import WorkerTurn
+from ..queue import WorkerTurn, curate_turn
 
 router = APIRouter()
 
@@ -61,13 +60,9 @@ async def post_write(body: WriteRequest, request: Request) -> dict:
             owner=turn.owner, trust=turn.trust, origin=turn.origin,
             client_event_id=uuid.uuid4().hex,
         )
-        obs = await observer.observe(
+        await curate_turn(
             db=request.app.state.db, embedder=request.app.state.embedder,
             turn=turn, settings=settings,
-        )
-        await scribe.persist(
-            db=request.app.state.db, embedder=request.app.state.embedder,
-            turn=turn, obs=obs,
         )
         return {"event_id": turn.client_event_id, "mode": "inline"}
     eid = request.app.state.queue.enqueue_nowait(turn)
