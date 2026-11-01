@@ -49,7 +49,8 @@ async def persist(*, db, embedder, turn, obs) -> str:
         except UniqueViolation as e:
             last = e  # twin won the race; retry reconciles against it
             log.info("turn raced a twin; retrying")
-    raise last  # pragma: no cover - five-plus concurrent identical SP writers
+    raise last  # pragma: no cover - a same-slot collision that survived
+    # retries means a true race (G7 co-retire handles the visible case)
 
 
 async def _persist_txn(conn, db, turn, obs, embedded, model) -> str:

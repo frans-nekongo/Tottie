@@ -112,28 +112,40 @@ def post_turn(text: str, trust: str, session: str, turn: int) -> str:
 
 
 def scan(fh, state: dict, session: str, backfill: int) -> int:
+    # Explicit (start, end) per line: the offset advances only past turns
+    # that forwarded OK. A failed turn keeps its start offset and retries
+    # next poll (a 500 used to eat the turn forever).
     fh.seek(state.get("offset", 0))
-    pending: list[tuple[str, str, str]] = []
-    for line in fh:
+    pending: list[tuple[int, int, str, str, str]] = []
+    end = state.get("offset", 0)
+    while True:
+        pos = fh.tell()
+        line = fh.readline()
+        if not line:
+            break
+        end = fh.tell()
         item = extract(line)
         if item and item[0] not in state.get("seen", []):
-            pending.append(item)
+            pending.append((pos, end, item[0], item[1], item[2]))
     if backfill >= 0:
         pending = pending[-backfill:] if backfill else []
     # Normal tail mode: backfill < 0 means take everything new.
     sent = 0
-    for rid, kind, text in pending if backfill >= 0 else pending:
+    for pos, end_pos, rid, kind, text in pending:
         trust = "user_direct" if kind == "user" else "model_inferred"
         try:
             post_turn(scrub(text), trust, session, state.get("turn", 0))
         except Exception as exc:  # noqa: BLE001 - daemon must not die
             print("forward failed: %s" % exc, flush=True)
+            state["offset"] = pos  # retry this turn next poll
             break
         state["turn"] = state.get("turn", 0) + 1
         state.setdefault("seen", []).append(rid)
+        state["offset"] = end_pos
         sent += 1
         print("forwarded %s turn=%d chars=%d" % (kind, state["turn"], len(text)), flush=True)
-    state["offset"] = fh.tell()
+    else:
+        state["offset"] = end  # nothing pending: consume the gap
     save_state(state)
     return sent
 

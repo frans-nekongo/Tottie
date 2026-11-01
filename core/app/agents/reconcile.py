@@ -328,6 +328,23 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
     return new_id
 
 
+async def _find_live_sp(conn, *, owner: str, quarantined: bool,
+                      subject: str, predicate: str) -> dict | None:
+    """Exact-SP fallback (G7): vector matching can miss a live row sharing
+    the candidate's triple when contents are distant; a blind insert then
+    dies on memories_live_sp (500 after 4 futile retries — retries only
+    fix twin races, never a same-slot different-fact collision). SP is
+    identity, so an exact live SP hit IS the match: downstream compare
+    SUPERSEDEs it or SKIPs it. Mirrors the constraint columns exactly."""
+    cur = await conn.execute(
+        'SELECT id, subject, predicate, "object", tags FROM memories '
+        "WHERE owner = %s AND subject = %s AND predicate = %s "
+        "AND quarantined = %s AND valid_to IS NULL LIMIT 1 FOR UPDATE",
+        (owner, subject, predicate, quarantined),
+    )
+    return await cur.fetchone()
+
+
 async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                           active_floor, active: set[str],
                           correction_pool: set[str] | None = None) -> dict:
@@ -393,6 +410,27 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                 and m_sub == c_sub)
     if match is not None and diff_sub and not via_correction:
         match = None
+    # G7: the candidate's own slot is consulted even when a different-SP
+    # row won the match (closer cosine rival, LIMIT-5 eviction, or a
+    # correction-pool pick). Retiring only the rival and inserting the
+    # candidate's SP blind 500s on memories_live_sp whenever that slot
+    # is live elsewhere — retries can't fix it (only twin races).
+    co_retire: dict | None = None
+    if has_sp:
+        slot = await _find_live_sp(
+            conn, owner=turn.owner, quarantined=quarantined,
+            subject=cand["subject"], predicate=cand["predicate"],
+        )
+        if match is None:
+            # Same subject by construction: no G4 gate. Downstream
+            # compare decides SUPERSEDE vs SKIP vs UPDATE.
+            match = slot
+            if match is not None:
+                m_sub = _norm(match.get("subject"))
+                same_sub = (m_sub is not None and c_sub is not None
+                            and m_sub == c_sub)
+        elif slot is not None and str(slot["id"]) != str(match["id"]):
+            co_retire = slot
     if match is None:
         mid = await _insert_new(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
@@ -417,10 +455,24 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
             "UPDATE memories SET valid_to = now() WHERE id = %s::uuid",
             (old_id,),
         )
+        if co_retire is not None:
+            # The rival retires as designed; the candidate's own live
+            # slot retires too, or the insert below violates it.
+            co_id = str(co_retire["id"])
+            await conn.execute(
+                "UPDATE memories SET valid_to = now() WHERE id = %s::uuid",
+                (co_id,),
+            )
         mid = await _insert_new(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
             quarantined=quarantined, supersedes=old_id,
         )
+        if co_retire is not None:
+            await _link(
+                conn, owner=turn.owner, src=mid, dst=str(co_retire["id"]),
+                relation="supersedes", weight=1.0,
+                reason="same-slot row retired alongside the matched rival",
+            )
         return {"op": "SUPERSEDE", "memory_id": mid, "superseded_id": old_id}
     if old_obj is not None and new_obj is not None:
         await conn.execute(

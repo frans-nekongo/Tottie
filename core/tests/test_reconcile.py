@@ -94,6 +94,97 @@ async def test_supersede_same_sp(db, emb):
     assert link["relation"] == "supersedes"
 
 
+def _cos(a, b) -> float:
+    import math
+    return sum(x * y for x, y in zip(a, b)) / (
+        math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    )
+
+
+@pytest.mark.asyncio
+async def test_g7_fallback_after_g4_clear(db, emb):
+    """G7a: a closer different-subject rival is G4-cleared; the live slot
+    row must still be found (SUPERSEDE), never blind-inserted (500).
+
+    Deterministic (stub obs, local embeds, no LLM). Cosine asserts pin
+    the path: rival in the cosine leg and closer than the slot row."""
+    floor = Settings().reconcile_cosine
+    slot_content = "Photosynthesis converts sunlight inside chloroplasts."
+    new_content = "Owner fixed the login bug today."
+    rival_content = "System repaired the login bug today."
+    svec, _ = await emb.embed(slot_content)
+    nvec, _ = await emb.embed(new_content)
+    rvec, _ = await emb.embed(rival_content)
+    assert _cos(nvec, rvec) >= floor, "rival must reach the cosine leg"
+    assert _cos(nvec, rvec) > _cos(nvec, svec), "rival must win _pick"
+    old = await _seed_row(
+        db, emb, "r3g7a", slot_content, subject="owner", predicate="fixed",
+        obj="chloroplasts",
+    )
+    await _seed_row(
+        db, emb, "r3g7a", rival_content, subject="system",
+        predicate="repaired", obj="login", tags=["login"],
+    )
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn(new_content, session="r3g7a", owner="r3g7a"),
+        obs=_obs([_cand(new_content, subject="owner", predicate="fixed",
+                        obj="login bug", tags=["login"])]),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    live = await db.fetch(
+        "SELECT subject, predicate, supersedes FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL ORDER BY subject",
+        ("r3g7a",),
+    )
+    # New (owner, fixed) row supersedes the slot row; the rival survives.
+    assert [(r["subject"], r["predicate"]) for r in live] == [
+        ("owner", "fixed"), ("system", "repaired")]
+    assert str(live[0]["supersedes"]) == old
+
+
+@pytest.mark.asyncio
+async def test_g7_coretire_same_subject_rival(db, emb):
+    """G7b: a closer same-subject rival wins the match (pred-flip
+    SUPERSEDE); the candidate's own live slot retires alongside it
+    instead of 500ing on memories_live_sp."""
+    floor = Settings().reconcile_cosine
+    slot_content = "Photosynthesis converts sunlight inside chloroplasts."
+    new_content = "Owner fixed the login bug today."
+    rival_content = "Owner repaired the login bug today."
+    svec, _ = await emb.embed(slot_content)
+    nvec, _ = await emb.embed(new_content)
+    rvec, _ = await emb.embed(rival_content)
+    assert _cos(nvec, rvec) >= floor, "rival must reach the cosine leg"
+    assert _cos(nvec, rvec) > _cos(nvec, svec), "rival must win _pick"
+    slot_id = await _seed_row(
+        db, emb, "r3g7b", slot_content, subject="owner", predicate="fixed",
+        obj="chloroplasts",
+    )
+    rival_id = await _seed_row(
+        db, emb, "r3g7b", rival_content, subject="owner",
+        predicate="repaired", obj="login",
+    )
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn(new_content, session="r3g7b", owner="r3g7b"),
+        obs=_obs([_cand(new_content, subject="owner", predicate="fixed",
+                        obj="login bug")]),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    live = await db.fetch(
+        "SELECT id, content FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        ("r3g7b",),
+    )
+    assert len(live) == 1 and "login bug" in live[0]["content"]
+    dead = await db.fetch(
+        "SELECT id FROM memories WHERE owner = %s AND valid_to IS NOT NULL",
+        ("r3g7b",),
+    )
+    assert {str(r["id"]) for r in dead} == {slot_id, rival_id}
+
+
 @pytest.mark.asyncio
 async def test_predicate_flip_supersedes(db, emb):
     """G1 second layer: a correction flipping the PREDICATE with an
