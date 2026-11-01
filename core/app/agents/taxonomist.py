@@ -1,6 +1,6 @@
-"""The Taxonomist: discovered topics. No fixed map: topics emerge
-bottom-up from embedding similarity, so habits rows, splitter rows,
-and Lean rows group themselves out of the owner's data.
+"""The Taxonomist: discovered topics + provenance areas. No fixed map:
+topics emerge bottom-up from embedding similarity; areas emerge from
+WHERE the agent read (repo root of the file, else topic majority).
 
 Method (deterministic, no LLM, no NLI): topics are connected
 components of the TOPIC_COSINE pair graph (tight embedding pairs).
@@ -8,29 +8,25 @@ Singletons keep their own topic (every live row ends tagged). Names
 are top member terms (stop-filtered); LLM naming is deferred — names
 are labels, never structure.
 
-Areas (the level above topics: school/company) are DELIBERATELY CUT
-from v1. Three discriminants were tried on the live 210-row store
-and all failed honestly:
-  1. cosine union-find: 0.60 chains everything into one mega-area,
-     0.65+ shatters into singletons — no valley in between;
-  2. centroid coherence: every term scores 0.75-0.83, including
-     "being"/"after" (MiniLM anisotropy — random rows already sit
-     in a narrow cone);
-  3. co-term entropy ratio: "test" looks focused (0.87, terse
-     report rows) while "lean" looks random (1.01, diverse rows) —
-     it measures terseness, not topicality.
-The store is one single-project blob; no unsupervised signal can
-manufacture life buckets that are not in the data. Revisit when the
-store spans distinct life areas (measurable trigger: drill seeds
-with school + company + health rows that topics alone cannot
-separate for navigation). Until then, topics ARE the taxonomy.
+Areas are PROVENANCE, not cosine — and that order matters. Four
+content-based discriminants failed honestly (cosine union-find
+chains school+company into one mega-area even at 0.70 through
+shared AI vocabulary; centroid coherence; co-term entropy; anchor
+terms): school and company TALK alike, so no content signal splits
+them. But every memory knows where it was read: rows from the
+school folder ARE school, rows from the company repo ARE company.
+Area = nearest ancestor dir containing .git, else the file's parent
+dir (repo roots unite subdirs: specs/ + technical/ are one repo).
+Turn rows (replies, no file) inherit their topic's plurality area;
+topics with no file rows are the live session. No hand lists: any
+folder read in future becomes its own area the same way.
 
-Writes `topic:<slug>` tags (old topic:/area: tags are replaced,
-making sweeps idempotent — stale area: tags from earlier sweeps are
-scrubbed). The tag-assoc retrieval leg and the UI group on these
-tags for free.
+Writes `topic:<slug>` + `area:<slug>` tags (old ones replaced,
+sweeps idempotent). The tag-assoc retrieval leg and the UI group on
+these tags for free.
 """
 import logging
+import os
 import re
 from collections import Counter
 
@@ -87,15 +83,66 @@ def _components(ids, edges):
     return list(groups.values())
 
 
+def _area_root(path: str, cache: dict) -> str:
+    """Area root: nearest ancestor containing .git, else parent dir.
+    Returns the slug. Walk-up is cached per sweep."""
+    if path in cache:
+        return cache[path]
+    d = os.path.dirname(path) or "/"
+    root = None
+    for _ in range(12):
+        if os.path.isdir(os.path.join(d, ".git")):
+            root = d
+            break
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    if root is None:
+        root = os.path.dirname(path) or "/"
+    slug = re.sub(r"[^a-z0-9]+", "-", os.path.basename(root).lower()
+                  ).strip("-")
+    # Our own PDF-extraction scratch dir, not user content: name the
+    # subject, not the artifact.
+    if slug.endswith("-txt"):
+        slug = slug[:-4]
+    cache[path] = slug or "files"
+    return cache[path]
+
+
+def _read_path(utterance: str | None) -> str | None:
+    m = re.match(r"\[file read: (.+?) — part \d+/\d+\]", utterance or "")
+    return m.group(1) if m else None
+
+
 async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
     rows = await db.fetch(
-        "SELECT id, content, tags FROM memories WHERE owner = %s "
+        "SELECT id, content, tags, source FROM memories WHERE owner = %s "
         "AND valid_to IS NULL AND embedding IS NOT NULL "
         "ORDER BY created_at DESC LIMIT %s",
         (owner, ROW_CAP),
     )
     by_id = {str(r["id"]): r for r in rows}
     ids = list(by_id)
+    evs = await db.fetch(
+        "SELECT session_id, turn, utterance FROM memory_events "
+        "WHERE owner = %s",
+        (owner,),
+    )
+    utt = {(e["session_id"], e["turn"]): e["utterance"] for e in evs}
+    cache: dict[str, str] = {}
+    row_area: dict[str, str | None] = {}
+    for i in ids:
+        src = by_id[i].get("source") or {}
+        turns = src.get("turns") or ([src["turn"]] if src.get("turn")
+                                     is not None else [])
+        area = None
+        for t in turns:
+            path = _read_path(utt.get((src.get("session"), t)))
+            if path:
+                area = _area_root(path, cache)
+                break
+        row_area[i] = area
     pairs = await db.fetch(
         "SELECT a.id AS a, b.id AS b, "
         "1 - (a.embedding <=> b.embedding) AS cos "
@@ -112,24 +159,34 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
     topics = _components(ids, topic_edges)
     taken: set[str] = set()
     tagged = 0
+    areas: set[str] = set()
     for members in topics:
         contents = [by_id[i]["content"] or "" for i in members]
         topic = _name(contents, taken, f"topic-{len(taken)}")
+        votes = Counter(row_area[i] for i in members
+                        if row_area[i] is not None)
+        fallback = votes.most_common(1)[0][0] if votes else "session"
         for i in members:
+            # Own provenance wins: a company row in a school-majority
+            # topic stays company (live case: 2 RAG rows). The topic
+            # vote exists for turn rows, which have no file to read.
+            area = row_area[i] or fallback
+            areas.add(area)
             tags = [t for t in (by_id[i]["tags"] or [])
                     if not t.startswith("topic:") and not t.startswith("area:")]
-            tags += [f"topic:{topic}"]
+            tags += [f"topic:{topic}", f"area:{area}"]
             await db.execute(
                 "UPDATE memories SET tags = %s WHERE id = %s::uuid",
                 (tags, i),
             )
             tagged += 1
-    summary = {"topics": len(topics), "tagged": tagged, "rows": len(rows)}
+    summary = {"topics": len(topics), "areas": sorted(areas),
+               "tagged": tagged, "rows": len(rows)}
     await db.execute(
         "INSERT INTO memory_events (owner, session_id, turn, utterance, "
         "observer_verdict, scribe_action) VALUES (%s,'sweep',NULL,%s,%s,%s)",
         (owner, f"taxonomy sweep: {len(topics)} topics, "
-                f"{tagged} rows tagged",
+                f"{len(areas)} areas, {tagged} rows tagged",
          Json({"keep": True, "reason": "taxonomy sweep"}),
          Json({"op": "TAXONOMY_SWEEP", **summary})),
     )

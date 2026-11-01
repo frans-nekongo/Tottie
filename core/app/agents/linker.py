@@ -14,6 +14,7 @@ Runs as a sweep over recent link-less rows (sleep heartbeat) or as a
 single-row LINK_ROW job. Within-partition only, like the updater.
 """
 import logging
+import re
 
 from ..db import pgvector_literal
 from . import reconcile
@@ -40,11 +41,17 @@ def _norm(value):
 
 
 def _entities(row):
+    # Compound subjects name several entities ("NKNGO-LANG and
+    # translate"): split them or bridge rows never link (live case:
+    # the school<->company bridge row sat edge-less).
     out = []
     for v in (row.get("subject"), row.get("object")):
-        n = _norm(v)
-        if n and n not in STOP_ENTITIES and n not in out:
-            out.append(n)
+        if v is None:
+            continue
+        for part in re.split(r"\s+and\s+|,\s*|/\s*|\s+&\s+", v):
+            n = _norm(part)
+            if n and n not in STOP_ENTITIES and n not in out:
+                out.append(n)
     return out
 
 
@@ -72,6 +79,37 @@ async def _already_linked(db, owner, src, dst):
     )
 
 
+_TYPE_STOPS = frozenset(
+    "the and for with from that this these those then than them they you "
+    "your are was were has have had not but our its into over after "
+    "such only also when where which who whom whose why how does did "
+    "done just".split()
+)
+
+
+_NEGATIONS = frozenset(
+    "not never no none neither nor without cannot can't won't don't "
+    "doesn't didn't isn't aren't wasn't weren't hasn't haven't hadn't "
+    "couldn't shouldn't wouldn't".split()
+)
+
+
+def _words(t):
+    return {w for w in re.findall(r"[a-z0-9']+", t.lower())
+            if len(w) > 3 and w not in _TYPE_STOPS}
+
+
+def _negation_asymmetry(a_content, b_content) -> bool:
+    def neg(t):
+        toks = set(re.findall(r"[a-z']+", t.lower()))
+        return bool(toks & _NEGATIONS)
+    return neg(a_content) != neg(b_content)
+
+
+def _shared_words(a_content, b_content) -> int:
+    return len(_words(a_content) & _words(b_content))
+
+
 async def _type_pair(nli_mod, settings, a_content, b_content, cos):
     """NLI edge typing: supports / contradicts / entity (neutral or far)."""
     if cos < TYPED_COSINE:
@@ -85,7 +123,17 @@ async def _type_pair(nli_mod, settings, a_content, b_content, cos):
         rev = await nli_mod.verify(b_content, a_content, settings)
         if rev["label"] == "contradiction" and \
                 rev["p_contra"] >= settings.nli_threshold:
-            return "contradicts", W_CONTRA, fwd["p_contra"]
+            # Same-subject different-claims ("X does A" vs "X does B")
+            # misfire symmetric-contra at 0.97-1.00 (14 false edges on
+            # code-trace rows; scores can't separate them from real
+            # opposition). Real opposition flips polarity or shares
+            # the topic: negation asymmetry, or >= 4 content words.
+            # Precision over recall: retirement lives in
+            # reconciler/updater, so a missed edge loses narration,
+            # never truth.
+            if _negation_asymmetry(a_content, b_content) or \
+                    _shared_words(a_content, b_content) >= 4:
+                return "contradicts", W_CONTRA, fwd["p_contra"]
         return "entity", W_ENTITY, fwd["p_contra"]
     rev = await nli_mod.verify(b_content, a_content, settings)
     if rev["label"] == "entailment" and \

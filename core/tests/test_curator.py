@@ -68,7 +68,13 @@ async def test_sweep_retires_transient_and_husk(db, emb):
 
 
 @pytest.mark.asyncio
-async def test_sweep_retires_nli_drift(db, emb):
+async def test_drift_pass_disabled_keeps_everything(db, emb):
+    # Drift is DISABLED (DRIFT_ENABLED=False): even a blatant
+    # inversion survives the sweep. The detector massacred 30 true
+    # rows at 0 confirmed catches; it comes back WITH the U3
+    # splitter, which makes rows atomic enough to verify. This test
+    # pins the disabled contract — flip it when reviving drift.
+    assert curator.DRIFT_ENABLED is False
     await db.execute(
         "INSERT INTO memory_events (owner, session_id, turn, utterance) "
         "VALUES ('cu2','cs2',0,'The server is up and healthy.')")
@@ -79,19 +85,18 @@ async def test_sweep_retires_nli_drift(db, emb):
                 session="cs2")
     out = await curator.run_sweep(
         db=db, embedder=emb, settings=get_settings(), owner="cu2")
-    assert out["retired"] == 1, out
-    live = await db.fetch(
-        "SELECT content FROM memories WHERE owner = 'cu2' "
+    assert out["retired"] == 0, out
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = 'cu2' "
         "AND valid_to IS NULL")
-    assert [r["content"] for r in live] == [
-        "Server health is good and steady today overall."]
+    assert n == 2, out
 
 
 @pytest.mark.asyncio
-async def test_drift_keeps_merged_row_from_long_turn(db, emb):
-    # Regression: whole-turn NLI inverted on 2k-char premises (entailed
-    # rows read contradiction 0.95+) and the curator massacred 15
-    # innocent doc rows. Merged-but-supported rows must survive.
+async def test_drift_disabled_long_turn_keeps_all(db, emb):
+    # Disabled-contract companion: with no drift pass, both the
+    # supported row and the parrot survive. Revival (with the U3
+    # splitter) flips this back to retire-the-parrot.
     filler = ("The quarterly review covered budgets, hiring plans, office "
               "snacks, travel policy, and the new parking rules. ")
     turn = (filler * 30
@@ -111,20 +116,17 @@ async def test_drift_keeps_merged_row_from_long_turn(db, emb):
                 session="cs3", turn=0)
     out = await curator.run_sweep(
         db=db, embedder=emb, settings=get_settings(), owner="cu3")
-    live = await db.fetch(
-        "SELECT content FROM memories WHERE owner = 'cu3' "
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = 'cu3' "
         "AND valid_to IS NULL")
-    contents = [r["content"] for r in live]
-    assert any("node:20-alpine" in c for c in contents), (out, contents)
-    assert not any("parrot" in c for c in contents), (out, contents)
+    assert n == 2, out
 
 
 @pytest.mark.asyncio
-async def test_drift_checks_all_merge_turns(db, emb):
-    # Reconcile UPDATE appends content from a later turn; the drift
-    # check must verify each clause against the pooled turns, or true
-    # merged rows retire (live case: standalone row fused turn 143 +
-    # turn 145, convicted twice on turn 143 alone).
+async def test_drift_disabled_merge_turns_keep(db, emb):
+    # Disabled-contract companion for multi-turn provenance: the
+    # merged row survives trivially. Revival re-verifies per clause
+    # against pooled turns (source.turns, written by reconcile).
     await db.execute(
         "INSERT INTO memory_events (owner, session_id, turn, utterance) "
         "VALUES ('cu4','cs4',0,'Docker builds use multi-stage caching.')")

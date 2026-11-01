@@ -221,16 +221,24 @@ async def _link(conn, *, owner, src, dst, relation, weight, reason) -> None:
 async def _tag_links(conn, *, owner, quarantined, new_id, tags, kind):
     if not tags:
         return
-    cur = await conn.execute(
-        "SELECT id, kind, tags FROM memories WHERE owner = %s AND valid_to IS NULL "
-        "AND quarantined = %s AND id <> %s::uuid "
-        "AND EXISTS (SELECT 1 FROM unnest(tags) t "
-        "WHERE lower(btrim(t)) = ANY(%s)) "
-        "ORDER BY salience DESC LIMIT %s",
-        (owner, quarantined, new_id, tags, TAG_LINK_CAP),
-    )
+    # Per-tag fan-out, not global top-N: a global salience cap lets one
+    # hot tag starve every other facet (live case: the school<->company
+    # bridge row linked 0 company rows because trace rows out-saliented
+    # them). Each tag facet earns its own links.
     mine = set(tags) - STOP_TAGS - {_norm(kind) or ""}
-    for r in await cur.fetchall():
+    seen: dict[str, dict] = {}
+    for tag in sorted(mine):
+        cur = await conn.execute(
+            "SELECT id, kind, tags FROM memories WHERE owner = %s AND valid_to IS NULL "
+            "AND quarantined = %s AND id <> %s::uuid "
+            "AND EXISTS (SELECT 1 FROM unnest(tags) t "
+            "WHERE lower(btrim(t)) = %s) "
+            "ORDER BY salience DESC LIMIT %s",
+            (owner, quarantined, new_id, tag, TAG_LINK_CAP),
+        )
+        for r in await cur.fetchall():
+            seen.setdefault(str(r["id"]), r)
+    for r in seen.values():
         theirs = ({_norm(t) for t in (r["tags"] or [])} - {None}
                   - STOP_TAGS - {_norm(r["kind"]) or ""})
         shared = sorted(mine & theirs)

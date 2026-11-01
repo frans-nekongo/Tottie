@@ -10,11 +10,10 @@ Three passes, cheapest first, all within-partition:
    the instant they are written.
 2. Husk: short (< 40 chars) with no digit, no quoted string, and no
    proper noun — nothing durable can fit that shape.
-3. Drift: the row is unsupported by its own source turn = scribe
-   hallucination. Sentence-cosine support (best sentence < 0.70 AND
-   NLI-entail(top) < 0.5). Whole-turn NLI was tried and reverted: the
-   cross-encoder inverts on long premises (entailed rows read
-   contradiction 0.95+ against their own 2k turn).
+3. Drift: DISABLED (DRIFT_ENABLED=False). Three verifiers were
+   stacked and all massacred true rows at 0 confirmed catches; the
+   right layer is extraction atomicity (U3 splitter). Code kept for
+   the revival; tests pin the disabled contract meanwhile.
 
 Deletes are soft-retires (valid_to) with retired ids + reasons in the
 CURATOR_SWEEP ledger event — recoverable, auditable. Capped per sweep.
@@ -41,6 +40,14 @@ HUSK_LEN = 40
 MAX_RETIRE = 15
 # Drift verification embeds ~60 sentences per row: newest 100 only.
 DRIFT_ROWS = 100
+# Drift is DISABLED: three verifiers stacked (whole-turn NLI, clause
+# cosine, clause + pair-windows) and every one massacred true rows —
+# NLI inverts on long premises, and scribe compresses whole SECTIONS
+# into one row so no local window verifies (30 false retires, 0
+# confirmed hallucinations caught). The right layer is extraction
+# atomicity (U3 splitter): atomic rows verify trivially. Re-enable
+# drift WITH the splitter, never before. Transient + husk stay live.
+DRIFT_ENABLED = False
 
 
 def classify(content: str) -> str | None:
@@ -105,7 +112,9 @@ async def _drift_kind(db, embedder, settings, owner, row) -> str | None:
     """Drift = row unsupported by its own source turn (hallucination).
 
     Measured method (Nov 2026, 5 supported vs 5 unrelated pairs): the
-    NLI cross-encoder INVERTS on long premises — entailed rows read
+    DISABLED (see DRIFT_ENABLED): kept for the U3-splitter revival.
+    History: whole-turn NLI cross-encoder INVERTS on long premises —
+    entailed rows read
     contradiction 0.95-0.99 against their own 2k-char turn, while the
     same row against one sentence reads entailment 0.994. So support is
     sentence-cosine first (supported rows hit 0.78-0.95 on their best
@@ -121,8 +130,10 @@ async def _drift_kind(db, embedder, settings, owner, row) -> str | None:
     and no single sentence reaches 0.70 against a merge (proven by
     3 more false retires on the row-level version).
     """
-    from .. import nli as nli_mod
+    from .. import nli as nli_mod  # noqa: F401 - kept for revival
 
+    if not DRIFT_ENABLED:
+        return None
     src = row.get("source") or {}
     if not src.get("session"):
         return None
@@ -143,7 +154,7 @@ async def _drift_kind(db, embedder, settings, owner, row) -> str | None:
         sents += [s.strip() for s in
                   re.split(r"(?<=[.!?])\s+|\n+", ev["utterance"])
                   if len(s.strip()) > 25][:40]
-    sents = sents[:100]
+    sents = sents[:60]
     if not sents:
         return None
     # Verify each claim, not the bundle: scribe merges 2-4 sentences
@@ -152,10 +163,17 @@ async def _drift_kind(db, embedder, settings, owner, row) -> str | None:
     if not clauses:
         return None
     try:
+        # Singles + adjacent pairs: scribe claims routinely span two
+        # source sentences ("never rebuild all" + "the command is X"),
+        # and no single sentence reaches 0.70 against such a span.
+        windows = list(sents)
+        windows += [sents[i] + " " + sents[i + 1]
+                    for i in range(len(sents) - 1)]
         sent_vecs = []
-        for st in sents:
+        for st in windows:
             vec, _ = await embedder.embed(st)
             sent_vecs.append(vec)
+        sents = windows
         for clause in clauses:
             if not await _clause_supported(
                     embedder, nli_mod, settings, sent_vecs, sents,
@@ -170,14 +188,24 @@ async def _drift_kind(db, embedder, settings, owner, row) -> str | None:
 def _clauses(content: str) -> list[str]:
     """Substantial clauses: split sentences, then sub-split on
     commas/ands. Merges join sentences with newlines, so sentence
-    boundaries split first (a two-sentence merge is two claims)."""
+    boundaries split first (a two-sentence merge is two claims).
+    Fragments < 30 chars carry into the previous clause — dropping
+    them silently unverifies real meaning ("never rebuild all")."""
     out = []
     for sent in re.split(r"(?<=[.!?])\s+|\n+", content):
         for c in re.split(r"\s*(?:;|, and|,| and )\s+", sent):
             c = c.strip()
-            if len(c) >= 30:
+            if not c:
+                continue
+            if len(c) < 30 and out:
+                out[-1] = out[-1] + ", " + c
+            elif len(c) >= 30:
                 out.append(c)
-    return out
+            elif out:
+                out[-1] = out[-1] + ", " + c
+            else:
+                out.append(c)
+    return [c for c in out if len(c) >= 30]
 
 
 async def _clause_supported(embedder, nli_mod, settings, sent_vecs,

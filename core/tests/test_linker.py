@@ -95,6 +95,23 @@ async def test_symmetric_contra_links_contradicts(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_same_subject_facets_stay_entity(db, emb):
+    # Live misfire: "X does A" vs "X does B" (different facets of one
+    # file) read symmetric-contra 0.97-1.00 and typed 14 false
+    # contradicts. No polarity flip + < 4 shared words = plain entity.
+    a = await _seed(db, emb, "lk6",
+                    "curator.py run_sweep retires memory by setting valid_to.",
+                    "curator")
+    b = await _seed(db, emb, "lk6",
+                    "curator.py run_sweep fetches active memories ordered by date.",
+                    "curator")
+    out = await linker.link_row(
+        db=db, embedder=emb, settings=get_settings(), memory_id=a)
+    e = await _edge(db, a, b)
+    assert e["relation"] == "entity", (out, e)
+
+
+@pytest.mark.asyncio
 async def test_owner_subject_never_links(db, emb):
     a = await _seed(db, emb, "lk4", "Owner fixed the bug.", "owner",
                     obj="bug")
