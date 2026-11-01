@@ -125,12 +125,55 @@ async def memory_write(tier: str, content: str, tags: list[str] | None = None,
     return _out({"action": action})
 
 
+@mcp.tool(name="memory.register")
+async def memory_register(agent_id: str, label: str,
+                          session_id: str | None = None,
+                          ctx: Context = None) -> str:
+    """Announce this agent to the registry (bluetooth visible). The
+    owner pairs chosen agents; injection serves paired ones only."""
+    st = _state(ctx)
+    row = await st["db"].execute_returning(
+        "INSERT INTO agents (id, owner, label, transport, session_id) "
+        "VALUES (%s, %s, %s, 'mcp', %s) "
+        "ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, "
+        "transport = 'mcp', session_id = EXCLUDED.session_id, "
+        "last_seen = now() RETURNING connected",
+        (agent_id, st["settings"].owner, label, session_id),
+    )
+    return _out({"id": agent_id, "connected": row["connected"]})
+
+
+@mcp.tool(name="memory.heartbeat")
+async def memory_heartbeat(agent_id: str, ctx: Context = None) -> str:
+    """Refresh this agent's presence (online = heartbeat within TTL)."""
+    st = _state(ctx)
+    row = await st["db"].execute_returning(
+        "INSERT INTO agents (id, owner, label, transport) "
+        "VALUES (%s, %s, %s, 'mcp') "
+        "ON CONFLICT (id) DO UPDATE SET last_seen = now() "
+        "RETURNING connected",
+        (agent_id, st["settings"].owner, agent_id),
+    )
+    return _out({"id": agent_id, "connected": row["connected"]})
+
+
+async def _touch(db, owner: str, agent_id: str | None) -> None:
+    if agent_id:
+        await db.execute(
+            "UPDATE agents SET last_seen = now() "
+            "WHERE id = %s AND owner = %s",
+            (agent_id, owner),
+        )
+
+
 @mcp.tool(name="memory.recall")
 async def memory_recall(query: str, tiers: list[str] | None = None,
                         k: int = 8, session_id: str | None = None,
+                        agent_id: str | None = None,
                         ctx: Context = None) -> str:
     """Cue-typed associative recall + Context Card + confidence."""
     st = _state(ctx)
+    await _touch(st["db"], st["settings"].owner, agent_id)
     out = await retrieve.recall(
         db=st["db"], embedder=st["embedder"], owner=st["settings"].owner,
         query=query, session_id=session_id or f"mcp:{st['settings'].owner}",
@@ -143,12 +186,14 @@ async def memory_recall(query: str, tiers: list[str] | None = None,
 async def memory_brief(text: str | None = None,
                        session_id: str | None = None,
                        since_event_id: int = 0,
+                       agent_id: str | None = None,
                        ctx: Context = None) -> str:
     """Ambient briefing: the brain surfacing without being asked. Call once
     per agent turn; paste the briefing block straight into working context.
     No text: brief on the session's own recent utterances (pure ambient).
     Always carries due intentions + memories since since_event_id."""
     st = _state(ctx)
+    await _touch(st["db"], st["settings"].owner, agent_id)
     out = await brief.brief(
         db=st["db"], embedder=st["embedder"], owner=st["settings"].owner,
         session_id=session_id or f"mcp:{st['settings'].owner}",

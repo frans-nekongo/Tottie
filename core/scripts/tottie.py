@@ -158,7 +158,23 @@ def main():
     rn.add_argument("--session", required=True)
     rn.add_argument("--k", type=int, default=8)
     rn.add_argument("--brief-lines", type=int, default=25)
+    rn.add_argument("--agent", default=None,
+                    help="inject only if this agent id is paired")
     rn.add_argument("task")
+    ag = sub.add_parser("agents", help="list registered agents")
+    ag.add_argument("--owner", default="owner_local")
+    pr = sub.add_parser("pair", help="pair an agent (owner accepts)")
+    pr.add_argument("--owner", default="owner_local")
+    pr.add_argument("id")
+    up = sub.add_parser("unpair", help="unpair an agent")
+    up.add_argument("--owner", default="owner_local")
+    up.add_argument("id")
+    rg = sub.add_parser("register", help="announce an agent")
+    rg.add_argument("--owner", default="owner_local")
+    rg.add_argument("--transport", default="cli")
+    rg.add_argument("--session", default=None)
+    rg.add_argument("id")
+    rg.add_argument("label")
     args = ap.parse_args()
     _, token = _config()
     if not token and args.cmd != "relink":
@@ -193,7 +209,50 @@ def main():
         print(out["card"] or "(abstained — nothing relevant)")
         print(f"\nconfidence={out['confidence']} abstain={out['abstain']} "
               f"mode={out['mode']} story={out['story']}")
+    elif args.cmd == "agents":
+        code, out = _req("GET", f"/agents?owner={args.owner}")
+        if code != 200:
+            _fail(f"/agents -> {code} {out}")
+        for a in out.get("agents", []):
+            state = "paired" if a["connected"] else "visible"
+            alive = "online" if a["online"] else "offline"
+            print(f"{a['id']}  {a['label']}  [{a['transport']}]  "
+                  f"{state}/{alive}")
+    elif args.cmd == "pair":
+        code, out = _req("POST", "/agents/pair",
+                         {"owner": args.owner, "id": args.id})
+        if code != 200:
+            _fail(f"/agents/pair -> {code} {out}")
+        print(f"paired {args.id}")
+    elif args.cmd == "unpair":
+        code, out = _req("POST", "/agents/unpair",
+                         {"owner": args.owner, "id": args.id})
+        if code != 200:
+            _fail(f"/agents/unpair -> {code} {out}")
+        print(f"unpaired {args.id}")
+    elif args.cmd == "register":
+        code, out = _req("POST", "/agents/register",
+                         {"owner": args.owner, "id": args.id,
+                          "label": args.label,
+                          "transport": args.transport,
+                          "session_id": args.session})
+        if code != 200:
+            _fail(f"/agents/register -> {code} {out}")
+        print(f"registered {args.id} "
+              f"(paired={out.get('connected')})")
     elif args.cmd == "run":
+        if args.agent:
+            code, out = _req("GET", f"/agents?owner={args.owner}")
+            if code != 200:
+                _fail(f"/agents -> {code} {out}")
+            match = [a for a in out.get("agents", [])
+                     if a["id"] == args.agent]
+            if not match:
+                _fail(f"unknown agent '{args.agent}' "
+                      f"(register it first)")
+            if not match[0]["connected"]:
+                _fail(f"agent '{args.agent}' is not paired "
+                      f"(pair it first: tottie pair {args.agent})")
         code, bout = _req("POST", "/briefing", {
             "owner": args.owner, "session_id": args.session,
         })

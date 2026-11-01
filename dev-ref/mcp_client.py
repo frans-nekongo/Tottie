@@ -6,6 +6,8 @@ Usage:
   python mcp_client.py recall <query> [session_id]
   python mcp_client.py probe-tag <tag>
   python mcp_client.py probe-id <id>
+  python mcp_client.py register <agent_id> <label> [session_id]
+  python mcp_client.py heartbeat <agent_id>
 
 Defaults: session dev-ref-1. Env forced per task spec:
   TOTTIE_API_TOKEN=changeme-local-token, TOTTIE_OWNER=owner_local.
@@ -47,7 +49,8 @@ async def _call(tool: str, args: dict) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2 or argv[1] not in (
-            "brief", "remember", "recall", "probe-tag", "probe-id"):
+            "brief", "remember", "recall", "probe-tag", "probe-id",
+            "register", "heartbeat"):
         print(__doc__.strip())
         return 2
     cmd = argv[1]
@@ -75,6 +78,20 @@ def main(argv: list[str]) -> int:
         out = asyncio.run(
             _call("memory.recall", {"query": argv[2], "session_id": sid})
         )
+    elif cmd == "register":
+        if len(argv) < 4:
+            print("register needs <agent_id> <label> [session_id]")
+            return 2
+        args = {"agent_id": argv[2], "label": argv[3]}
+        if len(argv) > 4:
+            args["session_id"] = argv[4]
+        out = asyncio.run(_call("memory.register", args))
+    elif cmd == "heartbeat":
+        if len(argv) < 3:
+            print("heartbeat needs <agent_id>")
+            return 2
+        out = asyncio.run(
+            _call("memory.heartbeat", {"agent_id": argv[2]}))
     elif cmd == "probe-tag":
         if len(argv) < 3:
             print("probe-tag needs <tag>")

@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import AgentsView from "../components/AgentsView";
 import GraphView from "../components/GraphView";
 import PendingStrip from "../components/PendingStrip";
-import Timeline, { StreamEvent } from "../components/Timeline";
+import type { StreamEvent } from "../components/Timeline";
 import TottieFace, { FaceState } from "../components/TottieFace";
 
 // Agent observatory: no chat here — this view watches memories form as
-// agents work. Timeline streams every memory event live; the 3D brain
-// shows the nodes and links those events create.
+// agents work. The agents board shows who is visible/paired (bluetooth);
+// the 3D brain shows the nodes and links their memories create. The event
+// stream still runs underneath to wake the graph and the face.
 export default function Home() {
   const [session, setSession] = useState("");
   // Watch target: ?owner= narrows the owner (default owner_local),
@@ -26,8 +28,7 @@ export default function Home() {
     if (q.get("owner")) setWatchOwner(q.get("owner")!);
     if (q.get("session")) setWatchSession(q.get("session")!);
   }, []);
-  const [tab, setTab] = useState<"timeline" | "graph">("timeline");
-  const [events, setEvents] = useState<StreamEvent[]>([]);
+  const [tab, setTab] = useState<"agents" | "graph">("agents");
   const [face, setFace] = useState<FaceState>("idle");
   const [sleeping, setSleeping] = useState(false);
   const [sleepNote, setSleepNote] = useState<string | null>(null);
@@ -51,7 +52,6 @@ export default function Home() {
     src.onmessage = (m) => {
       try {
         const e = JSON.parse(m.data) as StreamEvent;
-        setEvents((xs) => [e, ...xs].slice(0, 100));
         if (e.action && (e.action.op === "NEW" || e.action.op === "SUPERSEDE")) {
           setGraphTick((n) => n + 1);
           flash("remembering");
@@ -108,20 +108,20 @@ export default function Home() {
       <PendingStrip refreshKey={graphTick} owner={watchOwner} />
       <div className="flex-1 min-h-0 flex flex-col card p-3">
         <div className="flex gap-2 mb-2">
-          {(["timeline", "graph"] as const).map((t) => (
+          {(["agents", "graph"] as const).map((t) => (
             <button
               key={t}
               className="action text-sm"
               disabled={tab === t}
               onClick={() => setTab(t)}
             >
-              {t === "timeline" ? "Timeline" : "3D brain"}
+              {t === "agents" ? "Agents" : "3D brain"}
             </button>
           ))}
         </div>
         <div className="flex-1 min-h-0 overflow-hidden">
-          {tab === "timeline" ? (
-            <Timeline events={events} owner={watchOwner} />
+          {tab === "agents" ? (
+            <AgentsView owner={watchOwner} />
           ) : (
             <GraphView path={[]} fresh={graphTick} owner={watchOwner} />
           )}

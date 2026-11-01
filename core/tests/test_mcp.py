@@ -20,9 +20,10 @@ from tests.conftest import PGHOST, PGUSER, TEST_TOKEN
 CORE_DIR = Path(__file__).resolve().parent.parent
 TEST_DB_URL = f"postgresql://{PGUSER}/tottie_test?host={PGHOST}"
 
-TOOLS = ["memory.brief", "memory.confirm", "memory.forget", "memory.identity",
-         "memory.intend", "memory.probe", "memory.recall", "memory.remember",
-         "memory.sleep", "memory.write"]
+TOOLS = ["memory.brief", "memory.confirm", "memory.forget",
+         "memory.heartbeat", "memory.identity", "memory.intend",
+         "memory.probe", "memory.recall", "memory.register",
+         "memory.remember", "memory.sleep", "memory.write"]
 
 
 def _env():
@@ -91,6 +92,22 @@ async def test_list_matches_spec(_test_db):
         assert [t.uriTemplate for t in tpl.resourceTemplates] == ["memory://tag/{tag}"]
         prm = await mcp.list_prompts()
         assert [p.name for p in prm.prompts] == ["tottie_context_card"]
+
+
+@pytest.mark.asyncio
+async def test_register_heartbeat_presence(db):
+    async with _session() as mcp:
+        out = await mcp.call_tool("memory.register", {
+            "agent_id": "mcp-ag1", "label": "drill writer"})
+        assert json.loads(_text(out))["connected"] is False
+        out = await mcp.call_tool("memory.heartbeat", {
+            "agent_id": "mcp-ag1"})
+        assert json.loads(_text(out))["id"] == "mcp-ag1"
+        row = await db.fetchrow(
+            "SELECT label, transport, connected FROM agents "
+            "WHERE id = 'mcp-ag1'")
+        assert (row["label"], row["transport"], row["connected"]) == (
+            "drill writer", "mcp", False)
 
 
 @pytest.mark.asyncio
