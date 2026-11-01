@@ -65,6 +65,21 @@ def test_list_tools_cli():
     assert names == TOOLS
 
 
+def test_server_instructions_nudge_brief_first():
+    # Tier-1 drill: a fresh agent never found memory on its own. The
+    # server instructions (delivered on MCP connect) carry the
+    # brief-first protocol; the handshake transport is FastMCP's job.
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "tottie_mcp_server", CORE_DIR / "server.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    text = mod.SERVER_INSTRUCTIONS.lower()
+    assert "memory.brief" in text and "memory.recall" in text
+    assert "never guess" in text
+
+
 @pytest.mark.asyncio
 async def test_list_matches_spec(_test_db):
     async with _session() as mcp:

@@ -77,6 +77,46 @@ async def test_contra_newest_wins(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_parallel_specs_not_dups(db, emb):
+    # Live kill at 0.966: 12Hz vs 25Hz tokenizers are DIFFERENT specs
+    # in parallel phrasing. The 0.98 bar spares them.
+    a = ("Qwen-TTS-Tokenizer-25Hz is a 25 Hz single-codebook tokenizer "
+         "built upon Qwen2-Audio via two-stage training with ASR "
+         "pretraining plus VQ layer then mel-spectrogram decoder "
+         "fine-tuning.")
+    b = ("Qwen-TTS-Tokenizer-12Hz is a 12.5 Hz multi-codebook tokenizer "
+         "decomposing speech into semantic codebook and acoustic "
+         "codebook with 15-layer RVQ, guided by WavLM teacher.")
+    await _seed(db, emb, "up5", a, hours_ago=2)
+    await _seed(db, emb, "up5", b)
+    out = await updater.run_sweep(
+        db=db, embedder=emb, settings=get_settings(), owner="up5")
+    assert out["merged"] == 0, out
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = 'up5' "
+        "AND valid_to IS NULL")
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_facet_pair_survives_contra(db, emb):
+    # Live kills: same-subject different-facets (G4 vs G7, fetch vs
+    # retire) misfire symmetric-contra ~1.00. No polarity flip and
+    # < 4 shared words = no opposition.
+    a = "curator.py run_sweep retires memory by setting valid_to."
+    b = "curator.py run_sweep fetches active memories ordered by date."
+    await _seed(db, emb, "up6", a, hours_ago=2)
+    await _seed(db, emb, "up6", b)
+    out = await updater.run_sweep(
+        db=db, embedder=emb, settings=get_settings(), owner="up6")
+    assert out["retired_contra"] == 0, out
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = 'up6' "
+        "AND valid_to IS NULL")
+    assert n == 2
+
+
+@pytest.mark.asyncio
 async def test_speech_act_pair_survives(db, emb):
     """Request vs fulfillment reads symmetric-contra (1.00/0.99 live)
     but a speech act is immutable history: both rows must survive."""

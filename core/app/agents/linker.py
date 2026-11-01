@@ -110,6 +110,22 @@ def _shared_words(a_content, b_content) -> int:
     return len(_words(a_content) & _words(b_content))
 
 
+def is_opposition(a_content, b_content, cos: float) -> bool:
+    """One shared opposition rule (linker typing + updater sweep):
+    symmetric-NLI-contra misfires on same-subject facets AND on
+    parallel technical phrasing, so NLI alone never convicts.
+    Opposition needs a polarity flip, or a shared topic (4+ words)
+    at modest cosine — near-identical phrasing (cos >= 0.90) with
+    differing specs is complement, not clash (live: Qwen 12Hz vs
+    25Hz tokenizers at 0.966). Known gap: paraphrase reversals with
+    no negation and few shared words ("I eat meat" -> "I'm
+    vegetarian") pass; the write path (reconcile correction lane)
+    catches live ones, the sweep cannot tell them from facets."""
+    if _negation_asymmetry(a_content, b_content):
+        return True
+    return _shared_words(a_content, b_content) >= 4 and cos < 0.90
+
+
 async def _type_pair(nli_mod, settings, a_content, b_content, cos):
     """NLI edge typing: supports / contradicts / entity (neutral or far)."""
     if cos < TYPED_COSINE:
@@ -123,16 +139,10 @@ async def _type_pair(nli_mod, settings, a_content, b_content, cos):
         rev = await nli_mod.verify(b_content, a_content, settings)
         if rev["label"] == "contradiction" and \
                 rev["p_contra"] >= settings.nli_threshold:
-            # Same-subject different-claims ("X does A" vs "X does B")
-            # misfire symmetric-contra at 0.97-1.00 (14 false edges on
-            # code-trace rows; scores can't separate them from real
-            # opposition). Real opposition flips polarity or shares
-            # the topic: negation asymmetry, or >= 4 content words.
-            # Precision over recall: retirement lives in
-            # reconciler/updater, so a missed edge loses narration,
-            # never truth.
-            if _negation_asymmetry(a_content, b_content) or \
-                    _shared_words(a_content, b_content) >= 4:
+            # Shared opposition rule: NLI alone misfires (14 false
+            # edges on code-trace rows at 0.97-1.00; scores can't
+            # separate them from real opposition).
+            if is_opposition(a_content, b_content, cos):
                 return "contradicts", W_CONTRA, fwd["p_contra"]
         return "entity", W_ENTITY, fwd["p_contra"]
     rev = await nli_mod.verify(b_content, a_content, settings)

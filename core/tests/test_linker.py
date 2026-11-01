@@ -112,6 +112,23 @@ async def test_same_subject_facets_stay_entity(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_parallel_specs_stay_entity(db, emb):
+    # Near-identical phrasing (cos 0.966 here) with differing specs
+    # is complement, not clash — symmetric-contra fires 1.00/1.00 and
+    # still must not type contradicts (shared rule with updater).
+    a = ("Qwen-TTS-Tokenizer-25Hz is a 25 Hz single-codebook tokenizer "
+         "built upon Qwen2-Audio.")
+    b = ("Qwen-TTS-Tokenizer-12Hz is a 12.5 Hz multi-codebook tokenizer "
+         "decomposing speech into codebooks.")
+    ida = await _seed(db, emb, "lk7", a, "qwen")
+    idb = await _seed(db, emb, "lk7", b, "qwen")
+    out = await linker.link_row(
+        db=db, embedder=emb, settings=get_settings(), memory_id=ida)
+    e = await _edge(db, ida, idb)
+    assert e["relation"] == "entity", (out, e)
+
+
+@pytest.mark.asyncio
 async def test_owner_subject_never_links(db, emb):
     a = await _seed(db, emb, "lk4", "Owner fixed the bug.", "owner",
                     obj="bug")

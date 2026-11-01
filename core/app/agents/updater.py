@@ -31,10 +31,14 @@ from psycopg.types.json import Json
 from .. import nli
 from ..db import pgvector_literal
 from . import reconcile
+from .linker import is_opposition
 
 log = logging.getLogger("tottie.updater")
 
-DUP_COSINE = 0.95
+# 0.98, not 0.95: parallel technical phrasing legitimately reaches
+# 0.966 (live kill: Qwen-TTS-Tokenizer-12Hz vs 25Hz are DIFFERENT
+# specs, merged as "dups"). Same evidence moved the eval line.
+DUP_COSINE = 0.98
 CONTRA_NEIGHBOR = 0.80
 SWEEP_ROWS = 100
 NEIGHBOR_K = 5
@@ -111,6 +115,7 @@ async def run_sweep(*, db, embedder, settings, owner: str,
     ledgers an UPDATE_SWEEP event row (turn NULL: outside the dedup key)."""
     merged = retired_contra = checked = 0
     capped = False
+    items: list = []
     # Pass 1: near-dup merge (within trust partition).
     for p in await _dup_pairs(db, owner, PAIR_CAP):
         if merged + retired_contra >= MAX_RETIRE:
@@ -125,6 +130,8 @@ async def run_sweep(*, db, embedder, settings, owner: str,
         )
         if ok:
             merged += 1
+            items.append({"kind": "duplicate", "keeper": keeper,
+                          "dead": dead, "cos": round(p["cos"], 4)})
     # Pass 2: contradiction sweep over recent live rows.
     rows = await db.fetch(
         "SELECT id, content, predicate, created_at, quarantined "
@@ -164,6 +171,12 @@ async def run_sweep(*, db, embedder, settings, owner: str,
                 break
             if rev["p_contra"] < settings.nli_threshold:
                 continue  # asymmetric: progression, not contradiction
+            # Shared opposition rule with linker typing (see
+            # linker.is_opposition): NLI alone misfires on facets and
+            # parallel specs (live kills: G4 vs G7, Qwen 12Hz/25Hz).
+            if not is_opposition(older["content"], newer["content"],
+                                 n["cos"]):
+                continue
             res = fwd
             if merged + retired_contra >= MAX_RETIRE:
                 capped = True
@@ -175,8 +188,13 @@ async def run_sweep(*, db, embedder, settings, owner: str,
             )
             if ok:
                 retired_contra += 1
+                items.append({"kind": "contra",
+                              "keeper": str(newer["id"]),
+                              "dead": str(older["id"]),
+                              "p_contra": round(res["p_contra"], 3)})
     summary = {"merged": merged, "retired_contra": retired_contra,
-               "pairs_checked": checked, "capped": capped}
+               "pairs_checked": checked, "capped": capped,
+               "items": items}
     await db.execute(
         "INSERT INTO memory_events (owner, session_id, turn, utterance, "
         "observer_verdict, scribe_action) VALUES (%s,'sweep',NULL,%s,%s,%s)",

@@ -85,10 +85,12 @@ def main(argv: list[str]) -> int:
             print("probe-id needs <id>")
             return 2
         out = asyncio.run(_call("memory.probe", {"id": argv[2]}))
+    # No truncation: agents read this output, and the 4000-char cut hid
+    # recall hits behind the card (Tier-1 drill blind spot).
     try:
-        print(json.dumps(json.loads(out), indent=2)[:4000])
+        print(json.dumps(json.loads(out), indent=2))
     except Exception:
-        print(out[:4000])
+        print(out)
     return 0
 
 

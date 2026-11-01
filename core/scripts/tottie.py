@@ -5,6 +5,7 @@
   ./venv/bin/python scripts/tottie.py remember --owner frans --session s1 --turn 0 [--trust tool] "text to keep"
   ./venv/bin/python scripts/tottie.py recall --owner frans --session s1 --text "question?" [--k 8]
   ./venv/bin/python scripts/tottie.py sleep --owner frans --session s1
+  ./venv/bin/python scripts/tottie.py run --owner frans --session s2 "task needing memory"
 
 Reads TOTTIE_CORE_URL / TOTTIE_API_TOKEN from env (or Tottie/.env).
 (cwd=core.)
@@ -12,6 +13,7 @@ Reads TOTTIE_CORE_URL / TOTTIE_API_TOKEN from env (or Tottie/.env).
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -65,6 +67,67 @@ def _fail(msg):
     sys.exit(1)
 
 
+def _split_queries(task: str) -> list:
+    """Split a multi-part task into recall queries. One embedding over
+    4 sub-questions dilutes to the dominant part (Tier-2 drill: NUST
+    crowded out Kinsing + Qwen + bridge). Numbered parts split;
+    single tasks pass through whole."""
+    parts = [p.strip() for p in re.split(r"\(\d+\)\s*", task) if p.strip()]
+    parts = [p for p in parts if len(p) > 15]
+    if len(parts) < 2:
+        alt = [p.strip() for p in re.split(r"\?\s*", task) if p.strip()]
+        alt = [p for p in alt if len(p) > 15]
+        parts = alt if len(alt) >= 2 else [task]
+    return parts
+
+
+def _interleave(per_part: list, cap: int) -> list:
+    """Round-robin merge: concatenate-then-cut drops the LAST part
+    entirely (Tier-2 drill: Q4's bridge hits cut off at 18). Dedupes
+    by id/summary, keeps rank order within each part."""
+    hits: list = []
+    seen: set = set()
+    longest = max((len(p) for p in per_part), default=0)
+    for i in range(longest):
+        for p in per_part:
+            if i < len(p):
+                key = p[i].get("id") or p[i].get("summary")
+                if key not in seen:
+                    seen.add(key)
+                    hits.append(p[i])
+                    if len(hits) >= cap:
+                        return hits
+    return hits
+
+
+def _injection(briefing: str, hits: list, task: str,
+               brief_lines: int = 25) -> str:
+    """Build the injected prompt: memory context first, task second.
+    Pure (unit-tested); the `run` command only fetches the two parts.
+    The brief is capped: a fresh session's first brief floods every
+    row since forever (40KB in the Tier-2 drill) and would drown the
+    task. Recall hits are the targeted part and stay whole."""
+    blines = [ln for ln in briefing.strip().split("\n") if ln.strip()]
+    if len(blines) > brief_lines:
+        blines = (blines[:brief_lines]
+                  + [f"... ({len(blines) - brief_lines} more)"])
+    lines = ["# memory context (auto-injected by tottie — use it, do not "
+             "ask the user for what is answered here)"]
+    lines.append("## brief")
+    lines.append("\n".join(blines) if blines else "(no ambient context)")
+    lines.append("## recall for this task")
+    if hits:
+        for h in hits:
+            tags = " ".join(f"#{t}" for t in (h.get("tags") or []))
+            lines.append(f"- [{h.get('tier')}/{h.get('kind')}] "
+                         f"{h.get('summary') or h.get('content') or ''} "
+                         f"{tags} ({h.get('why', '')})".rstrip())
+    else:
+        lines.append("(nothing recalled)")
+    lines += ["---", "# task", task]
+    return "\n".join(lines) + "\n"
+
+
 def main():
     ap = argparse.ArgumentParser(prog="tottie")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -90,6 +153,12 @@ def main():
     s.add_argument("--session", required=True)
     rl = sub.add_parser("relink", help="recompute links for old rows (offline)")
     rl.add_argument("--owner", default="owner_local")
+    rn = sub.add_parser("run", help="brief + recall a task into one injected prompt")
+    rn.add_argument("--owner", default="owner_local")
+    rn.add_argument("--session", required=True)
+    rn.add_argument("--k", type=int, default=8)
+    rn.add_argument("--brief-lines", type=int, default=25)
+    rn.add_argument("task")
     args = ap.parse_args()
     _, token = _config()
     if not token and args.cmd != "relink":
@@ -124,6 +193,27 @@ def main():
         print(out["card"] or "(abstained — nothing relevant)")
         print(f"\nconfidence={out['confidence']} abstain={out['abstain']} "
               f"mode={out['mode']} story={out['story']}")
+    elif args.cmd == "run":
+        code, bout = _req("POST", "/briefing", {
+            "owner": args.owner, "session_id": args.session,
+        })
+        if code != 200:
+            _fail(f"/briefing -> {code} {bout}")
+        per_part: list = []
+        for q in _split_queries(args.task):
+            code, rout = _req("POST", "/recall", {
+                "query": q, "session_id": args.session,
+                "owner": args.owner, "k": args.k,
+            })
+            if code != 200:
+                _fail(f"/recall -> {code} {rout}")
+            per_part.append(rout.get("hits") or [])
+        # No silent drops: keep every part's hits (prompt budget is
+        # the per-part --k dial, not a global cut).
+        hits = _interleave(per_part, max(1, len(per_part)) * args.k)
+        sys.stdout.write(_injection(
+            bout.get("briefing") or "", hits, args.task,
+            brief_lines=args.brief_lines))
     elif args.cmd == "sleep":
         code, out = _req("POST", "/consolidate", {
             "owner": args.owner, "session_id": args.session,
