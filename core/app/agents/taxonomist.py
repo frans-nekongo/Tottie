@@ -83,9 +83,33 @@ def _components(ids, edges):
     return list(groups.values())
 
 
-def _area_root(path: str, cache: dict) -> str:
-    """Area root: nearest ancestor containing .git, else parent dir.
-    Returns the slug. Walk-up is cached per sweep."""
+def _project_roots() -> list[str]:
+    """Workspace roots, derived (nothing hardcoded): the checkout's
+    parent (sibling projects live beside the repo), the grandparent's
+    ops/ child (company doc-checkouts live outside any repo), /tmp
+    (extraction scratch), and the grandparent as fallback. Area =
+    first dir under the longest-matching root."""
+    here = os.path.dirname(os.path.abspath(__file__))  # core/app/agents
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    ws = os.path.dirname(repo)  # portals/ (sibling checkouts beside us)
+    base = os.path.dirname(ws)  # NKNGO-Local/ (fallback level)
+    roots = [ws]
+    ops = os.path.join(base, "ops")
+    if os.path.isdir(ops):
+        roots.append(ops)
+    roots.append("/tmp")
+    roots.append(base)
+    return roots
+
+
+def _area_root(path: str, cache: dict) -> str | None:
+    """Area root: nearest ancestor containing .git (a repo is a
+    project), else first dir under a workspace root (company docs and
+    sibling checkouts live outside any repo), else None (session logs,
+    scratch: no provenance, vote decides). Parent-dir slugs ("specs",
+    "api", "26") are junk — they collide across projects and once
+    re-tagged 128 company rows _away_ from their project. Walk-up is
+    cached per sweep."""
     if path in cache:
         return cache[path]
     d = os.path.dirname(path) or "/"
@@ -99,7 +123,24 @@ def _area_root(path: str, cache: dict) -> str:
             break
         d = parent
     if root is None:
-        root = os.path.dirname(path) or "/"
+        # First dir under the longest-matching workspace root; the
+        # file must sit at least one level below it (top-level scratch
+        # files are not projects).
+        ap = os.path.abspath(path)
+        best: str | None = None
+        for rt in sorted(_project_roots(), key=len, reverse=True):
+            rta = os.path.abspath(rt)
+            if ap.startswith(rta + os.sep):
+                best = rta
+                break
+        if best is None:
+            cache[path] = None
+            return None
+        rest = ap[len(best) + 1:].split(os.sep)
+        if len(rest) < 2:
+            cache[path] = None
+            return None
+        root = os.path.join(best, rest[0])
     slug = re.sub(r"[^a-z0-9]+", "-", os.path.basename(root).lower()
                   ).strip("-")
     # Our own PDF-extraction scratch dir, not user content: name the
@@ -126,13 +167,16 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
     rows = await db.fetch(
         "SELECT id, content, tags, source FROM memories WHERE owner = %s "
         "AND valid_to IS NULL AND embedding IS NOT NULL "
-        # Repair-first: rows missing an area tag (or carrying a malformed
-        # UUID one) jump the recency queue, or revivals and old rows
-        # outside the window keep stale tags forever (live: 2 UUID rows
-        # fell out of the window after 68 revivals).
+        # Repair-first, then stalest-first: rows missing an area tag
+        # (or carrying a malformed UUID one) jump the queue, and the
+        # rest rotate by sweep staleness so every row is revisited
+        # within ceil(N / ROW_CAP) sweeps. Recency order before this
+        # froze the oldest tagged rows into permanent fossils (live:
+        # 128 company rows sat in area:tottie with correct file
+        # evidence already in memory_events, never re-examined).
         "ORDER BY (tags::text LIKE '%%area:%%' "
         "AND tags::text !~ 'area:[0-9a-f]{8}-') ASC, "
-        "created_at DESC LIMIT %s",
+        "tax_swept_at ASC NULLS FIRST, created_at ASC LIMIT %s",
         (owner, ROW_CAP),
     )
     by_id = {str(r["id"]): r for r in rows}
@@ -142,7 +186,15 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
         "WHERE owner = %s",
         (owner,),
     )
-    utt = {(e["session_id"], e["turn"]): e["utterance"] for e in evs}
+    # Turn keys normalized: a text/int mismatch between the event row
+    # and the memory source would silently void all file provenance.
+    def _tkey(t):
+        try:
+            return int(t)
+        except (TypeError, ValueError):
+            return t
+
+    utt = {(e["session_id"], _tkey(e["turn"])): e["utterance"] for e in evs}
     cache: dict[str, str] = {}
     row_area: dict[str, str | None] = {}
     for i in ids:
@@ -151,7 +203,7 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
                                      is not None else [])
         area = None
         for t in turns:
-            path = _read_path(utt.get((src.get("session"), t)))
+            path = _read_path(utt.get((src.get("session"), _tkey(t))))
             if path:
                 area = _area_root(path, cache) or area
                 if area:
@@ -196,7 +248,8 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
                     if not t.startswith("topic:") and not t.startswith("area:")]
             tags += [f"topic:{topic}", f"area:{area}"]
             await db.execute(
-                "UPDATE memories SET tags = %s WHERE id = %s::uuid",
+                "UPDATE memories SET tags = %s, tax_swept_at = now() "
+                "WHERE id = %s::uuid",
                 (tags, i),
             )
             tagged += 1
