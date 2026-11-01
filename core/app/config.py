@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     local_llm_max_ctx: int = Field(default=4096, alias="LOCAL_LLM_MAX_CTX")
     local_llm_max_tokens: int = Field(default=512, alias="LOCAL_LLM_MAX_TOKENS")
 
+    # ---- recall tuning ----
+    recall_concepts: bool = Field(
+        default=False, alias="TOTTIE_RECALL_CONCEPTS"
+    )
+
     # ---- curation tuning (initial values; harness calibrates) ----
     identity_salience: float = Field(default=0.90, alias="TOTTIE_IDENTITY_SALIENCE")
     reconcile_cosine: float = Field(default=0.86, alias="TOTTIE_RECONCILE_COSINE")

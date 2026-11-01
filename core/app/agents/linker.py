@@ -59,7 +59,8 @@ async def _candidates(db, owner, row_id, vec_literal, quarantined, entities):
     if not entities:
         return []
     return await db.fetch(
-        "SELECT id, content, 1 - (embedding <=> %s::vector) AS cos "
+        'SELECT id, content, "object", '
+        "1 - (embedding <=> %s::vector) AS cos "
         "FROM memories WHERE owner = %s "
         "AND valid_to IS NULL AND id <> %s::uuid AND quarantined = %s "
         "AND (lower(btrim(subject)) = ANY(%s) "
@@ -79,24 +80,11 @@ async def _already_linked(db, owner, src, dst):
     )
 
 
-_TYPE_STOPS = frozenset(
-    "the and for with from that this these those then than them they you "
-    "your are was were has have had not but our its into over after "
-    "such only also when where which who whom whose why how does did "
-    "done just".split()
-)
-
-
 _NEGATIONS = frozenset(
     "not never no none neither nor without cannot can't won't don't "
     "doesn't didn't isn't aren't wasn't weren't hasn't haven't hadn't "
     "couldn't shouldn't wouldn't".split()
 )
-
-
-def _words(t):
-    return {w for w in re.findall(r"[a-z0-9']+", t.lower())
-            if len(w) > 3 and w not in _TYPE_STOPS}
 
 
 def _negation_asymmetry(a_content, b_content) -> bool:
@@ -106,27 +94,101 @@ def _negation_asymmetry(a_content, b_content) -> bool:
     return neg(a_content) != neg(b_content)
 
 
-def _shared_words(a_content, b_content) -> int:
-    return len(_words(a_content) & _words(b_content))
+def is_opposition(a_content, b_content, cos: float,
+                  a_object: str | None = None,
+                  b_object: str | None = None) -> bool:
+    """Polarity-only opposition gate (linker typing + updater sweep):
+    symmetric-NLI-contra misfires ~1.00 on boilerplate and facets, so
+    NLI alone never convicts. The old shared-words clause (4+ words,
+    cos < 0.90) fired on template boilerplate and murdered siblings
+    (POST /agents/pair retired /heartbeat at NLI 0.99) while sleeping
+    on true near-identical conflicts (deadline 2025 vs 2026 at 0.88:
+    high-cos was excluded). Shared boilerplate is not aboutness.
+    Polarity needs the SAME object: a flip about one slot (Ben drinks
+    vs does-not, both "alcohol") is a reversal; a "never" in one test
+    description vs another test's expectation is noise about different
+    slots (live: test_linker never-links retired reverse-entailment).
+    NULL objects can't differ, so NULL pairs fall through to polarity
+    alone. Numeric conflicts (same claim, swapped numbers) bypass NLI —
+    it reads numbers as neutral — and are judged by numeric_candidate
+    in the updater, never here. Known gap: paraphrase reversals with
+    no negation ("I eat meat" -> "I'm vegetarian") pass the sweep; the
+    write path (similarity-gated SUPERSEDE) catches live ones."""
+    if not _negation_asymmetry(a_content, b_content):
+        return False
+    if a_object is not None and b_object is not None:
+        return _norm(a_object) == _norm(b_object)
+    return True
 
 
-def is_opposition(a_content, b_content, cos: float) -> bool:
-    """One shared opposition rule (linker typing + updater sweep):
-    symmetric-NLI-contra misfires on same-subject facets AND on
-    parallel technical phrasing, so NLI alone never convicts.
-    Opposition needs a polarity flip, or a shared topic (4+ words)
-    at modest cosine — near-identical phrasing (cos >= 0.90) with
-    differing specs is complement, not clash (live: Qwen 12Hz vs
-    25Hz tokenizers at 0.966). Known gap: paraphrase reversals with
-    no negation and few shared words ("I eat meat" -> "I'm
-    vegetarian") pass; the write path (reconcile correction lane)
-    catches live ones, the sweep cannot tell them from facets."""
-    if _negation_asymmetry(a_content, b_content):
-        return True
-    return _shared_words(a_content, b_content) >= 4 and cos < 0.90
+_NUMBER_RE = re.compile(r"\d[\d,.]*")
+# Numeric-conflict gates (updater only): same claim shape with swapped
+# numbers. Measured (bge-small): deadline 2025/2026 masked 0.9013, 3
+# differing numbers FIRES; Qwen 12Hz/25Hz variants masked 0.8906 must
+# NOT (differing numbers live in the subjects — variant names, not
+# values); same-variant Qwen spec sheets masked 0.908 with 6+
+# differing numbers must NOT (different measurements = different
+# facts, not one swapped slot).
+NUMERIC_COS = 0.85  # cheap raw-cos prefilter before embedding masked text
+NUMERIC_MASKED_COS = 0.895
+NUMERIC_SYMDIFF_MAX = 3  # one swapped slot, not two spec sheets
+# Masking must IMPROVE similarity: the numbers must constitute the
+# difference. Deadline 2025/2026: masked-raw = +0.020 (the year IS the
+# claim). Test descriptions sharing a template with incidental weights
+# (1.0 vs 0.7): +0.012/-0.007 (the test name differs, weights don't
+# matter) — masking barely moves them, so they stay silent.
+NUMERIC_DELTA_MIN = 0.015
 
 
-async def _type_pair(nli_mod, settings, a_content, b_content, cos):
+def _numbers(text: str) -> set[str]:
+    return {m.group(0).rstrip(".") for m in _NUMBER_RE.finditer(text or "")}
+
+
+def _subject_numbers(subject: str | None) -> set[str]:
+    return _numbers(subject)
+
+
+def numbers_differ(a_content: str, b_content: str) -> bool:
+    """Both-ways number difference: each side has a number the other
+    lacks. One-way difference is elaboration ("fee N$360" vs "fee N$360,
+    account 555"), not conflict."""
+    na, nb = _numbers(a_content), _numbers(b_content)
+    return bool(na - nb) and bool(nb - na)
+
+
+def numbers_in_subject(symdiff: set[str], *subjects: str | None) -> bool:
+    """True when a differing number names WHICH thing (subject) rather
+    than filling the slot (value): Qwen 12Hz vs 25Hz differ in the
+    variant name — complement. Deadline 2025 vs 2026 differ only in
+    values with number-free subjects — conflict."""
+    subj_nums: set[str] = set()
+    for s in subjects:
+        subj_nums |= _subject_numbers(s)
+    return bool(symdiff & subj_nums)
+
+
+def mask_numbers(text: str) -> str:
+    return _NUMBER_RE.sub("#", text or "")
+
+
+def numeric_candidate(a_content: str, b_content: str,
+                      a_subject: str | None,
+                      b_subject: str | None) -> bool:
+    """Sync precheck: numbers swapped both ways, few enough to be one
+    slot (not two spec sheets), AND every differing number lives
+    outside the subjects (values, not variant names). The caller
+    confirms with masked-cosine >= NUMERIC_MASKED_COS."""
+    if not numbers_differ(a_content, b_content):
+        return False
+    na, nb = _numbers(a_content), _numbers(b_content)
+    symdiff = (na - nb) | (nb - na)
+    if len(symdiff) > NUMERIC_SYMDIFF_MAX:
+        return False
+    return not numbers_in_subject(symdiff, a_subject, b_subject)
+
+
+async def _type_pair(nli_mod, settings, a_content, b_content, cos,
+                   a_object=None, b_object=None):
     """NLI edge typing: supports / contradicts / entity (neutral or far)."""
     if cos < TYPED_COSINE:
         return "entity", W_ENTITY, cos
@@ -142,7 +204,8 @@ async def _type_pair(nli_mod, settings, a_content, b_content, cos):
             # Shared opposition rule: NLI alone misfires (14 false
             # edges on code-trace rows at 0.97-1.00; scores can't
             # separate them from real opposition).
-            if is_opposition(a_content, b_content, cos):
+            if is_opposition(a_content, b_content, cos, a_object,
+                             b_object):
                 return "contradicts", W_CONTRA, fwd["p_contra"]
         return "entity", W_ENTITY, fwd["p_contra"]
     rev = await nli_mod.verify(b_content, a_content, settings)
@@ -176,7 +239,8 @@ async def link_row(*, db, embedder, settings, memory_id: str) -> dict:
         try:
             rel, weight, score = await _type_pair(
                 nli_mod, settings, row["content"], cand["content"],
-                float(cand["cos"]))
+                float(cand["cos"]), row.get("object"),
+                cand.get("object"))
         except nli_mod.NLIError as e:
             log.warning("linker NLI down (%s); stopping row", e)
             break

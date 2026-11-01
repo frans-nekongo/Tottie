@@ -106,6 +106,13 @@ def _area_root(path: str, cache: dict) -> str:
     # subject, not the artifact.
     if slug.endswith("-txt"):
         slug = slug[:-4]
+    # Session-id-shaped dirs (agent transcripts, sandboxes) are not
+    # areas: a UUID slug means no provenance, so fall back to the topic
+    # vote / session instead of minting area:<uuid> (16 rows, live).
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                    r"[0-9a-f]{12}", slug or ""):
+        cache[path] = None
+        return None
     cache[path] = slug or "files"
     return cache[path]
 
@@ -119,7 +126,13 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
     rows = await db.fetch(
         "SELECT id, content, tags, source FROM memories WHERE owner = %s "
         "AND valid_to IS NULL AND embedding IS NOT NULL "
-        "ORDER BY created_at DESC LIMIT %s",
+        # Repair-first: rows missing an area tag (or carrying a malformed
+        # UUID one) jump the recency queue, or revivals and old rows
+        # outside the window keep stale tags forever (live: 2 UUID rows
+        # fell out of the window after 68 revivals).
+        "ORDER BY (tags::text LIKE '%%area:%%' "
+        "AND tags::text !~ 'area:[0-9a-f]{8}-') ASC, "
+        "created_at DESC LIMIT %s",
         (owner, ROW_CAP),
     )
     by_id = {str(r["id"]): r for r in rows}
@@ -140,8 +153,9 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
         for t in turns:
             path = _read_path(utt.get((src.get("session"), t)))
             if path:
-                area = _area_root(path, cache)
-                break
+                area = _area_root(path, cache) or area
+                if area:
+                    break
         row_area[i] = area
     pairs = await db.fetch(
         "SELECT a.id AS a, b.id AS b, "

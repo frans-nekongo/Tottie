@@ -2,21 +2,24 @@
 
 Match (same owner + quarantine partition, live rows only):
   SP-equal (both non-null, ANY kind) OR (same kind AND cosine >= floor AND
-  an anchor: shared tag or SP-partial). Identity is exact so it crosses
-  kinds (kind is the LLM's guess; the SP triple is the fact); similarity
-  stays typed so vibes never merge across claim types. SP-less event
-  candidates skip matching (episodes accumulate); SP-bearing events match
-  by identity only, never by cosine (episodes dedupe, never mush-merge).
+  an anchor: shared tag or SP-partial). SP is a match HINT, not an identity
+  (W10: scribe triples are guesses; generic SPs collide across unrelated
+  rows); similarity stays typed so vibes never merge across claim types.
+  SP-less event candidates skip matching (episodes accumulate); SP-bearing
+  events match by identity only, never by cosine (episodes dedupe, never
+  mush-merge).
 Labile route (CORRECTION turns only): just-recalled rows match at the lower
 active floor (0.60) with no anchor — single-token numeric edits score ~0.73
 and would otherwise never reconcile (measured over 10 pairs).
 Value compare on the winner: equal objects -> SKIP (bump old); differing
-non-null objects -> SUPERSEDE (chain via supersedes + link); null on either
-side -> UPDATE (append/refresh).
+non-null objects -> SUPERSEDE (chain via supersedes + link) only when
+contents agree (SUPERSEDE_COS) or correction intent is marked — else the
+candidate inserts as a twin-NEW (SP twins are legal); null on either
+side -> UPDATE (append/refresh), same twin guard.
 Safety: quarantined candidates match quarantined rows only (poison can never
-supersede a user fact). Concurrency: match rows are FOR UPDATE locked inside
-the turn's transaction; the live-SP unique index backstops SP races and the
-Scribe retries once on violation.
+supersede a user fact); speech acts never supersede (requests are history).
+Concurrency: match rows are FOR UPDATE locked inside the turn's transaction;
+the idempotency hash backstops exact-retry races.
 Labile-on-access: recall registers served ids here (10-min TTL); CORRECTION
 turns prefer active matches (reconsolidation route).
 """
@@ -26,6 +29,7 @@ import time
 from psycopg.types.json import Json
 
 from ..db import pgvector_literal
+from .cues import is_speech_act
 
 
 def row_hash(session_id: str, turn: int, content: str) -> str:
@@ -48,6 +52,16 @@ TAG_LINK_CAP = 3
 # 25-50% live). Casual-'actually' turns clear the cue but die on the floor
 # (unrelated pairs sit ~0.1-0.3).
 CORRECTION_FLOOR = 0.35
+# SUPERSEDE similarity floor: SP-equal alone is not identity (scribe SPs
+# are guesses; generic triples like (owner, requires) collide across
+# unrelated rows). A matched row is superseded only when contents agree
+# this much — a same-slot value change looks near-identical, a generic
+# collision looks distant. Measured both sides (bge-small): true updates
+# hotel 0.750, vegetarian 0.796, ben 0.830, mascot 0.865, boston 0.893;
+# false kills mission/h1 0.531, req/req 0.705 (speech-guarded first),
+# h1-example/vocab 0.660, quarantine/process 0.647. Marked correction
+# intent (via_correction) bypasses: the human said it is a correction.
+SUPERSEDE_COS = 0.70
 RECENT_SESSION_LIMIT = 5  # guess: correction referent is near by
 # Kind/tier names leak into tags ("preference") and glue unrelated rows.
 # They never form links on their own (the cheese-petite repair).
@@ -225,7 +239,11 @@ async def _tag_links(conn, *, owner, quarantined, new_id, tags, kind):
     # hot tag starve every other facet (live case: the school<->company
     # bridge row linked 0 company rows because trace rows out-saliented
     # them). Each tag facet earns its own links.
-    mine = set(tags) - STOP_TAGS - {_norm(kind) or ""}
+    # Area tags are partitions, not relations: linking on area: wires
+    # every row of a partition to every other (an h1 rule linked to
+    # TERMINAL_SECRET rows via area:nkngo-documentation). Topic tags stay.
+    mine = {t for t in set(tags) - STOP_TAGS - {_norm(kind) or ""}
+            if not t.startswith("area:")}
     seen: dict[str, dict] = {}
     for tag in sorted(mine):
         cur = await conn.execute(
@@ -337,18 +355,20 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
 
 
 async def _find_live_sp(conn, *, owner: str, quarantined: bool,
-                      subject: str, predicate: str) -> dict | None:
+                      subject: str, predicate: str, vec) -> dict | None:
     """Exact-SP fallback (G7): vector matching can miss a live row sharing
-    the candidate's triple when contents are distant; a blind insert then
-    dies on memories_live_sp (500 after 4 futile retries — retries only
-    fix twin races, never a same-slot different-fact collision). SP is
-    identity, so an exact live SP hit IS the match: downstream compare
-    SUPERSEDEs it or SKIPs it. Mirrors the constraint columns exactly."""
+    the candidate's triple when contents are distant. SP twins are legal
+    (W10), so this returns the NEWEST twin — the current truth — and the
+    downstream compare decides SUPERSEDE vs twin-NEW on similarity, never
+    on SP alone (SP-equal with distant contents murdered the mission
+    statement: (owner, requires) is not an identity)."""
     cur = await conn.execute(
-        'SELECT id, subject, predicate, "object", tags FROM memories '
+        'SELECT id, kind, subject, predicate, "object", content, tags, '
+        "salience, valid_to, embedding <=> %s::vector AS dist FROM memories "
         "WHERE owner = %s AND subject = %s AND predicate = %s "
-        "AND quarantined = %s AND valid_to IS NULL LIMIT 1 FOR UPDATE",
-        (owner, subject, predicate, quarantined),
+        "AND quarantined = %s AND valid_to IS NULL "
+        "ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
+        (pgvector_literal(vec), owner, subject, predicate, quarantined),
     )
     return await cur.fetchone()
 
@@ -367,9 +387,19 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
         )
         return {"op": "RAW" if obs.raw_fallback else "NEW", "memory_id": mid,
                 "superseded_id": None}
-    # SP is identity: SP-bearing candidates always reconcile (an event that
-    # names a triple is a claim wearing an episode costume, and the live-SP
-    # index would kill a blind insert — seen live on the hotel correction).
+    # SP-bearing candidates always reconcile (an event that names a triple
+    # is a claim wearing an episode costume). SP is a match hint, not an
+    # identity: twins are legal (W10) and similarity decides (SUPERSEDE_COS).
+    if has_sp:
+        # Serialise same-SP writers: the dropped unique index used to
+        # serialise them (losers 500ed and retried into a chain); without
+        # it, concurrent near-identical claims twin instead of chaining.
+        # Transaction-scoped, auto-released, keyed by slot + partition.
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%s))",
+            (f"{turn.owner}:{quarantined}:{cand['subject']}:"
+             f"{cand['predicate']}",),
+        )
     identity_only = cand["kind"] == "event"
     match = None
     via_correction = False
@@ -418,27 +448,26 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                 and m_sub == c_sub)
     if match is not None and diff_sub and not via_correction:
         match = None
-    # G7: the candidate's own slot is consulted even when a different-SP
-    # row won the match (closer cosine rival, LIMIT-5 eviction, or a
-    # correction-pool pick). Retiring only the rival and inserting the
-    # candidate's SP blind 500s on memories_live_sp whenever that slot
-    # is live elsewhere — retries can't fix it (only twin races).
-    co_retire: dict | None = None
+    # G7: the candidate's own slot is consulted when nothing else
+    # matched (LIMIT-5 eviction, or a correction-pool pick). SP twins are
+    # legal (W10), so a live slot twin is only ever a compare CANDIDATE:
+    # similarity decides SUPERSEDE vs twin-NEW. There is no co-retire:
+    # retiring the candidate's slot alongside a rival murdered innocent
+    # rows (an H1-rule row died beside a vocab rival sharing only a
+    # generic SP) and the unique index it served is gone.
     if has_sp:
         slot = await _find_live_sp(
             conn, owner=turn.owner, quarantined=quarantined,
-            subject=cand["subject"], predicate=cand["predicate"],
+            subject=cand["subject"], predicate=cand["predicate"], vec=vec,
         )
         if match is None:
             # Same subject by construction: no G4 gate. Downstream
-            # compare decides SUPERSEDE vs SKIP vs UPDATE.
+            # compare decides SUPERSEDE vs SKIP vs UPDATE vs twin-NEW.
             match = slot
             if match is not None:
                 m_sub = _norm(match.get("subject"))
                 same_sub = (m_sub is not None and c_sub is not None
                             and m_sub == c_sub)
-        elif slot is not None and str(slot["id"]) != str(match["id"]):
-            co_retire = slot
     if match is None:
         mid = await _insert_new(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
@@ -457,30 +486,33 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
         same_sub and old_obj is not None and new_obj is not None
         and old_pred is not None and new_pred is not None
         and old_pred != new_pred)
+    # Twin guard (W10): without marked correction intent, a distant or
+    # speech-act match is a sibling, not the same slot — it inserts as a
+    # twin instead of murdering the match. Fail closed: a missing dist
+    # reads as maximally distant, never as similar.
+    mcos = 1.0 - float(match.get("dist", 1.0))
+    twin = not via_correction and (
+        is_speech_act(match.get("content"), match.get("predicate"))
+        or is_speech_act(cand["content"], cand.get("predicate"))
+        or mcos < SUPERSEDE_COS
+    )
     if ((old_obj is not None and new_obj is not None
          and old_obj != new_obj) or pred_flipped):
+        if twin:
+            mid = await _insert_new(
+                conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+                quarantined=quarantined,
+            )
+            return {"op": "NEW", "memory_id": mid,
+                    "superseded_id": None}
         await conn.execute(
             "UPDATE memories SET valid_to = now() WHERE id = %s::uuid",
             (old_id,),
         )
-        if co_retire is not None:
-            # The rival retires as designed; the candidate's own live
-            # slot retires too, or the insert below violates it.
-            co_id = str(co_retire["id"])
-            await conn.execute(
-                "UPDATE memories SET valid_to = now() WHERE id = %s::uuid",
-                (co_id,),
-            )
         mid = await _insert_new(
             conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
             quarantined=quarantined, supersedes=old_id,
         )
-        if co_retire is not None:
-            await _link(
-                conn, owner=turn.owner, src=mid, dst=str(co_retire["id"]),
-                relation="supersedes", weight=1.0,
-                reason="same-slot row retired alongside the matched rival",
-            )
         return {"op": "SUPERSEDE", "memory_id": mid, "superseded_id": old_id}
     if old_obj is not None and new_obj is not None:
         await conn.execute(
@@ -490,6 +522,15 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
             (obs.salience, old_id),
         )
         return {"op": "SKIP", "memory_id": old_id, "superseded_id": None}
+    if twin:
+        # Same guard for the merge lane: appending distant content to a
+        # matched row would mush two facts into one franken-row (U3 owns
+        # splitting; until then, twins stay separate rows).
+        mid = await _insert_new(
+            conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+            quarantined=quarantined,
+        )
+        return {"op": "NEW", "memory_id": mid, "superseded_id": None}
     merged_tags = list(dict.fromkeys((match["tags"] or []) + (cand["tags"] or [])))
     # Provenance follows the merge: appended content comes from THIS
     # turn, so source.turns accumulates or the curator's drift check

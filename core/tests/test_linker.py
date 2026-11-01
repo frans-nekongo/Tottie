@@ -98,7 +98,7 @@ async def test_symmetric_contra_links_contradicts(db, emb):
 async def test_same_subject_facets_stay_entity(db, emb):
     # Live misfire: "X does A" vs "X does B" (different facets of one
     # file) read symmetric-contra 0.97-1.00 and typed 14 false
-    # contradicts. No polarity flip + < 4 shared words = plain entity.
+    # contradicts. Polarity-only gate: no flip, no numbers = entity.
     a = await _seed(db, emb, "lk6",
                     "curator.py run_sweep retires memory by setting valid_to.",
                     "curator")
@@ -115,7 +115,7 @@ async def test_same_subject_facets_stay_entity(db, emb):
 async def test_parallel_specs_stay_entity(db, emb):
     # Near-identical phrasing (cos 0.966 here) with differing specs
     # is complement, not clash — symmetric-contra fires 1.00/1.00 and
-    # still must not type contradicts (shared rule with updater).
+    # still must not type contradicts (polarity-only shared rule).
     a = ("Qwen-TTS-Tokenizer-25Hz is a 25 Hz single-codebook tokenizer "
          "built upon Qwen2-Audio.")
     b = ("Qwen-TTS-Tokenizer-12Hz is a 12.5 Hz multi-codebook tokenizer "
@@ -126,6 +126,37 @@ async def test_parallel_specs_stay_entity(db, emb):
         db=db, embedder=emb, settings=get_settings(), memory_id=ida)
     e = await _edge(db, ida, idb)
     assert e["relation"] == "entity", (out, e)
+
+
+@pytest.mark.asyncio
+async def test_polarity_needs_same_object():
+    """v3: a polarity flip convicts only about one slot. NLI is stubbed
+    symmetric-contra so the test pins the object rule, not the model."""
+    class StubNLI:
+        async def verify(self, a, b, settings):
+            return {"label": "contradiction", "p_contra": 0.99,
+                    "p_entail": 0.0}
+
+    settings = get_settings()
+    # Same object: a flip about one slot is a reversal.
+    rel, _, _ = await linker._type_pair(
+        StubNLI(), settings, "Ben never drinks.", "Ben drinks.", 0.85,
+        "alcohol", "alcohol")
+    assert rel == "contradicts", rel
+    # Differing objects: a "never" in one test description vs another
+    # test's expectation is noise about different slots (live kill:
+    # test_linker never-links retired reverse-entailment).
+    rel, _, _ = await linker._type_pair(
+        StubNLI(), settings,
+        "test_linker expects owner rows to never link.",
+        "test_linker expects reverse pair to link as supports.", 0.85,
+        "never-link", "supports")
+    assert rel == "entity", rel
+    # NULL objects can't differ: polarity alone decides.
+    rel, _, _ = await linker._type_pair(
+        StubNLI(), settings, "Ben never drinks.", "Ben drinks.", 0.85,
+        None, None)
+    assert rel == "contradicts", rel
 
 
 @pytest.mark.asyncio

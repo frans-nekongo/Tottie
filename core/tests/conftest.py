@@ -63,6 +63,9 @@ def _clean_tables(_test_db):
 async def db(_test_db, _clean_tables, monkeypatch):
     """Open Database against tottie_test. No embedder — cheap per test."""
     monkeypatch.setenv("TOTTIE_DB_URL", TEST_DB_URL)
+    # Concept expansion calls a live LLM: off in tests (deterministic,
+    # offline). Prod enables it via .env; one test stubs it directly.
+    monkeypatch.setenv("TOTTIE_RECALL_CONCEPTS", "false")
     get_settings.cache_clear()
     from app.db import Database
 
@@ -78,6 +81,7 @@ async def booted_app(_test_db, _clean_tables, monkeypatch):
     monkeypatch.setenv("TOTTIE_DB_URL", TEST_DB_URL)
     monkeypatch.setenv("TOTTIE_API_TOKEN", TEST_TOKEN)
     monkeypatch.setenv("EMBEDDING_CACHE_DIR", TEST_CACHE_DIR)
+    monkeypatch.setenv("TOTTIE_RECALL_CONCEPTS", "false")
     get_settings.cache_clear()
     from app.main import create_app
 

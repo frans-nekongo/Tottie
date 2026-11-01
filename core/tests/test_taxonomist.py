@@ -111,6 +111,17 @@ async def test_pairs_outside_row_window_do_not_crash(db, emb, monkeypatch):
     assert out["topics"] == 1, out
 
 
+def test_uuid_dir_is_not_an_area():
+    # Live: 16 rows carried area:<session-uuid> because a file read
+    # under a session-id dir fell back to the parent basename. UUID
+    # slugs mean no provenance (None), so the row falls back to the
+    # topic vote / session — and the next sweep repairs the tags.
+    assert taxonomist._area_root(
+        "/tmp/01a19843-17f1-7b53-a95a-6eb222b9b9f9/f.md", {}) is None
+    assert taxonomist._area_root("/tmp/seed-school/a.txt", {}) == \
+        "seed-school"
+
+
 @pytest.mark.asyncio
 async def test_own_provenance_beats_topic_vote(db, emb):
     # Live case: 2 company RAG rows landed in school-majority topic

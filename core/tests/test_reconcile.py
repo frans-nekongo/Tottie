@@ -102,9 +102,13 @@ def _cos(a, b) -> float:
 
 
 @pytest.mark.asyncio
-async def test_g7_fallback_after_g4_clear(db, emb):
-    """G7a: a closer different-subject rival is G4-cleared; the live slot
-    row must still be found (SUPERSEDE), never blind-inserted (500).
+async def test_g7_distant_slot_twins(db, emb):
+    """G7a rewritten (W10 contract change): a closer different-subject
+    rival is G4-cleared; the live slot row is found but DISTANT
+    (photosynthesis vs login bug, cos 0.44) — and SP-equal is not
+    identity. The old build SUPERSEDEd the innocent slot row here
+    (uniqueness forced it); live, this exact pattern murdered the
+    owner's mission statement. Now: twin-NEW, all three rows live.
 
     Deterministic (stub obs, local embeds, no LLM). Cosine asserts pin
     the path: rival in the cosine leg and closer than the slot row."""
@@ -117,7 +121,8 @@ async def test_g7_fallback_after_g4_clear(db, emb):
     rvec, _ = await emb.embed(rival_content)
     assert _cos(nvec, rvec) >= floor, "rival must reach the cosine leg"
     assert _cos(nvec, rvec) > _cos(nvec, svec), "rival must win _pick"
-    old = await _seed_row(
+    assert _cos(nvec, svec) < reconcile.SUPERSEDE_COS, "slot must be distant"
+    await _seed_row(
         db, emb, "r3g7a", slot_content, subject="owner", predicate="fixed",
         obj="chloroplasts",
     )
@@ -131,23 +136,25 @@ async def test_g7_fallback_after_g4_clear(db, emb):
         obs=_obs([_cand(new_content, subject="owner", predicate="fixed",
                         obj="login bug", tags=["login"])]),
     )
-    assert action.startswith("SUPERSEDE"), action
+    assert action.startswith("NEW"), action
     live = await db.fetch(
-        "SELECT subject, predicate, supersedes FROM memories WHERE owner = %s "
-        "AND valid_to IS NULL ORDER BY subject",
+        "SELECT subject, predicate FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL ORDER BY subject, predicate",
         ("r3g7a",),
     )
-    # New (owner, fixed) row supersedes the slot row; the rival survives.
+    # Slot twin and rival both survive; the candidate joins as a twin.
     assert [(r["subject"], r["predicate"]) for r in live] == [
-        ("owner", "fixed"), ("system", "repaired")]
-    assert str(live[0]["supersedes"]) == old
+        ("owner", "fixed"), ("owner", "fixed"), ("system", "repaired")]
 
 
 @pytest.mark.asyncio
-async def test_g7_coretire_same_subject_rival(db, emb):
-    """G7b: a closer same-subject rival wins the match (pred-flip
-    SUPERSEDE); the candidate's own live slot retires alongside it
-    instead of 500ing on memories_live_sp."""
+async def test_g7_slot_survives_rival_match(db, emb):
+    """G7b rewritten (W10 contract change): a closer same-subject rival
+    wins the match (pred-flip SUPERSEDE — rival is near-identical).
+    There is no co-retire anymore: the candidate's own distant slot
+    (photosynthesis) is innocent and survives as a twin. The old build
+    retired it alongside the rival to serve the unique index; live,
+    this murdered an H1-rule row beside a vocab rival."""
     floor = Settings().reconcile_cosine
     slot_content = "Photosynthesis converts sunlight inside chloroplasts."
     new_content = "Owner fixed the login bug today."
@@ -157,6 +164,7 @@ async def test_g7_coretire_same_subject_rival(db, emb):
     rvec, _ = await emb.embed(rival_content)
     assert _cos(nvec, rvec) >= floor, "rival must reach the cosine leg"
     assert _cos(nvec, rvec) > _cos(nvec, svec), "rival must win _pick"
+    assert _cos(nvec, rvec) >= reconcile.SUPERSEDE_COS, "rival must be near"
     slot_id = await _seed_row(
         db, emb, "r3g7b", slot_content, subject="owner", predicate="fixed",
         obj="chloroplasts",
@@ -177,12 +185,64 @@ async def test_g7_coretire_same_subject_rival(db, emb):
         "AND valid_to IS NULL",
         ("r3g7b",),
     )
-    assert len(live) == 1 and "login bug" in live[0]["content"]
+    assert len(live) == 2, [r["content"] for r in live]
+    assert {str(r["id"]) for r in live} != {rival_id}
+    assert slot_id in {str(r["id"]) for r in live}
     dead = await db.fetch(
         "SELECT id FROM memories WHERE owner = %s AND valid_to IS NOT NULL",
         ("r3g7b",),
     )
-    assert {str(r["id"]) for r in dead} == {slot_id, rival_id}
+    assert {str(r["id"]) for r in dead} == {rival_id}
+
+
+@pytest.mark.asyncio
+async def test_generic_sp_distant_twins(db, emb):
+    """W10: same generic SP (owner/requires), distant contents — the
+    mission-statement murder pattern. The candidate inserts as a twin;
+    the older row survives."""
+    await _seed_row(
+        db, emb, "r3twin", "Owner requires real unpredictable connection.",
+        subject="owner", predicate="requires", obj="real connection")
+    new_content = "Owner house rule requires h1 titles for documents."
+    nvec, _ = await emb.embed(new_content)
+    svec, _ = await emb.embed(
+        "Owner requires real unpredictable connection.")
+    assert _cos(nvec, svec) < reconcile.SUPERSEDE_COS, "must be distant"
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn(new_content, session="r3twin", owner="r3twin"),
+        obs=_obs([_cand(new_content, subject="owner", predicate="requires",
+                        obj="h1 titles")]),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s AND valid_to IS NULL",
+        ("r3twin",),
+    )
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_request_never_supersedes_request(db, emb):
+    """W10: requests are immutable history on the write path too (the
+    updater already guards them). Each new 'requested X' killed the
+    last via (owner, requested) collision; now they accumulate."""
+    await _seed_row(
+        db, emb, "r3req", "Owner requested a business proposal document.",
+        subject="owner", predicate="requested", obj="proposal")
+    new_content = "Owner requested fix to apply the h1 house rule."
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn(new_content, session="r3req", owner="r3req"),
+        obs=_obs([_cand(new_content, subject="owner", predicate="requested",
+                        obj="h1 fix")]),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s AND valid_to IS NULL",
+        ("r3req",),
+    )
+    assert n == 2
 
 
 @pytest.mark.asyncio
@@ -574,6 +634,25 @@ async def test_tag_links_written(db, emb):
         (OWNER,),
     )
     assert n == 1
+
+
+@pytest.mark.asyncio
+async def test_tag_links_ignore_area_tags(db, emb):
+    # Areas are partitions, not relations: two rows sharing ONLY an
+    # area: tag must not link (live: an h1 rule linked TERMINAL_SECRET
+    # rows via area:nkngo-documentation).
+    await _seed_row(db, emb, OWNER, "First area note.", kind="fact",
+                    tags=["area:demo"])
+    await scribe.persist(
+        db=db, embedder=emb, turn=_turn("Quantum zebra migration saga."),
+        obs=_obs([_cand("Quantum zebra migration saga.", kind="fact",
+                        tags=["area:demo"])]),
+    )
+    n = await db.fetchval(
+        "SELECT count(*) FROM memory_links WHERE owner = %s AND relation = 'tag'",
+        (OWNER,),
+    )
+    assert n == 0
 
 
 @pytest.mark.asyncio

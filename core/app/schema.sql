@@ -98,9 +98,10 @@ CREATE INDEX IF NOT EXISTS memory_links_src ON memory_links (owner, src);
 CREATE INDEX IF NOT EXISTS memory_links_dst ON memory_links (owner, dst);
 CREATE INDEX IF NOT EXISTS intentions_trigger ON intentions (owner, status, time_cue);
 
--- Serialise reconcile on a live (subject,predicate): prevents two writers from
--- both believing they are the "current" value.
-CREATE UNIQUE INDEX IF NOT EXISTS memories_live_sp
+-- SP-twin lookup (W10: NOT unique — scribe SPs are guesses, and the old
+-- unique index forced the write path to murder older twins sharing a
+-- generic triple). Newest twin wins lookups; similarity gates updates.
+CREATE INDEX IF NOT EXISTS memories_live_sp_lookup
   ON memories (owner, subject, predicate, quarantined) WHERE valid_to IS NULL AND subject IS NOT NULL;
 
 -- Idempotency: the write path's hash(session, turn, content) key. ON CONFLICT

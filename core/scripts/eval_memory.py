@@ -226,6 +226,13 @@ def main():
                 (owner, cutoff))
             check(f"area_coverage_{owner}",
                   total == atagged, f"{atagged}/{total}")
+            uuid_areas = await db.fetchval(
+                "SELECT count(*) FROM memories WHERE owner = %s "
+                "AND valid_to IS NULL AND created_at < %s "
+                "AND tags::text ~ 'area:[0-9a-f]{8}-'",
+                (owner, cutoff))
+            check(f"area_wellformed_{owner}", uuid_areas == 0,
+                  f"uuid-areas={uuid_areas}")
         await db.close()
 
     asyncio.run(db_checks())

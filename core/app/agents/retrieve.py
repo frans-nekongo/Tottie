@@ -23,7 +23,16 @@ from ..db import pgvector_literal
 from . import cues, reconcile
 
 RRF_K = 60
-OVERFETCH = 50
+# 500, not 50: deep paraphrases rank past 400 on every leg (measured
+# with real is_query=True vectors: "prepare a quote for stationery"
+# puts the h1 rule at vector #411), and a row outside every leg is
+# invisible to RRF, boosts, and BFS. The concept legs can only
+# promote fused rows, so the pool must be deep enough to contain
+# them. SQL cost is trivial (indexed scans); RRF dilutes the tail.
+OVERFETCH = 500
+# Concept leg depth: FTS over LLM-supplied concept words. Boost-only
+# (never introduces rows): concepts promote, original legs nominate.
+CONCEPT_FETCH = 50
 BFS_HOPS = 2
 BFS_NODES = 50
 BFS_DECAY = 0.5
@@ -315,7 +324,50 @@ def _why(legs: dict, cue_type: str) -> str:
         parts.append(f"tag #{legs['a']}")
     if "e" in legs:
         parts.append(f"entity #{legs['e']}")
+    if "c" in legs:
+        parts.append(f"concept #{legs['c']}")
+    if "t" in legs:
+        parts.append(f"concept-tag #{legs['t']}")
     return f"{cue_type} -> {' + '.join(parts)}"
+
+
+_CONCEPT_RE = re.compile(r"[a-z][a-z-]{2,30}")
+
+
+async def query_concepts(query: str) -> list[str]:
+    """LLM concept expansion: the category words behind a request
+    ("draft a quotation" -> business, quotation, procurement). Pure
+    paraphrase rewrites stay in request-vocabulary and never bridge to
+    document-type vocabulary (measured: best paraphrase still rank 72);
+    concepts name the bridge. Degrades OPEN to []: recall without
+    concepts is shallower, never broken. Provider: auto (meta, else
+    local), minimal reasoning — a clerk task."""
+    from ..providers.resolve import resolve_provider
+    try:
+        provider = await resolve_provider()
+    except Exception:
+        return []  # no provider: recall proceeds without concepts
+    try:
+        from ..providers.base import complete_resilient
+        raw = await complete_resilient(
+            provider,
+            [{"role": "user", "content":
+              "What categories of thing does this request involve? Reply "
+              "with 3-8 single lowercase words, comma separated, nothing "
+              f"else:\n{query[:500]}"}],
+            max_tokens=1024, reasoning_effort="minimal")
+    except Exception:
+        return []
+    finally:
+        try:
+            await provider.close()
+        except Exception:
+            pass
+    out = []
+    for w in _CONCEPT_RE.findall((raw.text or "").lower()):
+        if w not in out:
+            out.append(w)
+    return out[:8]
 
 
 async def _bump_access(db, ids: list[str]) -> None:
@@ -711,6 +763,55 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
         params.append(tiers)
     rows = await db.fetch(_legs_sql(tiered), tuple(params))
     fused = _rrf(rows)
+    if getattr(settings, "recall_concepts", False):
+        # Concept boost (5th leg, boost-only): LLM category words behind
+        # the request bridge vocabulary gaps the request itself can't
+        # ("draft a quotation" never says "business document", but its
+        # concept list does). OR-matched FTS over content; only rows the
+        # original legs already fused can gain — concepts promote,
+        # never nominate (a wrong concept list is diluted, not obeyed).
+        concepts = await query_concepts(eff_query)
+        words = [w for c in concepts for w in c.split("-") if len(w) > 2]
+        if words:
+            tsq = " | ".join(dict.fromkeys(words))
+            crows = await db.fetch(
+                "SELECT id, row_number() OVER (ORDER BY r DESC) AS rnk "
+                "FROM (SELECT id, ts_rank(to_tsvector('english', content), "
+                "to_tsquery('english', %s)) AS r FROM memories "
+                "WHERE owner = %s AND valid_to IS NULL AND NOT quarantined "
+                "AND NOT ranked_out "
+                "AND to_tsvector('english', content) @@ "
+                "to_tsquery('english', %s) "
+                f"ORDER BY r DESC LIMIT {CONCEPT_FETCH}) c",
+                (tsq, owner, tsq),
+            )
+            for r in crows:
+                mid = str(r["id"])
+                if mid in fused:
+                    fused[mid]["score"] += 1.0 / (RRF_K + r["rnk"])
+                    fused[mid]["legs"]["c"] = r["rnk"]
+            # Concept-tag leg: a concept word inside a row's vocabulary
+            # tag ("business" in business-documents) binds with the
+            # tag's fan — rare tags bind hardest. Same boost-only rule:
+            # fused rows only. topic:/area: tags excluded (partitions
+            # and plumbing, not vocabulary).
+            trows = await db.fetch(
+                "SELECT id, row_number() OVER (ORDER BY fan ASC) AS rnk "
+                "FROM (SELECT m.id, MIN(f.cnt) AS fan FROM memories m, "
+                "unnest(m.tags) AS mt(tag) JOIN "
+                "(SELECT unnest(tags) AS t, count(*) AS cnt FROM memories "
+                "WHERE owner = %s AND valid_to IS NULL GROUP BY 1) f "
+                "ON f.t = mt.tag WHERE m.owner = %s AND m.id = ANY(%s) "
+                "AND mt.tag NOT LIKE '%%:%%' AND EXISTS (SELECT 1 FROM "
+                "regexp_split_to_table(mt.tag, '[-_]') tok "
+                "WHERE tok = ANY(%s)) GROUP BY m.id "
+                f"ORDER BY fan ASC LIMIT {CONCEPT_FETCH}) c",
+                (owner, owner, [mid for mid in fused], words),
+            )
+            for r in trows:
+                mid = str(r["id"])
+                fused[mid]["score"] += 1.0 / (RRF_K + r["rnk"])
+                fused[mid]["legs"]["t"] = r["rnk"]
     candidates_matched = len({str(r["id"]) for r in rows})
     identity: list = []
     if include_identity:

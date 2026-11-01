@@ -923,3 +923,43 @@ async def test_reference_plural_unmatched_definite_abstains(client, db, emb):
     assert out["referent"] is None
     assert out["referents"] == []
     assert "no referent" in out["story"]
+
+
+@pytest.mark.asyncio
+async def test_concept_boost_promotes_only_matches(db, emb, monkeypatch):
+    """Concept leg is boost-only with exact RRF math: the stubbed
+    concept 'business' FTS-matches row A alone (rank 1), so A gains
+    exactly 1/(60+1) and a 'concept #1' leg while B is untouched.
+    No LLM in tests: query_concepts is stubbed, flag forced on."""
+    from app.agents import retrieve
+    ow = f"rc_{uuid.uuid4().hex[:8]}"
+    ids = await seed(db, emb, ow, [
+        {"name": "a", "kind": "fact",
+         "content": "Business archive rules are strict."},
+        {"name": "b", "kind": "fact",
+         "content": "Zebra migration patterns shift."},
+    ])
+    s = Settings()
+    s.recall_concepts = True
+    kw = dict(db=db, embedder=emb, owner=ow, session_id="s", k=8,
+              tiers=None, settings=s)
+
+    async def noboost(q):
+        return []
+
+    async def biz(q):
+        return ["business"]
+
+    monkeypatch.setattr(retrieve, "query_concepts", noboost)
+    base = await retrieve.recall(query="draft a quotation", **kw)
+    monkeypatch.setattr(retrieve, "query_concepts", biz)
+    boosted = await retrieve.recall(query="draft a quotation", **kw)
+    bb = {h["id"]: h for h in base["hits"]}
+    bo = {h["id"]: h for h in boosted["hits"]}
+    assert set(bb) == set(bo) == set(ids.values())
+    assert "concept #1" in bo[ids["a"]]["why"], bo[ids["a"]]
+    assert "concept" not in bo[ids["b"]]["why"], bo[ids["b"]]
+    assert bo[ids["a"]]["score"] == pytest.approx(
+        bb[ids["a"]]["score"] + 1.0 / 61, rel=2e-2)
+    assert bo[ids["b"]]["score"] == pytest.approx(
+        bb[ids["b"]]["score"], rel=1e-9)

@@ -41,6 +41,22 @@ POLARITY_FLIP_RES = [
 
 def polarity_flip(text: str) -> bool:
     return any(r.search(text) for r in POLARITY_FLIP_RES)
+
+
+# Speech acts describe utterances that happened ("requested X", "said Y"):
+# immutable history, never state claims. Neither a request nor its
+# fulfillment can supersede or contradict (live: "requested a tracker"
+# vs "built it" read symmetric-contra 1.00/0.99; "requested fix" murdered
+# "requested proposal" on the write path via generic-SP collision).
+SPEECH_VERBS = {"requested", "asked", "told", "said", "directed",
+                "instructed"}
+
+
+def is_speech_act(content: str, predicate: str | None) -> bool:
+    if (predicate or "").strip().lower() in SPEECH_VERBS:
+        return True
+    words = set((content or "").lower().split())
+    return not SPEECH_VERBS.isdisjoint(words)
 REFERENCE_RES = [
     re.compile(p, re.IGNORECASE)
     for p in (
