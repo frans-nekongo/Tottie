@@ -1,6 +1,7 @@
-"""Bounded write queue + worker pool. Drop-oldest with a counter — the route
-never blocks on a slow model. INLINE_WRITE=1 bypasses the queue (single-worker
-demo fallback); the route awaits curation directly in that mode.
+"""Typed job queue + worker pool. One queue, many agent kinds: turns,
+updater sweeps, linker rows, ranker sweeps. Drop-oldest with a counter —
+the route never blocks on a slow model. INLINE_WRITE=1 bypasses the queue
+(single-worker demo fallback); the route awaits curation directly there.
 A turn that dies in a worker is recorded as a DEATH event (turn NULL + cue
 set: never collides with the exactly-once index, never pollutes replay) —
 the ledger shows the loss instead of swallowing it.
@@ -10,13 +11,18 @@ import logging
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from psycopg.types.json import Json
 
 from .agents import observer, scribe
 
 log = logging.getLogger("tottie.queue")
+
+RECONCILE_TURN = "reconcile_turn"
+UPDATE_SWEEP = "update_sweep"
+LINK_ROW = "link_row"
+RANK_SWEEP = "rank_sweep"
 
 
 class Stages:
@@ -71,26 +77,57 @@ class WorkerTurn:
     client_event_id: str = ""
 
 
+@dataclass
+class Job:
+    """One unit of background work. Turns ride as RECONCILE_TURN with the
+    WorkerTurn attached; sweep/link jobs carry a small payload dict."""
+    kind: str
+    turn: WorkerTurn | None = None
+    payload: dict = field(default_factory=dict)
+    client_event_id: str = ""
+
+
 class WriteQueue:
     def __init__(self, settings, *, db, embedder, maxsize: int = 256, workers: int = 2):
         self._settings = settings
         self._db = db
         self._embedder = embedder
-        self._q: asyncio.Queue[WorkerTurn] = asyncio.Queue(maxsize=maxsize)
+        self._q: asyncio.Queue[Job] = asyncio.Queue(maxsize=maxsize)
         self._n_workers = workers
         self._tasks: list[asyncio.Task] = []
         self.dropped = 0
+        self.unknown_kind = 0
+        self.handlers: dict = {}
 
-    def enqueue_nowait(self, turn: WorkerTurn) -> str:
+    def enqueue_job(self, kind: str, *, turn: WorkerTurn | None = None,
+                    payload: dict | None = None) -> str:
         eid = uuid.uuid4().hex
-        item = replace(turn, client_event_id=eid)
+        item = Job(kind=kind, turn=turn, payload=payload or {},
+                   client_event_id=eid)
         try:
             self._q.put_nowait(item)
         except asyncio.QueueFull:
             try:
                 self._q.get_nowait()
                 self.dropped += 1
-                log.warning("write queue full; dropped oldest (total %d)", self.dropped)
+                log.warning("job queue full; dropped oldest (total %d)", self.dropped)
+            except asyncio.QueueEmpty:
+                pass
+            self._q.put_nowait(item)
+        return eid
+
+    def enqueue_nowait(self, turn: WorkerTurn) -> str:
+        eid = uuid.uuid4().hex
+        item = Job(kind=RECONCILE_TURN,
+                   turn=replace(turn, client_event_id=eid),
+                   client_event_id=eid)
+        try:
+            self._q.put_nowait(item)
+        except asyncio.QueueFull:
+            try:
+                self._q.get_nowait()
+                self.dropped += 1
+                log.warning("job queue full; dropped oldest (total %d)", self.dropped)
             except asyncio.QueueEmpty:
                 pass
             self._q.put_nowait(item)
@@ -112,28 +149,46 @@ class WriteQueue:
     def depth(self) -> int:
         return self._q.qsize()
 
+    def register(self, kind: str, handler) -> None:
+        """Agents register their job kind at app boot (main lifespan)."""
+        self.handlers[kind] = handler
+
     async def _worker(self, i: int) -> None:
         while True:
-            turn = await self._q.get()
+            job = await self._q.get()
             try:
-                action = await curate_turn(
-                    db=self._db, embedder=self._embedder, turn=turn,
-                    settings=self._settings,
-                )
-                log.info("worker %d curated turn %d: %s", i, turn.turn, action)
+                await self._run_job(i, job)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                log.exception("worker %d failed turn %d", i, turn.turn)
-                try:
-                    await record_death(self._db, turn, e)
-                except Exception:
-                    log.exception(
-                        "worker %d could not record death of turn %d",
-                        i, turn.turn,
-                    )
+                log.exception("worker %d failed job %s", i, job.kind)
+                if job.turn is not None:
+                    try:
+                        await record_death(self._db, job.turn, e)
+                    except Exception:
+                        log.exception("worker %d could not record death", i)
             finally:
                 self._q.task_done()
+
+    async def _run_job(self, i: int, job: Job) -> None:
+        if job.kind == RECONCILE_TURN:
+            assert job.turn is not None
+            action = await curate_turn(
+                db=self._db, embedder=self._embedder, turn=job.turn,
+                settings=self._settings,
+            )
+            log.info("worker %d curated turn %d: %s",
+                     i, job.turn.turn, action)
+            return
+        handler = self.handlers.get(job.kind)
+        if handler is None:
+            self.unknown_kind += 1
+            log.error("worker %d: no handler for job kind %r (total %d)",
+                      i, job.kind, self.unknown_kind)
+            return
+        await handler(db=self._db, embedder=self._embedder,
+                      settings=self._settings, job=job)
+        log.info("worker %d ran %s %s", i, job.kind, job.client_event_id[:8])
 
 
 async def record_death(db, turn: WorkerTurn, error: Exception) -> None:
