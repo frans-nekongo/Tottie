@@ -524,6 +524,28 @@ async def test_associative_leg_case_insensitive(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_entity_leg_fires_on_subject_slot(client, db, emb):
+    """Query words hitting scribe subject/object slots fire the entity
+    leg — the same slots the linker wires, so graph and retrieval
+    agree on what an entity is."""
+    ids = await seed(db, emb, OWNER, [
+        {"name": "vault", "content": "The vault combination was changed.",
+         "tags": []},
+    ])
+    await db.execute(
+        "UPDATE memories SET subject = 'vault' WHERE id = %s::uuid",
+        (ids["vault"],))
+    r = await client.post("/recall", json={
+        "query": "vault status update", "session_id": "e1", "owner": OWNER,
+    }, headers=AUTH)
+    out = r.json()
+    assert out["abstain"] is False, out
+    hits = [h for h in out["hits"] if "vault" in h["summary"].lower()]
+    assert hits, out["hits"]
+    assert "entity #" in hits[0]["why"], hits[0]["why"]
+
+
+@pytest.mark.asyncio
 async def test_probe_case_insensitive(client, db, emb):
     await seed(db, emb, OWNER, [
         {"name": "ramen", "content": "The user adores midnight ramen.",

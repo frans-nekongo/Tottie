@@ -29,6 +29,7 @@ BFS_NODES = 50
 BFS_DECAY = 0.5
 CARD_CHARS = 1600  # ~400 tokens at the codebase's chars/4 heuristic
 COMMAND_BOOST = 1.5
+CURRENTNESS_BOOST = 1.2
 BFS_BUDGET_S = 0.25
 # ACT-R fan effect: association S_ji = S - ln(fan_j). A tag shared by many
 # rows spreads ~nothing to each (cue overload); a rare shared tag binds
@@ -107,6 +108,20 @@ SELECT id, leg, rnk FROM (
     GROUP BY m.id, m.salience, m.utility
     ORDER BY assoc DESC, m.salience DESC, m.utility DESC LIMIT {OVERFETCH}
   ) a
+  UNION ALL
+  SELECT id, 'e' AS leg, row_number() OVER (
+    ORDER BY salience DESC, utility DESC) AS rnk FROM (
+    -- Entity leg: query words hitting scribe subject/object slots. Same
+    -- slots the linker wires, so retrieval and graph agree on what an
+    -- entity is. Salience/utility order: the slot hit is binary.
+    SELECT id, salience, utility FROM memories
+    WHERE owner = %s AND valid_to IS NULL AND NOT quarantined
+      AND NOT ranked_out
+      AND (lower(btrim(subject)) = ANY(%s)
+        OR lower(btrim("object")) = ANY(%s))
+      {tier}
+    ORDER BY salience DESC, utility DESC LIMIT {OVERFETCH}
+  ) e
 ) u"""
 
 
@@ -271,6 +286,26 @@ def cluster_hits(hits: list[dict]) -> list[dict]:
     return clusters
 
 
+QUERY_STOPS = frozenset(
+    "what when where which who whom whose why how does did done are was "
+    "were the and for with from that this these those then than them they "
+    "you your our have has had can could should would will".split()
+)
+
+
+def query_entities(query: str) -> list[str]:
+    """Entity-ish tokens for the 'e' leg: lowercase alpha words, stops
+    removed (query stops + linker entity stops: owner/user/system never
+    boost, or every owner row wins every query)."""
+    from .linker import STOP_ENTITIES
+    out = []
+    for w in re.findall(r"[a-z]+", (query or "").lower()):
+        if len(w) > 2 and w not in QUERY_STOPS and w not in STOP_ENTITIES \
+                and w not in out:
+            out.append(w)
+    return out
+
+
 def _why(legs: dict, cue_type: str) -> str:
     parts = []
     if "v" in legs:
@@ -279,18 +314,22 @@ def _why(legs: dict, cue_type: str) -> str:
         parts.append(f"lexical #{legs['f']}")
     if "a" in legs:
         parts.append(f"tag #{legs['a']}")
+    if "e" in legs:
+        parts.append(f"entity #{legs['e']}")
     return f"{cue_type} -> {' + '.join(parts)}"
 
 
 async def _bump_access(db, ids: list[str]) -> None:
     """Rehearsal on retrieval: serving a hit is retrieval PRACTICE (the
     testing effect), the strongest rehearsal there is — access_count,
-    last_access, and retrieval strength (utility) all move."""
+    last_access, retrieval strength (utility), and memory stability
+    (each serve adds a day, to 365) all move."""
     if ids:
         await db.execute(
             "UPDATE memories SET access_count = access_count + 1, "
             "last_access = now(), "
-            "utility = LEAST(1.0, utility + 0.15) "
+            "utility = LEAST(1.0, utility + 0.15), "
+            "stability = LEAST(365.0, stability + 1.0) "
             "WHERE id = ANY(%s::uuid[])",
             (ids,),
         )
@@ -666,6 +705,11 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
     params += [tags, owner, tags, owner]
     if tiered:
         params.append(tiers)
+    # 'e' leg textual order: owner, words, words (+tiers).
+    words = query_entities(eff_query)
+    params += [owner, words, words]
+    if tiered:
+        params.append(tiers)
     rows = await db.fetch(_legs_sql(tiered), tuple(params))
     fused = _rrf(rows)
     candidates_matched = len({str(r["id"]) for r in rows})
@@ -691,11 +735,18 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
     if want:
         for r in await db.fetch(
             "SELECT id, tier, kind, content, summary, tags, trust, salience, "
-            "utility, source, created_at, principle FROM memories "
+            "utility, source, created_at, principle, supersedes FROM memories "
             "WHERE id = ANY(%s::uuid[])",
             (want,),
         ):
             by_id[str(r["id"])] = r
+    # Currentness: rows that superseded another row are newer truth than
+    # rows that never updated. Small boost, applied before BFS growth so
+    # current truth also seeds stronger association spread.
+    for mid, slot in fused.items():
+        row = by_id.get(mid)
+        if row is not None and row.get("supersedes") is not None:
+            slot["score"] *= CURRENTNESS_BOOST
     if cue.policy == "command":
         # Actionability emerges from the Scribe's principle field (rows that
         # carry a reusable rule), never from a fixed kind list: kinds are
