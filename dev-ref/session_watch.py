@@ -132,7 +132,11 @@ def scan(fh, state: dict, session: str, backfill: int) -> int:
     # Normal tail mode: backfill < 0 means take everything new.
     sent = 0
     for pos, end_pos, rid, kind, text in pending:
-        trust = "user_direct" if kind == "user" else "model_inferred"
+        # Owner's own live session is first-party: both prompts and the
+        # agent's supervised replies arrive user_direct (provenance stays
+        # in origin=session_watch). Quarantine guards untrusted OUTSIDE
+        # claims (web/tool), never the owner's own working trace.
+        trust = "user_direct"
         try:
             post_turn(scrub(text), trust, session, state.get("turn", 0))
         except Exception as exc:  # noqa: BLE001 - daemon must not die
