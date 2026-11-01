@@ -231,3 +231,37 @@ async def test_write_auth_and_shapes(client):
     q = _payload()
     q["source"] = {"trust": "evil"}
     assert (await client.post("/write", json=q, headers=AUTH)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_write_dense_turn_extracts_many_live(client, db):
+    """G6a: a dense multi-fact turn yields 3+ candidates, not 1-2.
+
+    Live Meta: the extraction count IS model behavior, so a stub would
+    be a fake test. Threshold is invariant-shaped (>=3 on a 5-fact
+    turn; the old singular prompt capped at 2 on denser turns)."""
+    ow = "w1dense"
+    text = (
+        "Loop test done and pushed. Saving works: 5 thinking chunks "
+        "became 9 faithful memories. Recall fails on natural phrasing "
+        "while keyword probes return everything. The REFERENCE-abstain "
+        "path is the recall-side twin of G5. A deployed loop needs "
+        "transcript hooks, which is integration work."
+    )
+    r = await client.post(
+        "/write", json=_payload(text=text, session_id="w1dense", owner=ow),
+        headers=AUTH)
+    assert r.status_code == 202
+    ev = None
+    for _ in range(90):
+        ev = await db.fetchrow(
+            "SELECT scribe_action FROM memory_events WHERE session_id = 'w1dense'")
+        if ev and ev["scribe_action"]:
+            break
+        await asyncio.sleep(1)
+    assert ev and ev["scribe_action"], "worker never scribed the turn"
+    assert ev["scribe_action"]["n"] >= 3, ev["scribe_action"]
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s AND valid_to IS NULL",
+        (ow,))
+    assert n >= 3, f"only {n} rows persisted"
