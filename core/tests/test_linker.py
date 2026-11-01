@@ -1,0 +1,106 @@
+"""Linker: shared-entity edges + NLI typing. Real DB, real local NLI,
+no LLM calls. NLI directions reuse the pinned BEN suite.
+"""
+import itertools
+import uuid
+
+import pytest
+from psycopg.types.json import Json
+
+from app.agents import linker
+from app.config import Settings, get_settings
+from app.db import pgvector_literal
+from app.embeddings import Embedder
+
+BEN = "Ben does not drink alcohol."
+BEN_ENTAIL = "Ben does not drink alcohol either."
+BEN_CONTRA = "Ben drinks alcohol at parties."
+BEN_NEUTRAL = "Ben does not drink alcohol on weekdays, only weekends."
+
+
+@pytest.fixture(scope="module")
+def emb():
+    return Embedder(Settings())
+
+
+_PRED = itertools.count()
+
+
+async def _seed(db, emb, owner, content, subject, obj="x"):
+    predicate = f"p{next(_PRED)}"
+    vec, _ = await emb.embed(content)
+    row = await db.execute_returning(
+        'INSERT INTO memories (owner, tier, kind, subject, predicate, '
+        '"object", content, trust, source, embedding, embedding_model, '
+        "hash) VALUES (%s,'knowledge','fact',%s,%s,%s,%s,'user_direct',"
+        "%s,%s::vector,%s,%s) RETURNING id",
+        (owner, subject, predicate, obj, content,
+         Json({"session": "seed", "turn": 0}), pgvector_literal(vec),
+         emb.model_name, uuid.uuid4().hex),
+    )
+    return str(row["id"])
+
+
+async def _edge(db, src, dst):
+    return await db.fetchrow(
+        "SELECT relation, weight FROM memory_links WHERE src = %s::uuid "
+        "AND dst = %s::uuid AND relation IN "
+        "('entity', 'supports', 'contradicts')",
+        (src, dst),
+    )
+
+
+@pytest.mark.asyncio
+async def test_shared_subject_links_plain_entity(db, emb):
+    """Far-apart pairs read contra ~1.00 (int8 quirk); below 0.80 they
+    stay plain entity edges instead of quirk-typed contradicts."""
+    chess = "Ben plays chess on Sundays."
+    a = await _seed(db, emb, "lk1", BEN, "Ben")
+    b = await _seed(db, emb, "lk1", chess, "Ben")
+    out = await linker.link_row(
+        db=db, embedder=emb, settings=get_settings(), memory_id=a)
+    assert out["linked"] == 1, out
+    e = await _edge(db, a, b)
+    assert e["relation"] == "entity" and e["weight"] == 0.7, e
+
+
+@pytest.mark.asyncio
+async def test_reverse_entail_links_supports(db, emb):
+    a = await _seed(db, emb, "lk5", BEN, "Ben")
+    b = await _seed(db, emb, "lk5", BEN_NEUTRAL, "Ben")
+    out = await linker.link_row(
+        db=db, embedder=emb, settings=get_settings(), memory_id=a)
+    e = await _edge(db, a, b)
+    assert e["relation"] == "supports", (out, e)
+
+
+@pytest.mark.asyncio
+async def test_entailment_links_supports(db, emb):
+    a = await _seed(db, emb, "lk2", BEN, "Ben")
+    b = await _seed(db, emb, "lk2", BEN_ENTAIL, "Ben")
+    out = await linker.link_row(
+        db=db, embedder=emb, settings=get_settings(), memory_id=a)
+    e = await _edge(db, a, b)
+    assert e["relation"] == "supports" and e["weight"] == 1.0, out
+
+
+@pytest.mark.asyncio
+async def test_symmetric_contra_links_contradicts(db, emb):
+    a = await _seed(db, emb, "lk3", BEN, "Ben")
+    b = await _seed(db, emb, "lk3", BEN_CONTRA, "Ben")
+    out = await linker.link_row(
+        db=db, embedder=emb, settings=get_settings(), memory_id=a)
+    e = await _edge(db, a, b)
+    assert e["relation"] == "contradicts" and e["weight"] == 0.3, out
+
+
+@pytest.mark.asyncio
+async def test_owner_subject_never_links(db, emb):
+    a = await _seed(db, emb, "lk4", "Owner fixed the bug.", "owner",
+                    obj="bug")
+    b = await _seed(db, emb, "lk4", "Owner wrote a test.", "owner",
+                    obj="test")
+    out = await linker.link_row(
+        db=db, embedder=emb, settings=get_settings(), memory_id=a)
+    assert out == {"linked": 0, "typed": {}}, out
+    assert await _edge(db, a, b) is None
