@@ -309,16 +309,20 @@ async def test_update_enriches(db, emb):
                     kind="decision", subject="team", predicate="checklist",
                     obj=None, tags=["deploy"])
     action = await scribe.persist(
-        db=db, embedder=emb, turn=_turn("The deploy checklist lives in the runbook."),
+        db=db, embedder=emb,
+        turn=_turn("The deploy checklist lives in the runbook.", turn=5),
         obs=_obs([_cand("The deploy checklist lives in the runbook.",
                         kind="decision", subject="team", predicate="checklist",
                         obj=None, tags=["deploy"])]),
     )
     assert action.startswith("UPDATE")
     row = await db.fetchrow(
-        "SELECT content, summary FROM memories WHERE owner = %s", (OWNER,))
+        "SELECT content, summary, source FROM memories WHERE owner = %s",
+        (OWNER,))
     assert "runbook" in row["content"] and "exists" in row["content"]
     assert row["summary"] and "runbook" in row["summary"]
+    # Provenance follows the merge: seed turn 0 + update turn 5.
+    assert row["source"]["turns"] == [0, 5], row["source"]
 
 
 @pytest.mark.asyncio

@@ -483,15 +483,29 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
         )
         return {"op": "SKIP", "memory_id": old_id, "superseded_id": None}
     merged_tags = list(dict.fromkeys((match["tags"] or []) + (cand["tags"] or [])))
+    # Provenance follows the merge: appended content comes from THIS
+    # turn, so source.turns accumulates or the curator's drift check
+    # (row vs original turn only) convicts true merged rows.
+    cur = await conn.execute(
+        "SELECT source FROM memories WHERE id = %s::uuid", (old_id,))
+    src_row = await cur.fetchone()
+    old_source = dict(src_row["source"] or {}) if src_row else {}
+    turns = list(old_source.get("turns") or [])
+    if not turns and old_source.get("turn") is not None:
+        turns = [old_source["turn"]]
+    if turn.turn not in turns:
+        turns.append(turn.turn)
+    old_source["turns"] = turns
     await conn.execute(
         'UPDATE memories SET content = content || %s, summary = %s, '
         '"object" = COALESCE("object", %s), tags = %s, '
         "salience = GREATEST(salience, %s), "
         "confidence = LEAST(1.0, confidence + 0.1), surprise = %s, "
-        "last_access = now() WHERE id = %s::uuid",
+        "source = %s, last_access = now() WHERE id = %s::uuid",
         (
             "\n" + cand["content"], cand["content"][:300], cand["object"],
-            merged_tags, obs.salience, obs.surprise, old_id,
+            merged_tags, obs.salience, obs.surprise, Json(old_source),
+            old_id,
         ),
     )
     return {"op": "UPDATE", "memory_id": old_id, "superseded_id": None}

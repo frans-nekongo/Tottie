@@ -124,26 +124,31 @@ async def _drift_kind(db, embedder, settings, owner, row) -> str | None:
     from .. import nli as nli_mod
 
     src = row.get("source") or {}
-    if not src.get("session") or src.get("turn") is None:
+    if not src.get("session"):
         return None
-    ev = await db.fetchrow(
-        "SELECT utterance FROM memory_events WHERE owner = %s "
-        "AND session_id = %s AND turn = %s",
-        (owner, src["session"], src["turn"]),
-    )
-    if not ev or not ev["utterance"]:
+    turns = list(dict.fromkeys(src.get("turns") or
+                               ([src["turn"]] if src.get("turn") is not None
+                                else [])))
+    if not turns:
         return None
-    sents = [s.strip() for s in
-             re.split(r"(?<=[.!?])\s+|\n+", ev["utterance"])
-             if len(s.strip()) > 25][:60]
+    sents: list[str] = []
+    for t in turns:
+        ev = await db.fetchrow(
+            "SELECT utterance FROM memory_events WHERE owner = %s "
+            "AND session_id = %s AND turn = %s",
+            (owner, src["session"], t),
+        )
+        if not ev or not ev["utterance"]:
+            continue
+        sents += [s.strip() for s in
+                  re.split(r"(?<=[.!?])\s+|\n+", ev["utterance"])
+                  if len(s.strip()) > 25][:40]
+    sents = sents[:100]
     if not sents:
         return None
     # Verify each claim, not the bundle: scribe merges 2-4 sentences
     # per row, and no single sentence reaches 0.70 against a merge.
-    clauses = [c.strip() for c in
-               re.split(r"\s*(?:;|, and|,| and )\s+",
-                        row["content"] or "")
-               if len(c.strip()) >= 30]
+    clauses = _clauses(row["content"] or "")
     if not clauses:
         return None
     try:
@@ -160,6 +165,19 @@ async def _drift_kind(db, embedder, settings, owner, row) -> str | None:
     except nli_mod.NLIError as e:
         log.warning("curator verifier down (%s); skipping drift pass", e)
         return None
+
+
+def _clauses(content: str) -> list[str]:
+    """Substantial clauses: split sentences, then sub-split on
+    commas/ands. Merges join sentences with newlines, so sentence
+    boundaries split first (a two-sentence merge is two claims)."""
+    out = []
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", content):
+        for c in re.split(r"\s*(?:;|, and|,| and )\s+", sent):
+            c = c.strip()
+            if len(c) >= 30:
+                out.append(c)
+    return out
 
 
 async def _clause_supported(embedder, nli_mod, settings, sent_vecs,

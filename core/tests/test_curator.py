@@ -117,3 +117,34 @@ async def test_drift_keeps_merged_row_from_long_turn(db, emb):
     contents = [r["content"] for r in live]
     assert any("node:20-alpine" in c for c in contents), (out, contents)
     assert not any("parrot" in c for c in contents), (out, contents)
+
+
+@pytest.mark.asyncio
+async def test_drift_checks_all_merge_turns(db, emb):
+    # Reconcile UPDATE appends content from a later turn; the drift
+    # check must verify each clause against the pooled turns, or true
+    # merged rows retire (live case: standalone row fused turn 143 +
+    # turn 145, convicted twice on turn 143 alone).
+    await db.execute(
+        "INSERT INTO memory_events (owner, session_id, turn, utterance) "
+        "VALUES ('cu4','cs4',0,'Docker builds use multi-stage caching.')")
+    await db.execute(
+        "INSERT INTO memory_events (owner, session_id, turn, utterance) "
+        "VALUES ('cu4','cs4',1,'Standalone mode shrank the app image.')")
+    vec, _ = await emb.embed("Docker builds use multi-stage caching.\n"
+                             "Standalone mode shrank the app image.")
+    await db.execute(
+        "INSERT INTO memories (owner, tier, kind, content, trust, source, "
+        "embedding, embedding_model, hash) VALUES "
+        "('cu4','knowledge','fact',%s,'user_direct',%s,%s::vector,%s,%s)",
+        ("Docker builds use multi-stage caching.\n"
+         "Standalone mode shrank the app image.",
+         Json({"session": "cs4", "turn": 0, "turns": [0, 1]}),
+         pgvector_literal(vec), emb.model_name, uuid.uuid4().hex),
+    )
+    out = await curator.run_sweep(
+        db=db, embedder=emb, settings=get_settings(), owner="cu4")
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = 'cu4' "
+        "AND valid_to IS NULL")
+    assert n == 1, out
