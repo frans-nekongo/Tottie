@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Tail a Muse session transcript and forward turns to tottie automatically.
 
-Watches session.jsonl for new records, extracts user prompts (started) and
-assistant conclusions (assistant_message_committed), scrubs secrets, and
-POSTs each as a turn to the core /write endpoint. No per-turn action needed.
+Watches session.jsonl for new records, extracts user prompts (started),
+assistant conclusions (assistant_message_committed), AND file contents the
+agent read (read_file tool results, chunked), scrubs secrets, and POSTs
+each as a turn to the core /write endpoint. No per-turn action needed.
+Reading IS remembering: nothing is ever pasted manually.
 
 Usage:
   TOTTIE_API_TOKEN=... ./session_watch.py [--backfill N] [--once]
@@ -45,6 +47,13 @@ SECRET_RES = [
 ]
 MIN_CHARS = 40
 MAX_CHARS = 15000
+# File-read results are chunked so long docs are ingested whole instead
+# of truncated: each chunk becomes its own turn, observer decides.
+READ_CHUNK = 8000
+# call_id -> (tool name, file path) for read_file calls, built live as
+# the transcript streams. In-memory only: a restart skips results whose
+# calls it never saw, which is exactly the live-read semantic we want.
+CALLS: dict[str, tuple[str, str]] = {}
 
 
 def scrub(text: str) -> str:
@@ -69,24 +78,71 @@ def save_state(state: dict) -> None:
     os.replace(tmp, STATE_PATH)
 
 
-def extract(line: str):
-    """Return (record_id, kind, text) or None."""
+def extract(line: str) -> list:
+    """Return [(record_id, kind, text)] (possibly empty).
+
+    Besides chat turns this also captures file reads: the agent's
+    read_file results flow into memory automatically, chunked. Nothing
+    is ever pasted manually — reading IS remembering.
+    """
     try:
         rec = json.loads(line)
     except ValueError:
-        return None
+        return []
     payload = rec.get("payload") or {}
     event = payload.get("event") or {}
     kind = event.get("kind")
+    if kind == "assistant_tool_calls_committed":
+        for call in event.get("tool_calls") or []:
+            name = call.get("name") or ""
+            if name.split(".")[-1] == "read_file":
+                try:
+                    args = json.loads(call.get("args") or "{}")
+                except ValueError:
+                    args = {}
+                CALLS[call.get("call_id")] = (
+                    name, str(args.get("path") or ""))
+        return []
+    if kind == "tool_result_batch_committed":
+        out = []
+        for res in event.get("results") or []:
+            info = CALLS.pop(res.get("tool_call_id"), None)
+            if not info:
+                continue
+            _, path = info
+            text = (res.get("text") or "").strip()
+            if len(text) < MIN_CHARS or text.startswith("Error"):
+                continue
+            rid = "%s:%s" % (rec.get("id"), res.get("tool_call_id"))
+            out.append((rid, "read:" + path, text[:MAX_CHARS * 4]))
+        return out
     if kind == "assistant_message_committed":
         text = event.get("text") or ""
         if len(text.strip()) >= MIN_CHARS:
-            return rec.get("id"), "assistant", text.strip()[:MAX_CHARS]
+            return [(rec.get("id"), "assistant",
+                     text.strip()[:MAX_CHARS])]
     elif kind == "started" and payload.get("kind") == "run":
         prompt = event.get("prompt") or ""
         if len(prompt.strip()) >= MIN_CHARS:
-            return rec.get("id"), "user", prompt.strip()[:MAX_CHARS]
-    return None
+            return [(rec.get("id"), "user", prompt.strip()[:MAX_CHARS])]
+    return []
+
+
+def chunk_read(path: str, text: str) -> list[str]:
+    """Split a file read into headed chunks along line boundaries."""
+    lines = text.split("\n")
+    chunks, cur, size = [], [], 0
+    for ln in lines:
+        cur.append(ln)
+        size += len(ln) + 1
+        if size >= READ_CHUNK:
+            chunks.append("\n".join(cur))
+            cur, size = [], 0
+    if cur:
+        chunks.append("\n".join(cur))
+    total = len(chunks)
+    return [f"[file read: {path} — part {i + 1}/{total}]\n{c}"
+            for i, c in enumerate(chunks)]
 
 
 def post_turn(text: str, trust: str, session: str, turn: int) -> str:
@@ -124,30 +180,39 @@ def scan(fh, state: dict, session: str, backfill: int) -> int:
         if not line:
             break
         end = fh.tell()
-        item = extract(line)
-        if item and item[0] not in state.get("seen", []):
-            pending.append((pos, end, item[0], item[1], item[2]))
+        for item in extract(line):
+            if item[0] not in state.get("seen", []):
+                pending.append((pos, end, item[0], item[1], item[2]))
     if backfill >= 0:
         pending = pending[-backfill:] if backfill else []
     # Normal tail mode: backfill < 0 means take everything new.
     sent = 0
     for pos, end_pos, rid, kind, text in pending:
-        # Owner's own live session is first-party: both prompts and the
-        # agent's supervised replies arrive user_direct (provenance stays
-        # in origin=session_watch). Quarantine guards untrusted OUTSIDE
-        # claims (web/tool), never the owner's own working trace.
+        # Owner's own live session is first-party: prompts, the agent's
+        # supervised replies, AND files the agent read all arrive
+        # user_direct (provenance stays in origin=session_watch).
+        # Quarantine guards untrusted OUTSIDE claims (web/tool), never
+        # the owner's own working trace.
         trust = "user_direct"
+        if kind.startswith("read:"):
+            texts = chunk_read(kind[5:], text)
+        else:
+            texts = [text]
         try:
-            post_turn(scrub(text), trust, session, state.get("turn", 0))
+            for chunk in texts:
+                post_turn(scrub(chunk), trust, session,
+                          state.get("turn", 0))
+                state["turn"] = state.get("turn", 0) + 1
         except Exception as exc:  # noqa: BLE001 - daemon must not die
             print("forward failed: %s" % exc, flush=True)
             state["offset"] = pos  # retry this turn next poll
             break
-        state["turn"] = state.get("turn", 0) + 1
         state.setdefault("seen", []).append(rid)
         state["offset"] = end_pos
         sent += 1
-        print("forwarded %s turn=%d chars=%d" % (kind, state["turn"], len(text)), flush=True)
+        print("forwarded %s turn=%d chars=%d parts=%d"
+              % (kind[:60], state["turn"], len(text), len(texts)),
+              flush=True)
     else:
         state["offset"] = end  # nothing pending: consume the gap
     save_state(state)

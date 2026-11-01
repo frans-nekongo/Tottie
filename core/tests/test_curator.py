@@ -85,3 +85,35 @@ async def test_sweep_retires_nli_drift(db, emb):
         "AND valid_to IS NULL")
     assert [r["content"] for r in live] == [
         "Server health is good and steady today overall."]
+
+
+@pytest.mark.asyncio
+async def test_drift_keeps_merged_row_from_long_turn(db, emb):
+    # Regression: whole-turn NLI inverted on 2k-char premises (entailed
+    # rows read contradiction 0.95+) and the curator massacred 15
+    # innocent doc rows. Merged-but-supported rows must survive.
+    filler = ("The quarterly review covered budgets, hiring plans, office "
+              "snacks, travel policy, and the new parking rules. ")
+    turn = (filler * 30
+            + "NKNGO standardizes base images on node:20-alpine for web "
+            "and python:3.12-slim for backends. "
+            + filler * 30)
+    assert len(turn) > 2000
+    await db.execute(
+        "INSERT INTO memory_events (owner, session_id, turn, utterance) "
+        "VALUES ('cu3','cs3',0,%s)", (turn,))
+    await _seed(db, emb, "cu3",
+                "NKNGO standardizes base images on node:20-alpine for web "
+                "and python:3.12-slim for backends.",
+                session="cs3")
+    await _seed(db, emb, "cu3",
+                "The office voted to keep the office parrot permanently.",
+                session="cs3", turn=0)
+    out = await curator.run_sweep(
+        db=db, embedder=emb, settings=get_settings(), owner="cu3")
+    live = await db.fetch(
+        "SELECT content FROM memories WHERE owner = 'cu3' "
+        "AND valid_to IS NULL")
+    contents = [r["content"] for r in live]
+    assert any("node:20-alpine" in c for c in contents), (out, contents)
+    assert not any("parrot" in c for c in contents), (out, contents)
