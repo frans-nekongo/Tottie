@@ -91,6 +91,27 @@ async def test_discovered_topics(db, emb):
 
 
 @pytest.mark.asyncio
+async def test_pairs_outside_row_window_do_not_crash(db, emb, monkeypatch):
+    # Live case: owner passed ROW_CAP (500) rows; pairs span ALL valid
+    # rows but ids is the latest-ROW_CAP window, so an edge touching an
+    # old row KeyErrored union-find. Shrink the window instead of
+    # seeding 500 rows: 3 tight rows, window of 2, oldest outside.
+    rows = ["Window cache uses redis store.",
+            "Window cache uses redis store daily.",
+            "Window cache uses redis store nightly."]
+    vecs = [(await emb.embed(c))[0] for c in rows]
+    assert _cos(vecs[0], vecs[1]) >= taxonomist.TOPIC_COSINE
+    assert _cos(vecs[0], vecs[2]) >= taxonomist.TOPIC_COSINE
+    for i, c in enumerate(rows):
+        await _seed(db, emb, "tx3", c, session="txs3", turn=i)
+    monkeypatch.setattr(taxonomist, "ROW_CAP", 2)
+    out = await taxonomist.run_sweep(
+        db=db, embedder=emb, settings=get_settings(), owner="tx3")
+    assert out["rows"] == 2, out
+    assert out["topics"] == 1, out
+
+
+@pytest.mark.asyncio
 async def test_own_provenance_beats_topic_vote(db, emb):
     # Live case: 2 company RAG rows landed in school-majority topic
     # qwen (streaming/latency talk). Own file wins over the vote.

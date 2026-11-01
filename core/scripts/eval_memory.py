@@ -18,7 +18,7 @@ Checks:
   9. topic_coverage — taxonomy sweep tags 100% of live rows per owner
   10. area_coverage — taxonomy sweep tags 100% areas per owner
 
-Checks 8-9 run their sweeps inline first (idempotent): the eval
+Checks 5, 8-9 run their sweeps inline first (idempotent): the eval
 asserts the steady state, not the timing of the heartbeat.
 
 Usage: ./venv/bin/python scripts/eval_memory.py (from core/)
@@ -157,7 +157,7 @@ def main():
     from app.config import Settings
     from app.db import Database
     from app.embeddings import Embedder
-    from app.agents import curator, taxonomist
+    from app.agents import curator, taxonomist, updater
 
     async def db_checks():
         settings = Settings()
@@ -165,6 +165,16 @@ def main():
         await db.open()
         emb = Embedder(settings)
         for owner in ("owner_local", "drill"):
+            # Steady state, not heartbeat timing (same principle as
+            # checks 8-9): dup pairs merge on the updater sweep, so
+            # run it inline first — else a fresh pair fails the eval
+            # only because the heartbeat hasn't swept yet.
+            for _ in range(5):  # sweeps cap at 15; loop to steady state
+                out = await updater.run_sweep(
+                    db=db, embedder=emb, settings=settings, owner=owner)
+                if not out["capped"] or (
+                        out["merged"] + out["retired_contra"]) == 0:
+                    break
             n = await db.fetchval(
                 "SELECT count(*) FROM memories a JOIN memories b "
                 "ON a.owner = b.owner AND a.id < b.id "
@@ -191,21 +201,29 @@ def main():
                     if curator.classify(r["content"] or "")]
             check(f"junk_free_{owner}", not junk,
                   f"junk={len(junk)} {junk[:2]}")
+            # Freeze the set BEFORE the sweep: on a live owner the
+            # watcher ingests mid-eval, and rows born after the sweep
+            # started are correctly pending the NEXT sweep. The bar
+            # stays 100% — over everything this sweep could have seen.
+            cutoff = await db.fetchval("SELECT now()")
             await taxonomist.run_sweep(db=db, embedder=emb, settings=settings,
                                        owner=owner)
             total = await db.fetchval(
                 "SELECT count(*) FROM memories WHERE owner = %s "
-                "AND valid_to IS NULL", (owner,))
+                "AND valid_to IS NULL AND created_at < %s",
+                (owner, cutoff))
             tagged = await db.fetchval(
                 "SELECT count(*) FROM memories WHERE owner = %s "
-                "AND valid_to IS NULL AND tags::text LIKE '%%topic:%%'",
-                (owner,))
+                "AND valid_to IS NULL AND created_at < %s "
+                "AND tags::text LIKE '%%topic:%%'",
+                (owner, cutoff))
             check(f"topic_coverage_{owner}",
                   total == tagged, f"{tagged}/{total}")
             atagged = await db.fetchval(
                 "SELECT count(*) FROM memories WHERE owner = %s "
-                "AND valid_to IS NULL AND tags::text LIKE '%%area:%%'",
-                (owner,))
+                "AND valid_to IS NULL AND created_at < %s "
+                "AND tags::text LIKE '%%area:%%'",
+                (owner, cutoff))
             check(f"area_coverage_{owner}",
                   total == atagged, f"{atagged}/{total}")
         await db.close()
@@ -217,7 +235,10 @@ def main():
                        "session_id": "eval", "turn": 999,
                        "owner": "evalprobe"})
     dt = time.monotonic() - t0
-    check("accept_fast", r["mode"] == "queued" and dt < 2.0, f"{dt:.2f}s")
+    # Contract is fast accept (202 in under 2s), not the deployment
+    # mode: prod deliberately runs inline (TOTTIE_INLINE_WRITE=1).
+    check("accept_fast", r.get("mode") in ("queued", "inline")
+          and dt < 2.0, f"{dt:.2f}s mode={r.get('mode')}")
     _clean_eval_owner()
     print(f"\n{len(FAILURES)} failures")
     return len(FAILURES)

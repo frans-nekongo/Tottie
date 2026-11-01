@@ -154,8 +154,14 @@ async def run_sweep(*, db, embedder, settings, owner: str) -> dict:
         "ORDER BY cos DESC LIMIT %s",
         (owner, TOPIC_COSINE, PAIR_CAP),
     )
+    # Pairs span all valid rows but ids is the latest ROW_CAP window:
+    # drop edges touching rows outside the window (else KeyError once
+    # the owner passes ROW_CAP rows).
+    in_window = set(ids)
     topic_edges = [(str(p["a"]), str(p["b"])) for p in pairs
-                   if p["cos"] >= TOPIC_COSINE]
+                   if p["cos"] >= TOPIC_COSINE
+                   and str(p["a"]) in in_window
+                   and str(p["b"]) in in_window]
     topics = _components(ids, topic_edges)
     taken: set[str] = set()
     tagged = 0
