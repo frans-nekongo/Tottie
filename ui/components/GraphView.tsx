@@ -47,6 +47,7 @@ export default function GraphView({
 }) {
   const [data, setData] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [area, setArea] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const pathSet = useRef<Set<string>>(new Set(path));
   pathSet.current = new Set(path);
@@ -58,6 +59,16 @@ export default function GraphView({
       .catch((e) => setErr(`graph unavailable (${e})`));
   }, [fresh, owner]);
 
+  useEffect(() => {
+    setArea(null);
+    setDetail(null);
+  }, [owner]);
+
+  const pickArea = (slug: string | null) => {
+    setArea(slug);
+    setDetail(null);
+  };
+
   const onNodeClick = useCallback((n: { id?: string }) => {
     if (!n.id) return;
     fetch(`/api/memories?id=${n.id}&owner=${encodeURIComponent(owner)}`)
@@ -68,7 +79,23 @@ export default function GraphView({
 
   if (err) return <p className="dim text-sm">{err}</p>;
   if (!data) return <p className="dim text-sm">growing the brain…</p>;
-  const nodes = data.nodes.map((n) => {
+  const areaOf = (n: Node): string | null => {
+    const t = (n.tags ?? []).find((x) => x.startsWith("area:"));
+    return t ? t.slice(5) : null;
+  };
+  const areaCounts = new Map<string, number>();
+  for (const n of data.nodes) {
+    const a = areaOf(n);
+    if (a) areaCounts.set(a, (areaCounts.get(a) ?? 0) + 1);
+  }
+  const areas = [...areaCounts.entries()].sort((x, y) => y[1] - x[1]);
+  const visibleIds =
+    area === null
+      ? null
+      : new Set(data.nodes.filter((n) => areaOf(n) === area).map((n) => n.id));
+  const shownNodes = data.nodes.filter(
+    (n) => visibleIds === null || visibleIds.has(n.id));
+  const nodes = shownNodes.map((n) => {
     const onPath = pathSet.current.has(n.id);
     return {
       ...n,
@@ -80,7 +107,11 @@ export default function GraphView({
       val: (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1),
     };
   });
-  const links = data.links.map((l) => ({
+  const shownLinks = data.links.filter(
+    (l) =>
+      visibleIds === null ||
+      (visibleIds.has(l.source) && visibleIds.has(l.target)));
+  const links = shownLinks.map((l) => ({
     ...l,
     color:
       pathSet.current.has(l.source) && pathSet.current.has(l.target)
@@ -99,7 +130,33 @@ export default function GraphView({
       : 0;
 
   return (
-    <div className="relative h-full min-h-[420px]">
+    <div className="relative h-full min-h-[420px] flex flex-col">
+      {areas.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 pb-2">
+          <button
+            className="action text-xs"
+            disabled={area === null}
+            onClick={() => pickArea(null)}
+          >
+            all
+          </button>
+          {areas.map(([slug, count]) => (
+            <button
+              key={slug}
+              className="action text-xs"
+              disabled={area === slug}
+              onClick={() => pickArea(area === slug ? null : slug)}
+              title={`${count} memories`}
+            >
+              {slug} <span className="dim mono">{count}</span>
+            </button>
+          ))}
+          <span className="dim text-xs mono ml-auto">
+            {shownNodes.length}/{data.nodes.length}
+          </span>
+        </div>
+      )}
+      <div className="relative flex-1 min-h-0">
       <ForceGraph3D
         graphData={{ nodes, links }}
         nodeLabel="label"
@@ -136,6 +193,7 @@ export default function GraphView({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
