@@ -74,32 +74,49 @@ _PLURAL_RE = re.compile(
 )
 
 
+def _or_tsquery(param: str) -> str:
+    # OR twin of plainto_tsquery: same lexemes, any-match. Lexemes never
+    # contain &, so the text swap is exact (no ts_parse re-entry).
+    return f"replace(plainto_tsquery('english', {param})::text, '&', '|')::tsquery"
+
+
 def _legs_sql(tiered: bool) -> str:
     tier = "AND tier = ANY(%s)" if tiered else ""
+    # id ASC terminates EVERY ordering: row_number ties (ts_rank ties,
+    # float distance ties, utility=1.0 everywhere) are otherwise
+    # plan-dependent, and run-to-run flips were measured live (F4).
     return f"""
 SELECT id, leg, rnk FROM (
-  SELECT id, 'v' AS leg, row_number() OVER (ORDER BY d) AS rnk FROM (
+  SELECT id, 'v' AS leg, row_number() OVER (ORDER BY d, id) AS rnk FROM (
     SELECT id, embedding <=> %s::vector AS d FROM memories
     WHERE owner = %s AND valid_to IS NULL AND NOT quarantined
       AND NOT ranked_out AND embedding IS NOT NULL {tier}
-    ORDER BY d LIMIT {OVERFETCH}
+    ORDER BY d, id LIMIT {OVERFETCH}
   ) v
   UNION ALL
-  SELECT id, 'f' AS leg, row_number() OVER (ORDER BY r DESC) AS rnk FROM (
+  SELECT id, 'f' AS leg, row_number() OVER (
+    ORDER BY strict DESC, r DESC, id) AS rnk FROM (
     -- 'english' is load-bearing, not a default: stemming + stopwords let
     -- "What is the vault code?" hit (proven: 'simple' misses it, stopwords
     -- AND-mandatory). Non-English rides the multilingual vector leg.
+    -- AND-first + OR-fallback: strict (AND) matches keep their exact
+    -- old ranks on top; when one bad lexeme would void the AND (live:
+    -- "0.6B" splits to '0.6'&'b' while the stored model name is one
+    -- glued compound, zero rows), the OR tail still contributes
+    -- lexical evidence instead of silence (F3).
     SELECT id, ts_rank(to_tsvector('english', content),
-      plainto_tsquery('english', %s)) AS r FROM memories
+      {_or_tsquery('%s')}) AS r,
+      to_tsvector('english', content) @@ plainto_tsquery('english', %s)
+      AS strict FROM memories
     WHERE owner = %s AND valid_to IS NULL AND NOT quarantined
       AND NOT ranked_out
-      AND to_tsvector('english', content) @@ plainto_tsquery('english', %s)
+      AND to_tsvector('english', content) @@ {_or_tsquery('%s')}
       {tier}
-    ORDER BY r DESC LIMIT {OVERFETCH}
+    ORDER BY strict DESC, r DESC, id LIMIT {OVERFETCH}
   ) f
   UNION ALL
   SELECT id, 'a' AS leg, row_number() OVER (
-    ORDER BY assoc DESC, salience DESC, utility DESC) AS rnk FROM (
+    ORDER BY assoc DESC, salience DESC, utility DESC, id) AS rnk FROM (
     -- Fan-normalized association: each row scores its STRONGEST shared
     -- tag (max over S - ln(fan)); fan counts live owner rows carrying
     -- the query tags. Specific overlap outranks mush overlap even at
@@ -114,11 +131,12 @@ SELECT id, leg, rnk FROM (
     WHERE m.owner = %s AND m.valid_to IS NULL AND NOT m.quarantined
       AND NOT m.ranked_out {tier}
     GROUP BY m.id, m.salience, m.utility
-    ORDER BY assoc DESC, m.salience DESC, m.utility DESC LIMIT {OVERFETCH}
+    ORDER BY assoc DESC, m.salience DESC, m.utility DESC, m.id
+    LIMIT {OVERFETCH}
   ) a
   UNION ALL
   SELECT id, 'e' AS leg, row_number() OVER (
-    ORDER BY salience DESC, utility DESC) AS rnk FROM (
+    ORDER BY salience DESC, utility DESC, id) AS rnk FROM (
     -- Entity leg: query words hitting scribe subject/object slots. Same
     -- slots the linker wires, so retrieval and graph agree on what an
     -- entity is. Salience/utility order: the slot hit is binary.
@@ -128,7 +146,7 @@ SELECT id, leg, rnk FROM (
       AND (lower(btrim(subject)) = ANY(%s)
         OR lower(btrim("object")) = ANY(%s))
       {tier}
-    ORDER BY salience DESC, utility DESC LIMIT {OVERFETCH}
+    ORDER BY salience DESC, utility DESC, id LIMIT {OVERFETCH}
   ) e
 ) u"""
 
@@ -334,6 +352,18 @@ def _why(legs: dict, cue_type: str) -> str:
 _CONCEPT_RE = re.compile(r"[a-z][a-z-]{2,30}")
 
 
+# Concept memo: identical queries must expand identically. Temp is
+# already 0 in both providers yet the clerk still varies run to run
+# (measured 4 distinct lists in 5 calls), flipping near-tied ranks
+# (F4). FIFO cap: recall-time cache, never a correctness store.
+_CONCEPT_MEMO: dict[str, list[str]] = {}
+_CONCEPT_MEMO_CAP = 512
+
+
+def _memo_key(query: str) -> str:
+    return " ".join((query or "").lower().split())
+
+
 async def query_concepts(query: str) -> list[str]:
     """LLM concept expansion: the category words behind a request
     ("draft a quotation" -> business, quotation, procurement). Pure
@@ -342,6 +372,9 @@ async def query_concepts(query: str) -> list[str]:
     concepts name the bridge. Degrades OPEN to []: recall without
     concepts is shallower, never broken. Provider: auto (meta, else
     local), minimal reasoning — a clerk task."""
+    key = _memo_key(query)
+    if key in _CONCEPT_MEMO:
+        return list(_CONCEPT_MEMO[key])
     from ..providers.resolve import resolve_provider
     try:
         provider = await resolve_provider()
@@ -367,7 +400,11 @@ async def query_concepts(query: str) -> list[str]:
     for w in _CONCEPT_RE.findall((raw.text or "").lower()):
         if w not in out:
             out.append(w)
-    return out[:8]
+    out = out[:8]
+    _CONCEPT_MEMO[key] = list(out)
+    while len(_CONCEPT_MEMO) > _CONCEPT_MEMO_CAP:
+        _CONCEPT_MEMO.pop(next(iter(_CONCEPT_MEMO)))
+    return out
 
 
 async def _bump_access(db, ids: list[str]) -> None:
@@ -749,7 +786,8 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
     params: list = [pgvector_literal(vec), owner]
     if tiered:
         params.append(tiers)
-    params += [eff_query, owner, eff_query]
+    # 'f' leg textual order: rank-OR, strict-AND, owner, where-OR (+tiers).
+    params += [eff_query, eff_query, owner, eff_query]
     if tiered:
         params.append(tiers)
     # 'a' leg textual order: tags, owner, tags, owner (+tiers).
@@ -775,14 +813,14 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
         if words:
             tsq = " | ".join(dict.fromkeys(words))
             crows = await db.fetch(
-                "SELECT id, row_number() OVER (ORDER BY r DESC) AS rnk "
+                "SELECT id, row_number() OVER (ORDER BY r DESC, id) AS rnk "
                 "FROM (SELECT id, ts_rank(to_tsvector('english', content), "
                 "to_tsquery('english', %s)) AS r FROM memories "
                 "WHERE owner = %s AND valid_to IS NULL AND NOT quarantined "
                 "AND NOT ranked_out "
                 "AND to_tsvector('english', content) @@ "
                 "to_tsquery('english', %s) "
-                f"ORDER BY r DESC LIMIT {CONCEPT_FETCH}) c",
+                f"ORDER BY r DESC, id LIMIT {CONCEPT_FETCH}) c",
                 (tsq, owner, tsq),
             )
             for r in crows:
@@ -796,7 +834,7 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
             # fused rows only. topic:/area: tags excluded (partitions
             # and plumbing, not vocabulary).
             trows = await db.fetch(
-                "SELECT id, row_number() OVER (ORDER BY fan ASC) AS rnk "
+                "SELECT id, row_number() OVER (ORDER BY fan ASC, id) AS rnk "
                 "FROM (SELECT m.id, MIN(f.cnt) AS fan FROM memories m, "
                 "unnest(m.tags) AS mt(tag) JOIN "
                 "(SELECT unnest(tags) AS t, count(*) AS cnt FROM memories "
@@ -805,7 +843,7 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
                 "AND mt.tag NOT LIKE '%%:%%' AND EXISTS (SELECT 1 FROM "
                 "regexp_split_to_table(mt.tag, '[-_]') tok "
                 "WHERE tok = ANY(%s)) GROUP BY m.id "
-                f"ORDER BY fan ASC LIMIT {CONCEPT_FETCH}) c",
+                f"ORDER BY fan ASC, m.id LIMIT {CONCEPT_FETCH}) c",
                 (owner, owner, [mid for mid in fused], words),
             )
             for r in trows:
@@ -819,7 +857,7 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
             "SELECT id, content FROM memories WHERE owner = %s "
             "AND tier = 'identity' "
             "AND valid_to IS NULL AND NOT quarantined "
-            "ORDER BY salience DESC LIMIT 5",
+            "ORDER BY salience DESC, id LIMIT 5",
             (owner,),
         )
     # Identity bypasses ranking entirely: card header only, never a hit.

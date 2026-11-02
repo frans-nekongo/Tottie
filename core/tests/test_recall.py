@@ -963,3 +963,100 @@ async def test_concept_boost_promotes_only_matches(db, emb, monkeypatch):
         bb[ids["a"]]["score"] + 1.0 / 61, rel=2e-2)
     assert bo[ids["b"]]["score"] == pytest.approx(
         bb[ids["b"]]["score"], rel=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_lexical_or_fallback_when_and_is_void(db, emb):
+    """F3: one bad lexeme ('0.6B' splits to '0.6'&'b', stored model
+    name is one glued compound) voids the AND — the OR tail must
+    still surface lexical evidence with the best row first."""
+    from app.agents import retrieve
+    ow = f"rc_{uuid.uuid4().hex[:8]}"
+    query = "What first-packet latency does the Qwen3-TTS 0.6B variant achieve?"
+    ids = await seed(db, emb, ow, [
+        {"name": "spec",
+         "content": "Qwen3-TTS-12Hz-0.6B variant achieves 97ms "
+                    "first-packet latency with 19ms LM time."},
+        {"name": "other",
+         "content": "Qwen3-TTS uses dual-track design with semantic tokenizer."},
+    ])
+    void = await db.fetch(
+        "SELECT id FROM memories WHERE owner = %s AND valid_to IS NULL "
+        "AND to_tsvector('english', content) @@ "
+        "plainto_tsquery('english', %s)",
+        (ow, query))
+    assert void == [], "premise: AND matches nothing"
+    s = Settings()
+    s.recall_concepts = False
+    out = await retrieve.recall(query=query, db=db, embedder=emb, owner=ow,
+                                session_id="s", k=8, tiers=None, settings=s)
+    hits = {h["id"]: h for h in out["hits"]}
+    assert ids["spec"] in hits
+    assert "lexical #" in hits[ids["spec"]]["why"], hits[ids["spec"]]
+    assert out["hits"][0]["id"] == ids["spec"], [
+        (h["id"], h["why"]) for h in out["hits"]]
+
+
+@pytest.mark.asyncio
+async def test_concepts_memoized_per_query(db, emb, monkeypatch):
+    """F4: identical queries expand identically — the clerk is asked
+    once no matter how often recall runs (temp is already 0 and it
+    still varied: 4 lists in 5 live calls). No LLM in tests."""
+    from app.agents import retrieve
+    calls = []
+
+    class _Prov:
+        name = "stub"
+        async def close(self):
+            pass
+
+    async def _resolve():
+        calls.append(1)
+        return _Prov()
+
+    class _Raw:
+        text = "alpha, beta, gamma"
+        resampled = False
+        prompt_tokens = 0
+        completion_tokens = 0
+
+    async def _complete(provider, messages, **kw):
+        return _Raw()
+
+    import app.providers.resolve as pr
+    import app.providers.base as pb
+    monkeypatch.setattr(pr, "resolve_provider", _resolve)
+    monkeypatch.setattr(pb, "complete_resilient", _complete)
+    monkeypatch.setattr(retrieve, "_CONCEPT_MEMO", {})
+    q = f"memo probe {uuid.uuid4().hex[:8]}"
+    first = await retrieve.query_concepts(q)
+    second = await retrieve.query_concepts("  " + q.upper() + "  ")
+    assert first == second == ["alpha", "beta", "gamma"]
+    assert len(calls) == 1, calls
+
+
+@pytest.mark.asyncio
+async def test_recall_order_stable_across_runs(db, emb, monkeypatch):
+    """F4 guard: same query twice yields identical hit order (id
+    tie-breaks terminate every leg ordering; memo pins concepts)."""
+    from app.agents import retrieve
+    ow = f"rc_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, [
+        {"name": "a", "content": "Zebra migration patterns shift yearly."},
+        {"name": "b", "content": "Zebra migration routes cross rivers."},
+        {"name": "c", "content": "Zebra herd counts grow steadily."},
+    ])
+    s = Settings()
+    s.recall_concepts = True
+
+    async def fixed(q):
+        return ["zebra", "migration"]
+
+    monkeypatch.setattr(retrieve, "query_concepts", fixed)
+    kw = dict(db=db, embedder=emb, owner=ow, session_id="s", k=8,
+              tiers=None, settings=s)
+    first = [h["id"] for h in (await retrieve.recall(
+        query="zebra migration shifting", **kw))["hits"]]
+    second = [h["id"] for h in (await retrieve.recall(
+        query="zebra migration shifting", **kw))["hits"]]
+    assert first == second and len(first) == 3, (first, second)
