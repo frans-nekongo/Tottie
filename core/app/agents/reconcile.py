@@ -304,14 +304,27 @@ async def _temporal_link(conn, *, owner, quarantined, new_id, turn):
     )
 
 
+# Transient process narration (observer-flagged) starts near-zero
+# stability: R(t) = exp(-age/0.15) falls under the ranker's 0.05 floor
+# in ~11h, so status chatter retires at a sleep sweep instead of
+# diluting recall forever. Still revivable: re-mention rehearses
+# stability back up. Principle/identity candidates are never
+# transient (a reusable rule or self-fact is durable by definition),
+# enforced here so a sloppy flag can't sink them.
+TRANSIENT_STABILITY = 0.15
+
+
 async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
                       supersedes: str | None = None) -> str:
+    transient = bool(cand.get("transient")) and not (
+        cand.get("principle") or "").strip() and cand.get("tier") != "identity"
+    stability = TRANSIENT_STABILITY if transient else 1.0
     cur = await conn.execute(
         'INSERT INTO memories (owner, tier, kind, subject, predicate, "object", '
         "content, tags, principle, salience, surprise, arousal, trust, source, "
         "embedding, embedding_model, hash, quarantined, needs_curation, "
-        "supersedes) VALUES "
-        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s,%s) "
+        "supersedes, stability) VALUES "
+        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector,%s,%s,%s,%s,%s,%s) "
         "ON CONFLICT (owner, hash) WHERE hash IS NOT NULL "
         "DO NOTHING RETURNING id",
         (
@@ -326,7 +339,7 @@ async def _insert_new(conn, *, turn, obs, cand, vec, model, quarantined,
             pgvector_literal(vec), model,
             row_hash(turn.session_id, turn.turn, cand["content"]),
             quarantined, obs.raw_fallback,
-            supersedes,
+            supersedes, stability,
         ),
     )
     row = await cur.fetchone()

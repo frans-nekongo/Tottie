@@ -33,10 +33,11 @@ def _obs(cands, salience=0.8, verdict="keep", provider="stub"):
 
 
 def _cand(content, kind="preference", tier="knowledge", subject=None,
-          predicate=None, obj=None, tags=None):
+          predicate=None, obj=None, tags=None, transient=False,
+          principle=None):
     return {"kind": kind, "tier": tier, "subject": subject,
             "predicate": predicate, "object": obj, "content": content,
-            "tags": tags or [], "principle": None}
+            "tags": tags or [], "principle": principle, "transient": transient}
 
 
 def _turn(text, trust="user_direct", session="r3", turn=0, owner=OWNER):
@@ -786,3 +787,37 @@ async def test_vegetarian_chain_live(client, db):
     )
     assert any(r["supersedes"] is not None for r in rows), rows
     assert any(r["valid_to"] is not None for r in rows), rows
+
+
+@pytest.mark.asyncio
+async def test_transient_narration_starts_near_zero_stability(db, emb):
+    # Live: ~2 rows/min of status chatter ("test count is 200") saved
+    # as eternal facts diluted recall. Observer-flagged transient rows
+    # start at TRANSIENT_STABILITY (~11h to retire); principle and
+    # identity candidates are never transient even when misflagged.
+    ow = f"r3t_{uuid.uuid4().hex[:8]}"
+    cands = [
+        _cand("Status check was 7 of 7 green.", tier="episodic",
+              transient=True),
+        _cand("Always use h1 for business documents.", transient=True,
+              principle="Always use h1 for business documents."),
+        _cand("Owner is Frans.", tier="identity", transient=True),
+        _cand("NUST deadline is 26 September 2026.", transient=False),
+    ]
+    await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("mixed turn", session="r3t", turn=0, owner=ow),
+        obs=_obs(cands),
+    )
+    rows = await db.fetch(
+        "SELECT content, stability FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        (ow,),
+    )
+    by_content = {r["content"]: float(r["stability"]) for r in rows}
+    assert len(by_content) == 4, by_content
+    assert by_content["Status check was 7 of 7 green."] == pytest.approx(
+        reconcile.TRANSIENT_STABILITY)
+    assert by_content["Always use h1 for business documents."] == 1.0
+    assert by_content["Owner is Frans."] == 1.0
+    assert by_content["NUST deadline is 26 September 2026."] == 1.0

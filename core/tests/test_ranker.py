@@ -53,3 +53,22 @@ async def test_sweep_ranks_stale_out_and_practiced_back(db, emb):
         "SELECT id, ranked_out FROM memories WHERE owner = 'rk1'")
     by_id = {str(r["id"]): r["ranked_out"] for r in flags}
     assert by_id == {stale: True, fresh: False, practiced: False}
+
+
+@pytest.mark.asyncio
+async def test_transient_chatter_retires_overnight_but_not_instantly(db, emb):
+    # The observer durability path end to end: a transient row
+    # (stability 0.15) retires once a day old, but a fresh one still
+    # serves — age-gated, never a blanket kill.
+    from app.agents.reconcile import TRANSIENT_STABILITY
+    old = await _seed(db, emb, "rk2", "Status check was green.",
+                      days_ago=1, stability=TRANSIENT_STABILITY)
+    new = await _seed(db, emb, "rk2", "Status check is green.",
+                      stability=TRANSIENT_STABILITY)
+    out = await ranker.run_sweep(
+        db=db, embedder=emb, settings=None, owner="rk2")
+    assert out == {"ranked_out": 1, "ranked_back": 0, "rows": 2}, out
+    flags = await db.fetch(
+        "SELECT id, ranked_out FROM memories WHERE owner = 'rk2'")
+    by_id = {str(r["id"]): r["ranked_out"] for r in flags}
+    assert by_id == {old: True, new: False}
