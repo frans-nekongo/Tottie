@@ -98,14 +98,20 @@ async def test_contradiction_routes(db):
     ow = f"nli_{uuid.uuid4().hex[:8]}"
     ids = await seed(db, emb, ow, [{"name": "ben", "content": BEN}])
     s = get_settings()
-    route, detail = await observer._contradiction(db, s, ids["ben"], BEN_CONTRA)
+    route, detail, explicit = await observer._contradiction(
+        db, s, ids["ben"], BEN_CONTRA)
     assert route == "contradict", detail
-    route, detail = await observer._contradiction(db, s, ids["ben"], BEN_ENTAIL)
+    assert explicit is False  # unmarked: NLI-inferred, reconcile re-verifies
+    route, detail, _ = await observer._contradiction(
+        db, s, ids["ben"], BEN_ENTAIL)
     assert route == "entail", detail
-    route, detail = await observer._contradiction(db, s, ids["ben"], BEN_NEUTRAL)
+    route, detail, _ = await observer._contradiction(
+        db, s, ids["ben"], BEN_NEUTRAL)
     assert route == "neutral", detail
-    route, detail = await observer._contradiction(db, s, ids["ben"], G1_REVERSAL)
+    route, detail, explicit = await observer._contradiction(
+        db, s, ids["ben"], G1_REVERSAL)
     assert route == "contradict", detail  # pre-filter, no model needed
+    assert explicit is True  # polarity lexicon marks human intent
 
 
 COFFEE = "Ben drinks coffee."

@@ -69,6 +69,14 @@ async def _persist_txn(conn, db, turn, obs, embedded, model, stages=None) -> str
     cue = cues.classify(turn.text)
     target = getattr(obs, "correction_target", None)
     is_corr = cue.type == "CORRECTION" or target is not None
+    # Explicit = human-marked reversal (cue, polarity lexicon, F2a bypass).
+    # A bare verifier target is implicit: NLI misfires ~1.00 on
+    # same-template rows, so reconcile re-verifies those with the
+    # opposition gate instead of trusting the route.
+    correction_explicit = (
+        cue.type == "CORRECTION"
+        or getattr(obs, "correction_explicit", False)
+    )
     active = (
         reconcile.get_active(turn.owner, turn.session_id)
         if is_corr
@@ -86,6 +94,13 @@ async def _persist_txn(conn, db, turn, obs, embedded, model, stages=None) -> str
         correction_pool = await reconcile.recent_session_ids(
             conn, turn.owner, turn.session_id,
             limit=reconcile.RECENT_SESSION_LIMIT)
+    # Session-wide elimination: a session pool holding exactly one row
+    # is the only thing the correction could mean (w1corr). F2a {target}
+    # singletons don't count — a similarity target is a guess. Active
+    # (labile) matches don't count either: every recall pollutes the
+    # active set, so recalled rows still need entity evidence to die.
+    pool_singleton_session = (
+        target is None and len(correction_pool) == 1)
     ops = []
     with stages.span("reconcile"):
         for cand, vec in embedded:
@@ -94,6 +109,8 @@ async def _persist_txn(conn, db, turn, obs, embedded, model, stages=None) -> str
                 floor=db._settings.reconcile_cosine,
                 active_floor=db._settings.active_cosine, active=active,
                 correction_pool=correction_pool,
+                correction_explicit=correction_explicit,
+                pool_singleton_session=pool_singleton_session,
             )
             ops.append(rec)
     memory_ids = [o["memory_id"] for o in ops]

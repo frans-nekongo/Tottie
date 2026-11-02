@@ -190,6 +190,33 @@ def test_same_object_ignores_stopword_overlap():
         "the code", "the gate") is False
 
 
+def test_implicit_gate_twins_journey_stops():
+    """T1 murder pinned: same courier, flipped verbs, but "parcel to
+    Berlin" vs "parcel to Marta" share only generic "parcel" — partial
+    object overlap is a different slot, never one slot flipped."""
+    assert linker.implicit_correction_gate(
+        "The courier trucked the parcel to Berlin.",
+        "The courier delivered the parcel to Marta.",
+        "courier", "courier", "parcel to Berlin", "parcel to Marta",
+        "trucked", "delivered") is False
+
+
+def test_implicit_gate_twins_sparse_vs_rich_slots():
+    """The scribe drops arguments ("parcel" for "trucked the parcel to
+    Berlin"). A sparse triple must never equate an elaborated one on
+    the predicate-flip path — that chained 2 journey stops dead."""
+    assert linker.implicit_correction_gate(
+        "The courier flew the parcel to Frankfurt.",
+        "The courier trucked the parcel to Berlin.",
+        "courier", "courier", "parcel to Frankfurt", "parcel",
+        "flew", "trucked") is False
+    assert linker.implicit_correction_gate(
+        "The courier trucked the parcel to Berlin.",
+        "The courier delivered the parcel to Marta.",
+        "courier", "courier", "parcel", "parcel to Marta",
+        "trucked", "delivered") is False
+
+
 def test_same_subject_vetoes_feature_vs_test_facets():
     """Live murder, real production values: objects NEST ('concept
     boost' in 'concept boost leg') so the overlap rule fires — only

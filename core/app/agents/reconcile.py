@@ -388,7 +388,9 @@ async def _find_live_sp(conn, *, owner: str, quarantined: bool,
 
 async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
                           active_floor, active: set[str],
-                          correction_pool: set[str] | None = None) -> dict:
+                          correction_pool: set[str] | None = None,
+                          correction_explicit: bool = False,
+                          pool_singleton_session: bool = False) -> dict:
     """Reconcile one embedded candidate inside the turn's transaction."""
     cand = {**cand, "tags": _norm_tags(cand.get("tags"))}
     quarantined = is_quarantined(turn.trust)
@@ -509,6 +511,30 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
         or is_speech_act(cand["content"], cand.get("predicate"))
         or mcos < SUPERSEDE_COS
     )
+    # Correction-lane veto: a marker says THAT ("this is a correction");
+    # only entity evidence says WHICH row it corrects. Implicit routes
+    # (NLI-contra, which misfires ~1.00 on same-template rows — T4's 6
+    # chained murders) must pass the full opposition gate; explicit
+    # routes face the marker-specific veto (wrong identity, unlinked
+    # numeric swap, or entity-less with no phrasal evidence — the T5
+    # pool murders). Either veto twins the candidate — never kills,
+    # never merges.
+    correction_veto = False
+    if via_correction:
+        from .linker import explicit_veto, implicit_correction_gate
+        if correction_explicit:
+            # Raw subjects: identity detection needs original case.
+            correction_veto = explicit_veto(
+                match.get("subject"), cand.get("subject"),
+                old_obj, new_obj, match.get("content") or "",
+                cand["content"], mcos, pool_singleton_session,
+            )
+        else:
+            correction_veto = not implicit_correction_gate(
+                match.get("content") or "", cand["content"],
+                m_sub, c_sub, old_obj, new_obj, old_pred, new_pred,
+                mcos,
+            )
     # F1: a correction supplying a value to a valueless match is a
     # replacement, never a top-up. Before this, old_obj None fell
     # through to the merge lane and mushed both values into one live
@@ -517,13 +543,15 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
     # established (polarity marker or NLI), so keeping the old claim
     # alongside preserves a known falsehood. A false correction route
     # costs a dead row + link (content preserved, recoverable), while
-    # a missed flip serves stale truth — fail toward replace.
+    # a missed flip serves stale truth — fail toward replace. (Implicit
+    # routes excepted: NLI-inferred contradiction is re-verified by the
+    # veto above, since the verifier fires ~1.00 on same-template rows.)
     value_flip = (
         (old_obj is not None and new_obj is not None
          and old_obj != new_obj)
         or (via_correction and old_obj is None and new_obj is not None))
     if value_flip or pred_flipped:
-        if twin:
+        if twin or correction_veto:
             mid = await _insert_new(
                 conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
                 quarantined=quarantined,
@@ -547,7 +575,7 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
             (obs.salience, old_id),
         )
         return {"op": "SKIP", "memory_id": old_id, "superseded_id": None}
-    if via_correction:
+    if via_correction and not correction_veto:
         # F1 v2: the correction lane never merges. Value-compare needs
         # both objects, but the scribe emits triples nondeterministically
         # (battery2 D2: update candidates arrived object-less while the
@@ -567,6 +595,15 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
         )
         return {"op": "SUPERSEDE", "memory_id": mid,
                 "superseded_id": old_id}
+    if correction_veto:
+        # Vetoed implicit correction: twin, never merge — appending a
+        # different entity's fact onto the match would mush two facts
+        # into one franken-row past any future separation.
+        mid = await _insert_new(
+            conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+            quarantined=quarantined,
+        )
+        return {"op": "NEW", "memory_id": mid, "superseded_id": None}
     if twin:
         # Same guard for the merge lane: appending distant content to a
         # matched row would mush two facts into one franken-row (U3 owns

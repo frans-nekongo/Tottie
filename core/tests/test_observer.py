@@ -284,3 +284,40 @@ async def test_correction_bypass_keeps_familiar_target(db, monkeypatch):
     assert obs.keep is True, obs.verdict
     assert obs.correction_target == ids["trunc"], obs.verdict
     assert "bypass targets" in obs.verdict, obs.verdict
+
+
+@pytest.mark.asyncio
+async def test_correction_bypass_binds_below_familiarity_gate(db, monkeypatch):
+    """F2a floor: a marked correction at cos 0.766 fell through to the
+    recent-session pool and murdered a noise row while the true target
+    sat nearest with a 0.21 gap. The bypass binds below the 0.80
+    familiarity gate; the vetoes make false targets twin safely."""
+    from tests.test_recall import seed
+
+    emb = Embedder(Settings())
+    ids = await seed(db, emb, "fam5", [
+        {"name": "safe", "content": "The safe code is 9024."},
+    ])
+    text = "Correction: the safe code changed to 9177."
+    avec, _ = await emb.embed("The safe code is 9024.")
+    bvec, _ = await emb.embed(text)
+    import math
+    cos = sum(x * y for x, y in zip(avec, bvec)) / (
+        math.sqrt(sum(x * x for x in avec))
+        * math.sqrt(sum(y * y for y in bvec)))
+    assert 0.70 <= cos < 0.80, cos  # below the gate, above the floor
+
+    async def fake_resolve():
+        return KeepOnce()
+
+    monkeypatch.setattr(observer, "resolve_provider", fake_resolve)
+    turn = WorkerTurn(
+        text=text, session_id="other-session", turn=0, owner="fam5",
+        trust="user_direct", origin=None, client_event_id="e10",
+    )
+    obs = await observer.observe(
+        db=db, embedder=emb, turn=turn, settings=get_settings()
+    )
+    assert obs.keep is True, obs.verdict
+    assert obs.correction_target == ids["safe"], obs.verdict
+    assert obs.correction_explicit is True, obs.verdict

@@ -287,3 +287,38 @@ async def test_sweep_route_queues_and_ledgers(client, db, emb):
             break
     assert ev and ev["scribe_action"]["op"] == "UPDATE_SWEEP", ev
     assert ev["scribe_action"]["merged"] == 1, ev["scribe_action"]
+
+
+@pytest.mark.asyncio
+async def test_sweep_route_runs_inline_when_workers_off(db, emb, monkeypatch):
+    """Inline mode never starts the worker pool, so an enqueued sweep sat
+    forever — a 202 that lied (live: zero ledger rows across three drill
+    sweeps). The route must run the sweep directly and ledger it."""
+    from asgi_lifespan import LifespanManager
+    from httpx import ASGITransport, AsyncClient
+
+    from tests.conftest import TEST_CACHE_DIR, TEST_DB_URL
+    await _seed(db, emb, "up_inline", "The vault code is 9999.", hours_ago=2)
+    await _seed(db, emb, "up_inline", "The vault code is 9999.")
+    monkeypatch.setenv("TOTTIE_DB_URL", TEST_DB_URL)
+    monkeypatch.setenv("TOTTIE_API_TOKEN", TEST_TOKEN)
+    monkeypatch.setenv("EMBEDDING_CACHE_DIR", TEST_CACHE_DIR)
+    monkeypatch.setenv("TOTTIE_RECALL_CONCEPTS", "false")
+    monkeypatch.setenv("TOTTIE_INLINE_WRITE", "true")
+    get_settings.cache_clear()
+    from app.main import create_app
+    app = create_app()
+    async with LifespanManager(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport,
+                               base_url="http://test") as c:
+            r = await c.post("/sweep", json={"owner": "up_inline"},
+                             headers=AUTH)
+    assert r.status_code == 202
+    body = r.json()
+    assert body["mode"] == "inline", body
+    assert body["summary"]["merged"] == 1, body
+    ev = await db.fetchrow(
+        "SELECT scribe_action FROM memory_events WHERE owner = 'up_inline' "
+        "AND session_id = 'sweep'")
+    assert ev and ev["scribe_action"]["op"] == "UPDATE_SWEEP", ev

@@ -25,10 +25,12 @@ def emb():
     return Embedder(Settings())
 
 
-def _obs(cands, salience=0.8, verdict="keep", provider="stub"):
+def _obs(cands, salience=0.8, verdict="keep", provider="stub",
+         target=None, explicit=False):
     return Observation(
         keep=True, salience=salience, surprise=0.9, candidates=cands,
-        verdict=verdict, provider=provider,
+        verdict=verdict, provider=provider, correction_target=target,
+        correction_explicit=explicit,
     )
 
 
@@ -475,6 +477,271 @@ async def test_correction_supersedes_active_row(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_implicit_correction_across_subjects_twins(db, emb):
+    """T4 murder pinned: the verifier routes same-template rows into the
+    correction lane at NLI ~1.00, but different subjects are different
+    slots — Bex's combo must twin, never kill Tuli's. Deterministic:
+    stub obs with an implicit (unmarked-turn) correction target."""
+    ow = "r3veto1"
+    old = await _seed_row(
+        db, emb, ow, "Tuli's locker combo is 1001.", kind="fact",
+        subject="Tuli", predicate="has locker combo", obj="1001")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Bex's locker combination is 1002.", session=ow,
+                  owner=ow),
+        obs=_obs([_cand("Bex's locker combination is 1002.", kind="fact",
+                        subject="Bex", predicate="has locker combination",
+                        obj="1002")], target=old),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_implicit_journey_stops_twin(db, emb):
+    """T1 live shape: same subject, flipped verbs, half-shared objects.
+    Waypoints are siblings, not corrections — both stay live."""
+    ow = "r3veto10"
+    old = await _seed_row(
+        db, emb, ow, "The courier trucked the parcel to Berlin.", kind="fact",
+        subject="courier", predicate="trucked", obj="parcel to Berlin")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("The courier delivered the parcel to Marta.",
+                  session=ow, owner=ow),
+        obs=_obs([_cand("The courier delivered the parcel to Marta.",
+                        kind="fact", subject="courier",
+                        predicate="delivered", obj="parcel to Marta")],
+                 target=old),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_implicit_sparse_object_twins(db, emb):
+    """T1e live shape: the scribe stored bare "parcel" for Berlin while
+    Frankfurt kept "parcel to Frankfurt". Sparse-vs-rich slots twin —
+    coverage must not equate a dropped argument with a kept one."""
+    ow = "r3veto11"
+    old = await _seed_row(
+        db, emb, ow, "The courier flew the parcel to Frankfurt.", kind="fact",
+        subject="courier", predicate="flew", obj="parcel to Frankfurt")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("The courier trucked the parcel to Berlin.",
+                  session=ow, owner=ow),
+        obs=_obs([_cand("The courier trucked the parcel to Berlin.",
+                        kind="fact", subject="courier",
+                        predicate="trucked", obj="parcel")],
+                 target=old),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_implicit_predicate_flip_same_slot_supersedes(db, emb):
+    """G1-marked shape, no negation anywhere: "drinks" -> "stopped
+    drinking" about the same subject+object is a reversal, not a
+    sibling. The veto must admit flipped relations, not just "not"."""
+    ow = "r3veto4"
+    old = await _seed_row(
+        db, emb, ow, "Ben drinks coffee.", kind="fact",
+        subject="ben", predicate="drinks", obj="coffee")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Ben stopped drinking coffee.", session=ow, owner=ow),
+        obs=_obs([_cand("Ben stopped drinking coffee.", kind="fact",
+                        subject="Ben", predicate="stopped drinking",
+                        obj="coffee")], target=old),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    got = await db.fetchrow(
+        "SELECT valid_to FROM memories WHERE id = %s::uuid", (old,))
+    assert got["valid_to"] is not None
+
+
+@pytest.mark.asyncio
+async def test_implicit_numeric_swap_same_subject_supersedes(db, emb):
+    """The veto must not eat true unmarked numeric corrections: same
+    entity + exchanged numbers is a flip even with no negation."""
+    ow = "r3veto2"
+    old = await _seed_row(
+        db, emb, ow, "The pool gate code is 4100.", kind="fact",
+        subject="pool gate", predicate="has code", obj="4100")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("The pool gate code is 4333.", session=ow, owner=ow),
+        obs=_obs([_cand("The pool gate code is 4333.", kind="fact",
+                        subject="pool gate", predicate="has code",
+                        obj="4333")], target=old),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    got = await db.fetchrow(
+        "SELECT valid_to FROM memories WHERE id = %s::uuid", (old,))
+    assert got["valid_to"] is not None
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_wrong_identity_twins(db, emb):
+    """A "Correction:" naming a disjoint proper identity must twin: Bex's
+    fact is about Bex even when Tuli's same-template row is the only
+    bound match. (Generic-disjoint pairs are word-level-identical to
+    G4's wording-variation and link — the veto cannot see that case;
+    live noise rows are subject-less, pinned by the T5c test below.)"""
+    ow = "r3veto3"
+    old = await _seed_row(
+        db, emb, ow, "Tuli's locker combo is 1001.", kind="fact",
+        subject="Tuli", predicate="has locker combo", obj="1001")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Correction: Bex's locker combination is 1002.",
+                  session=ow, owner=ow),
+        obs=_obs([_cand("Bex's locker combination is 1002.", kind="fact",
+                        subject="Bex's locker",
+                        predicate="has locker combination",
+                        obj="1002")], target=old),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_unlinked_numeric_swap_twins(db, emb):
+    """Numbers alone never bridge disjoint generic entities: "vault"
+    vs "safe" with swapped codes must twin — the marker says THAT, and
+    no entity evidence says the vault correction targets the safe."""
+    ow = "r3veto8"
+    old = await _seed_row(
+        db, emb, ow, "The safe code is 9024.", kind="fact",
+        subject="safe", predicate="has code", obj="9024")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Correction: the vault code is 9177.",
+                  session=ow, owner=ow),
+        obs=_obs([_cand("The vault code is 9177.", kind="fact",
+                        subject="vault", predicate="has code",
+                        obj="9177")], target=old),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_spless_phrasal_overlap_supersedes(db, emb):
+    """D6 live shape, deterministic: SP-less rows, "Correction:" marker,
+    phrasal overlap ("review meeting" x2) is the WHICH evidence. Must
+    still replace at write — the sweep can never catch this pair (no
+    negation, no swapped numbers)."""
+    ow = "r3veto6"
+    old = await _seed_row(
+        db, emb, ow, "The review meeting is scheduled for Friday in room 4B.",
+        kind="fact")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Correction: the review meeting moved to Wednesday.",
+                  session=ow, owner=ow),
+        obs=_obs([_cand("The review meeting moved to Wednesday.",
+                        kind="fact")], target=old),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    got = await db.fetchrow(
+        "SELECT valid_to FROM memories WHERE id = %s::uuid", (old,))
+    assert got["valid_to"] is not None
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_singleton_session_supersedes(db, emb):
+    """w1corr shape, deterministic: no observer target, SP-less rows
+    sharing zero content words — but the session pool holds exactly one
+    row, the only thing the correction could mean. Elimination links
+    where words cannot. (F2a {target} singletons don't count: a
+    similarity guess still needs entity evidence.)"""
+    ow = "r3veto9"
+    old = await _seed_row(
+        db, emb, ow, "The Namib Roasters rebrand is due Friday.", kind="fact")
+    await db.execute(
+        "UPDATE memories SET source = %s WHERE id = %s::uuid",
+        (Json({"session": ow, "turn": 0}), old),
+    )
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Actually the deadline moved to next Wednesday.",
+                  session=ow, turn=1, owner=ow),
+        obs=_obs([_cand("The deadline moved to next Wednesday.",
+                        kind="fact")]),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    got = await db.fetchrow(
+        "SELECT valid_to FROM memories WHERE id = %s::uuid", (old,))
+    assert got["valid_to"] is not None
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_spless_zero_overlap_twins(db, emb):
+    """T5c live shape: SP-less noise row shares no content word with the
+    correction. Marker says THAT; zero overlap says WHICH is unknown —
+    twin, never murder the bystander."""
+    ow = "r3veto7"
+    old = await _seed_row(
+        db, emb, ow, "Library fines were waived this month.", kind="fact")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Correction: the safe code changed to 9177.",
+                  session=ow, owner=ow),
+        obs=_obs([_cand("The safe code changed to 9177.", kind="fact")],
+                 target=old),
+    )
+    assert action.startswith("NEW"), action
+    n = await db.fetchval(
+        "SELECT count(*) FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL", (ow,))
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_mention_links_entities(db, emb):
+    """G4 wording variation: "namib roasters rebrand" vs "deadline" name
+    one entity — the new turn MENTIONS the old subject's words, which is
+    WHICH-evidence. Explicit + mention still supersedes at write."""
+    ow = "r3veto5"
+    old = await _seed_row(
+        db, emb, ow, "The Namib Roasters rebrand is due Friday.", kind="fact",
+        subject="namib roasters rebrand", predicate="due", obj="friday")
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Correction: the deadline for the Namib Roasters "
+                  "rebrand moved from Friday to next Wednesday.",
+                  session=ow, owner=ow),
+        obs=_obs([_cand("The deadline for the Namib Roasters rebrand "
+                        "moved to next Wednesday.", kind="fact",
+                        subject="deadline", predicate="moved to",
+                        obj="next wednesday")], target=old),
+    )
+    assert action.startswith("SUPERSEDE"), action
+    got = await db.fetchrow(
+        "SELECT valid_to FROM memories WHERE id = %s::uuid", (old,))
+    assert got["valid_to"] is not None
+
+
+@pytest.mark.asyncio
 async def test_unrelated_correction_does_not_bind(client, db, emb):
     lake = await _seed_row(db, emb, OWNER, "Photos from the lake house weekend.",
                            kind="fact", tags=["personal"])
@@ -790,11 +1057,13 @@ async def test_vegetarian_chain_live(client, db):
 
 
 @pytest.mark.asyncio
-async def test_correction_supersedes_valueless_match(db, emb):
-    # F1 (battery D2/D6): a correction supplying a value to a match
-    # with no object replaces it — before, it enrich-merged both
-    # values into one live row ("...is 5200. ...is 5444") and kept
-    # serving the stale value.
+async def test_implicit_correction_valueless_match_twins(db, emb):
+    # F1 narrowed (T4 murders): "changed to" is an unmarked STATEMENT —
+    # the correction lane here is NLI-inferred, not human-marked. With no
+    # object on the match there is zero slot evidence, and the verifier
+    # fires ~1.00 on same-template rows, so the write path twins instead
+    # of killing. Never merges (F1's franken-row ban stands); the sweep's
+    # numeric pass owns the kill and proves it in live D2.
     old = await _seed_row(db, emb, OWNER, "The office alarm code is 5200.")
     obs = _obs([_cand("The office alarm code is 5444.", subject="office alarm",
                       predicate="has code", obj="5444")])
@@ -804,23 +1073,23 @@ async def test_correction_supersedes_valueless_match(db, emb):
         turn=_turn("The office alarm code changed to 5444.", turn=1),
         obs=obs,
     )
-    assert action.startswith("SUPERSEDE"), action
+    assert action.startswith("NEW"), action
     live = await db.fetch(
-        "SELECT id, content, supersedes FROM memories WHERE owner = %s "
+        "SELECT id, content FROM memories WHERE owner = %s "
         "AND valid_to IS NULL",
         (OWNER,),
     )
-    assert len(live) == 1 and "5444" in live[0]["content"]
-    assert "5200" not in live[0]["content"]
-    assert str(live[0]["supersedes"]) == old
+    assert len(live) == 2
+    assert "5200" in live[0]["content"] + live[1]["content"]
+    assert "5444" in live[0]["content"] + live[1]["content"]
 
 
 @pytest.mark.asyncio
-async def test_correction_never_merges_objectless_candidate(db, emb):
-    # F1 v2 (battery2 D2): the scribe emits triples
-    # nondeterministically — an object-less correction against a fully
-    # valued match must still supersede, never enrich-merge, or the
-    # stale value lives on inside one franken-row forever.
+async def test_implicit_correction_objectless_candidate_twins(db, emb):
+    # F1 v2 narrowed (T4 murders): an object-less candidate on the
+    # NLI-inferred lane twins — killing on zero slot evidence is the
+    # exact pattern that chained 6 fan rows dead. The stale value does
+    # not live forever: the sweep numeric pass retires it (live D2).
     old = await _seed_row(db, emb, OWNER, "The office alarm code is 5200.",
                           subject="office", predicate="alarm code is",
                           obj="5200")
@@ -829,6 +1098,29 @@ async def test_correction_never_merges_objectless_candidate(db, emb):
     action = await scribe.persist(
         db=db, embedder=emb,
         turn=_turn("The office alarm code changed to 5444.", turn=1),
+        obs=obs,
+    )
+    assert action.startswith("NEW"), action
+    live = await db.fetch(
+        "SELECT id, content FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert len(live) == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_correction_valueless_match_supersedes(db, emb):
+    # F1 kept for marked intent: the same valueless shape with a human
+    # "Correction:" marker still replaces at write — marked intent IS
+    # the subject check, no re-verification.
+    old = await _seed_row(db, emb, OWNER, "The office alarm code is 5200.")
+    obs = _obs([_cand("The office alarm code is 5444.", subject="office alarm",
+                      predicate="has code", obj="5444")])
+    obs.correction_target = old
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("Correction: the office alarm code is 5444.", turn=1),
         obs=obs,
     )
     assert action.startswith("SUPERSEDE"), action

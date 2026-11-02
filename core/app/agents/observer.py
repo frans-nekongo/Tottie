@@ -60,6 +60,7 @@ class Observation:
         verdict: str,
         provider: str,
         correction_target: str | None = None,
+        correction_explicit: bool = False,
         raw_fallback: bool = False,
         latency_ms: int = 0,
         prompt_tokens: int = 0,
@@ -72,6 +73,7 @@ class Observation:
         self.verdict = verdict
         self.provider = provider
         self.correction_target = correction_target
+        self.correction_explicit = correction_explicit
         self.raw_fallback = raw_fallback
         self.latency_ms = latency_ms
         self.prompt_tokens = prompt_tokens
@@ -158,30 +160,41 @@ async def _familiarity(db, owner: str, vec) -> tuple[float, str | None, bool]:
     return float(row["cos"]), str(row["id"]), bool(row["ranked_out"])
 
 
+# F2a bypass floor: marked corrections bind their familiar row below
+# the familiarity gate (0.80). A "Correction:" at 0.766 fell through
+# to the recent-session pool and murdered a noise row; the vetoes make
+# sub-gate targets safe (false ones twin, never kill).
+F2A_FLOOR = 0.70
+
+
 async def _contradiction(db, settings: Settings, fam_id: str,
-                         text: str) -> tuple[str, str]:
+                         text: str) -> tuple[str, str, bool]:
     """Stage 2 (G1 fix): high familiarity is a candidate gate, never a drop
-    gate. Returns (route, detail): contradict -> correction lane against
-    fam_id; entail -> today's SKIP+rehearse; neutral -> normal LLM scribe.
-    Verifier missing -> degrade OPEN (neutral): never lose the turn."""
+    gate. Returns (route, detail, explicit): contradict -> correction lane
+    against fam_id; entail -> today's SKIP+rehearse; neutral -> normal LLM
+    scribe. Verifier missing -> degrade OPEN (neutral): never lose the turn.
+    Explicit marks human-stated reversal (polarity lexicon); NLI-inferred
+    contra is implicit — the verifier misfires ~1.00 on same-template rows
+    (T4 fan murders), so reconcile re-verifies implicit routes with the
+    opposition gate instead of trusting them."""
     if not settings.nli_enabled:
-        return "entail", "nli flag-off (legacy SKIP)"
+        return "entail", "nli flag-off (legacy SKIP)", False
     if cues.polarity_flip(text):
-        return "contradict", "polarity-flip marker"
+        return "contradict", "polarity-flip marker", True
     row = await db.fetchrow(
         "SELECT content FROM memories WHERE id = %s::uuid", (fam_id,))
     if row is None or not row["content"]:
-        return "neutral", "target died"
+        return "neutral", "target died", False
     try:
         res = await nli.verify(row["content"], text, settings)
     except nli.NLIError as e:
         log.warning("nli unavailable (%s); falling through", e)
-        return "neutral", f"nli down: {e}"
+        return "neutral", f"nli down: {e}", False
     if res["p_contra"] >= settings.nli_threshold:
-        return "contradict", f"nli contra {res['p_contra']:.2f}"
+        return "contradict", f"nli contra {res['p_contra']:.2f}", False
     if res["label"] == "entailment":
-        return "entail", f"nli entail {res['p_entail']:.2f}"
-    return "neutral", f"nli neutral {res['p_neutral']:.2f}"
+        return "entail", f"nli entail {res['p_entail']:.2f}", False
+    return "neutral", f"nli neutral {res['p_neutral']:.2f}", False
 
 
 async def observe(*, db, embedder, turn, settings: Settings,
@@ -207,6 +220,7 @@ async def observe(*, db, embedder, turn, settings: Settings,
     # (scribed via cue type) reconciles it. Gate still records fam/surprise.
     is_correction = cues.classify(text).type == "CORRECTION"
     correction_target: str | None = None
+    correction_explicit = False
     contra_detail = ""
     if (fam_id is not None and fam_cos >= settings.familiarity_cosine
             and not is_correction):
@@ -214,7 +228,7 @@ async def observe(*, db, embedder, turn, settings: Settings,
         # may restate (entail -> SKIP below), contradict (correction lane
         # against fam_id), or add (neutral -> normal scribe).
         with stages.span("nli_verify"):
-            route, contra_detail = await _contradiction(
+            route, contra_detail, correction_explicit = await _contradiction(
                 db, settings, fam_id, text)
         if route == "contradict":
             correction_target = fam_id
@@ -245,14 +259,18 @@ async def observe(*, db, embedder, turn, settings: Settings,
             )
         # neutral: fall through to the LLM scribe below.
     elif (is_correction and fam_id is not None
-            and fam_cos >= settings.familiarity_cosine):
+            and fam_cos >= F2A_FLOOR):
         # F2a: the bypass must not drop the familiar row. A CORRECTION
         # with no target makes the scribe fall back to a session-scoped
         # pool that cannot see other sessions' rows, so cross-session
         # corrections twin instead of superseding (live: "no longer
-        # truncates" twinned). Targeting only focuses matching —
-        # value-compare still decides (identical objects SKIP).
+        # truncates" twinned). The floor sits below the familiarity
+        # gate: a marked correction at 0.766 fell through to the recent
+        # pool and murdered a noise row while the true target (gap to
+        # next-best 0.21) went unbound. Targeting only focuses matching —
+        # the vetoes make false targets twin safely instead of murdering.
         correction_target = fam_id
+        correction_explicit = True
         contra_detail = "correction bypass targets familiar row"
     prompt_tokens = completion_tokens = 0
     resampled = False
@@ -361,4 +379,5 @@ async def observe(*, db, embedder, turn, settings: Settings,
         provider=provider.name, latency_ms=latency_ms,
         prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
         correction_target=correction_target,
+        correction_explicit=correction_explicit,
     )
