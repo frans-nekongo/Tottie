@@ -244,6 +244,16 @@ async def observe(*, db, embedder, turn, settings: Settings,
                 provider="none",
             )
         # neutral: fall through to the LLM scribe below.
+    elif (is_correction and fam_id is not None
+            and fam_cos >= settings.familiarity_cosine):
+        # F2a: the bypass must not drop the familiar row. A CORRECTION
+        # with no target makes the scribe fall back to a session-scoped
+        # pool that cannot see other sessions' rows, so cross-session
+        # corrections twin instead of superseding (live: "no longer
+        # truncates" twinned). Targeting only focuses matching —
+        # value-compare still decides (identical objects SKIP).
+        correction_target = fam_id
+        contra_detail = "correction bypass targets familiar row"
     prompt_tokens = completion_tokens = 0
     resampled = False
     t0 = time.monotonic()

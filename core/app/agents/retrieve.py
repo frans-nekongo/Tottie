@@ -22,7 +22,15 @@ from datetime import datetime, timedelta, timezone
 from ..db import pgvector_literal
 from . import cues, reconcile
 
-RRF_K = 60
+# F5: K=10, not 60. At K=60 adjacent top ranks are ~equal (1/61 vs
+# 1/62), so vector#1+lexical#1 cannot beat vector#2+#3 plus weak
+# auxiliary legs (live Qwen: peak legs, rank #3). K=10 makes top-vs-
+# deep discrimination 3x (v#1/v#53: 5.7x vs 1.9x) so peaks decide
+# and auxiliary legs corroborate instead of ruling near-ties
+# (notebook: weighted RRF with lower k). Confidence, abstention,
+# and BFS are scale-free (relative margin, coverage, cosine, node
+# cap), so only ordering changes — suite+eval judge.
+RRF_K = 10
 # 500, not 50: deep paraphrases rank past 400 on every leg (measured
 # with real is_query=True vectors: "prepare a quote for stationery"
 # puts the h1 rule at vector #411), and a row outside every leg is
@@ -151,12 +159,24 @@ SELECT id, leg, rnk FROM (
 ) u"""
 
 
+# F5: weighted RRF. Equal weights let 4 mediocre auxiliary legs
+# outvote vector#1+lexical#1 (live NUST: fact 0.0477 lost to meta
+# 0.0557; notebook: Balancing the Blend weakest-link + weighted-RRF
+# remedy, row B drops below 0.023 while row A holds 0.0328). Meaning
+# (vector) and surface-precision (lexical) vote full; tag, entity,
+# and concept legs corroborate at 0.2. Verified by hand on both
+# live near-ties before shipping (NUST fact and Qwen 0.6B both
+# top-1 under these weights).
+LEG_WEIGHTS = {"v": 1.0, "f": 1.0, "a": 0.2, "e": 0.2,
+               "c": 0.2, "t": 0.2}
+
+
 def _rrf(rows: list[dict]) -> dict[str, dict]:
     fused: dict[str, dict] = {}
     for r in rows:
         mid = str(r["id"])
         slot = fused.setdefault(mid, {"score": 0.0, "legs": {}})
-        slot["score"] += 1.0 / (RRF_K + r["rnk"])
+        slot["score"] += LEG_WEIGHTS[r["leg"]] / (RRF_K + r["rnk"])
         slot["legs"][r["leg"]] = r["rnk"]
     return fused
 
@@ -826,7 +846,8 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
             for r in crows:
                 mid = str(r["id"])
                 if mid in fused:
-                    fused[mid]["score"] += 1.0 / (RRF_K + r["rnk"])
+                    fused[mid]["score"] += (
+                        LEG_WEIGHTS["c"] / (RRF_K + r["rnk"]))
                     fused[mid]["legs"]["c"] = r["rnk"]
             # Concept-tag leg: a concept word inside a row's vocabulary
             # tag ("business" in business-documents) binds with the
@@ -848,7 +869,8 @@ async def _ranked(db, embedder, owner, query, cue, k, tiers, settings,
             )
             for r in trows:
                 mid = str(r["id"])
-                fused[mid]["score"] += 1.0 / (RRF_K + r["rnk"])
+                fused[mid]["score"] += (
+                    LEG_WEIGHTS["t"] / (RRF_K + r["rnk"]))
                 fused[mid]["legs"]["t"] = r["rnk"]
     candidates_matched = len({str(r["id"]) for r in rows})
     identity: list = []

@@ -226,3 +226,61 @@ async def test_repeat_revives_ranked_out(db, monkeypatch):
         (ids["todo"],),
     )
     assert row["ranked_out"] is False
+
+
+class KeepOnce:
+    """Scripted clerk: keeps with one candidate. The stub answers the
+    model call; gates, embedder, and Postgres stay real."""
+
+    name = "stub"
+
+    async def healthy(self) -> bool:
+        return True
+
+    async def complete(self, messages, *, max_tokens=1024, json_object=False,
+                       reasoning_effort=None):
+        return Completion(
+            text='{"keep": true, "salience": 0.8, "candidates": ['
+            '{"kind": "fact", "subject": "mcp_client", '
+            '"predicate": "truncates", "object": null, '
+            '"content": "mcp_client no longer truncates output.", '
+            '"tags": [], "principle": null}]}',
+            model="stub",
+            prompt_tokens=10,
+            completion_tokens=20,
+        )
+
+    async def close(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_correction_bypass_keeps_familiar_target(db, monkeypatch):
+    """F2a: a CORRECTION bypasses NLI routing but must not drop the
+    familiar row — live, 'no longer truncates' twinned because the
+    scribe fell back to a session-scoped pool. Target set, compare
+    still decides downstream."""
+    from tests.test_recall import seed
+
+    emb = Embedder(Settings())
+    ids = await seed(db, emb, "fam4", [
+        {"name": "trunc",
+         "content": "mcp_client truncates output at 4000 chars."},
+    ])
+
+    async def fake_resolve():
+        return KeepOnce()
+
+    monkeypatch.setattr(observer, "resolve_provider", fake_resolve)
+    turn = WorkerTurn(
+        text="Correction: mcp_client no longer truncates output "
+             "at 4000 chars.",
+        session_id="other-session", turn=0, owner="fam4",
+        trust="user_direct", origin=None, client_event_id="e9",
+    )
+    obs = await observer.observe(
+        db=db, embedder=emb, turn=turn, settings=get_settings()
+    )
+    assert obs.keep is True, obs.verdict
+    assert obs.correction_target == ids["trunc"], obs.verdict
+    assert "bypass targets" in obs.verdict, obs.verdict

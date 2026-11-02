@@ -416,12 +416,13 @@ async def test_recall_k_bounds_only_ranking_k_independent(db, emb):
     slicing, so they never depend on k."""
     from app.agents import retrieve
 
-    # Fresh owner per k: recall bumps utility on serve (rehearsal), and the
-    # UPDATE rewrites heap order, which flips lexical-leg tie ranks between
-    # sequential calls on the same rows. Identical contents on pristine
-    # owners isolate k as the only variable (ids differ, scores don't).
-    # Lexically distinct rows: identical term frequencies tie ts_rank and
-    # ties break by heap order (luck), which would swamp the k comparison.
+    # Same owner for both calls: k=8 serves all 5 seeded rows, so the
+    # rehearsal bump lands uniformly and relative order is untouched
+    # (id tie-breaks, F4, killed the old heap-order rationale for fresh
+    # owners — and fresh owners reintroduce id tie-luck, which K=10
+    # top-heaviness amplifies into runner-up flips). k is isolated by
+    # serving everything first, then slicing.
+    # Lexically distinct rows: identical term frequencies tie ts_rank.
     items = [
         {"name": "n0", "kind": "fact", "tags": ["deploy"],
          "content": "Deploy runbook master index deploy deploy deploy."},
@@ -436,13 +437,11 @@ async def test_recall_k_bounds_only_ranking_k_independent(db, emb):
     ]
     kw = dict(db=db, embedder=emb, session_id="s",
               tiers=None, settings=Settings())
-    ow_full = f"rk_{uuid.uuid4().hex[:8]}"
-    await seed(db, emb, ow_full, items)
-    full = await retrieve.recall(query="deploy runbook", k=8, owner=ow_full,
+    ow = f"rk_{uuid.uuid4().hex[:8]}"
+    await seed(db, emb, ow, items)
+    full = await retrieve.recall(query="deploy runbook", k=8, owner=ow,
                                  **kw)
-    ow_cut = f"rk_{uuid.uuid4().hex[:8]}"
-    await seed(db, emb, ow_cut, items)
-    cut = await retrieve.recall(query="deploy runbook", k=1, owner=ow_cut,
+    cut = await retrieve.recall(query="deploy runbook", k=1, owner=ow,
                                 **kw)
     assert len(cut["hits"]) == 1
     assert cut["hits"][0]["summary"] == full["hits"][0]["summary"]
@@ -959,8 +958,9 @@ async def test_concept_boost_promotes_only_matches(db, emb, monkeypatch):
     assert set(bb) == set(bo) == set(ids.values())
     assert "concept #1" in bo[ids["a"]]["why"], bo[ids["a"]]
     assert "concept" not in bo[ids["b"]]["why"], bo[ids["b"]]
+    # F5: concept leg corroborates at 0.2, K=10 (weighted top-heavy RRF).
     assert bo[ids["a"]]["score"] == pytest.approx(
-        bb[ids["a"]]["score"] + 1.0 / 61, rel=2e-2)
+        bb[ids["a"]]["score"] + 0.2 / 11, rel=2e-2)
     assert bo[ids["b"]]["score"] == pytest.approx(
         bb[ids["b"]]["score"], rel=1e-9)
 
@@ -995,6 +995,28 @@ async def test_lexical_or_fallback_when_and_is_void(db, emb):
     assert "lexical #" in hits[ids["spec"]]["why"], hits[ids["spec"]]
     assert out["hits"][0]["id"] == ids["spec"], [
         (h["id"], h["why"]) for h in out["hits"]]
+
+
+def test_weighted_rrf_peak_beats_breadth():
+    """F5 (Balancing the Blend weakest-link): vector#1+lexical#1 must
+    beat vector#53+lexical#5+entity#2+concept#5 — the exact live NUST
+    near-tie. Pure function, no DB."""
+    from app.agents.retrieve import _rrf
+    rows = [
+        {"id": "peak", "leg": "v", "rnk": 1},
+        {"id": "peak", "leg": "f", "rnk": 1},
+        {"id": "peak", "leg": "e", "rnk": 7},
+        {"id": "broad", "leg": "v", "rnk": 53},
+        {"id": "broad", "leg": "f", "rnk": 5},
+        {"id": "broad", "leg": "e", "rnk": 2},
+        {"id": "broad", "leg": "c", "rnk": 5},
+    ]
+    fused = _rrf(rows)
+    assert fused["peak"]["score"] > fused["broad"]["score"], fused
+    # Equal weights lose it (the old disease): 0.0477 < 0.0557.
+    plain = sum(1.0 / (60 + r) for r in (1, 1, 7))
+    plain_broad = sum(1.0 / (60 + r) for r in (53, 5, 2, 5))
+    assert plain < plain_broad
 
 
 @pytest.mark.asyncio
