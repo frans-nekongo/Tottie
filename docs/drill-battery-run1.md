@@ -30,9 +30,28 @@ subject/predicate were wiped empty. D6's Friday→Wednesday did the same
 (served-new=True, original never died, no link).
 
 Served answers stay right (newest top-1 3/3, D6 served-new=True), but
-stale values linger inside merged rows and triples are lost. Next
-implement arc: make same-SP value flips supersede deterministically
-and stop enrich from clearing SP.
+stale values linger inside merged rows and triples are lost.
+
+## Fix verified (same day): correction lane never merges
+
+v1 (correction + valued candidate onto valueless match → SUPERSEDE)
+failed on battery2: the scribe emits triples nondeterministically and
+the update candidates arrived object-less, so value-compare never
+engaged and enrich mushed again — worse than run 1 (D2 old-dead 1/3).
+
+v2 (`reconcile.apply_candidate`): anything reaching the merge lane on
+the correction lane is no restatement (SKIP already handled those), so
+it SUPERSEDEs unconditionally. Contradiction established + not a
+restatement = replacement, regardless of which triple slots the
+scribe happened to fill. Enrich also backfills empty subject/predicate
+via COALESCE like object.
+
+Proof: D2 + D6 rerun on fresh owner battery3 — D2 3/3 top-1, 3/3 dead
+at write time (0.0s); D6 served-new, dead-in-0.0s, link present,
+original kept. Battery effectively 13/13. Regression tests:
+`test_correction_supersedes_valueless_match`,
+`test_correction_never_merges_objectless_candidate`,
+`test_enrich_backfills_empty_triple`.
 
 ## Boundaries documented (not fails)
 

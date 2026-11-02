@@ -509,8 +509,20 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
         or is_speech_act(cand["content"], cand.get("predicate"))
         or mcos < SUPERSEDE_COS
     )
-    if ((old_obj is not None and new_obj is not None
-         and old_obj != new_obj) or pred_flipped):
+    # F1: a correction supplying a value to a valueless match is a
+    # replacement, never a top-up. Before this, old_obj None fell
+    # through to the merge lane and mushed both values into one live
+    # row ("...is 5200. ...is 5444") with the stale value still served
+    # (battery D2/D6). The correction lane means contradiction was
+    # established (polarity marker or NLI), so keeping the old claim
+    # alongside preserves a known falsehood. A false correction route
+    # costs a dead row + link (content preserved, recoverable), while
+    # a missed flip serves stale truth — fail toward replace.
+    value_flip = (
+        (old_obj is not None and new_obj is not None
+         and old_obj != new_obj)
+        or (via_correction and old_obj is None and new_obj is not None))
+    if value_flip or pred_flipped:
         if twin:
             mid = await _insert_new(
                 conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
@@ -535,6 +547,26 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
             (obs.salience, old_id),
         )
         return {"op": "SKIP", "memory_id": old_id, "superseded_id": None}
+    if via_correction:
+        # F1 v2: the correction lane never merges. Value-compare needs
+        # both objects, but the scribe emits triples nondeterministically
+        # (battery2 D2: update candidates arrived object-less while the
+        # matched rows were fully valued) — and anything reaching here
+        # past the SKIP is no restatement. Contradiction established +
+        # not a restatement = replacement: merging would mush opposed
+        # claims into one live franken-row past the point where the
+        # updater's pair-wise passes can ever separate them (only U3
+        # splitting could, ungated). False routes cost a dead row + link.
+        await conn.execute(
+            "UPDATE memories SET valid_to = now() WHERE id = %s::uuid",
+            (old_id,),
+        )
+        mid = await _insert_new(
+            conn, turn=turn, obs=obs, cand=cand, vec=vec, model=model,
+            quarantined=quarantined, supersedes=old_id,
+        )
+        return {"op": "SUPERSEDE", "memory_id": mid,
+                "superseded_id": old_id}
     if twin:
         # Same guard for the merge lane: appending distant content to a
         # matched row would mush two facts into one franken-row (U3 owns
@@ -561,12 +593,18 @@ async def apply_candidate(conn, *, turn, obs, cand, vec, model, floor,
     await conn.execute(
         'UPDATE memories SET content = content || %s, summary = %s, '
         '"object" = COALESCE("object", %s), tags = %s, '
+        # F1b: enrich backfills empty triple slots like object — a
+        # merge onto a sparse row must not leave it sparse when the
+        # candidate names the triple.
+        'subject = COALESCE(subject, %s), '
+        '"predicate" = COALESCE("predicate", %s), '
         "salience = GREATEST(salience, %s), "
         "confidence = LEAST(1.0, confidence + 0.1), surprise = %s, "
         "source = %s, last_access = now() WHERE id = %s::uuid",
         (
             "\n" + cand["content"], cand["content"][:300], cand["object"],
-            merged_tags, obs.salience, obs.surprise, Json(old_source),
+            merged_tags, cand["subject"], cand["predicate"],
+            obs.salience, obs.surprise, Json(old_source),
             old_id,
         ),
     )

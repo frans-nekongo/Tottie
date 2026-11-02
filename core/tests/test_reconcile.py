@@ -790,6 +790,81 @@ async def test_vegetarian_chain_live(client, db):
 
 
 @pytest.mark.asyncio
+async def test_correction_supersedes_valueless_match(db, emb):
+    # F1 (battery D2/D6): a correction supplying a value to a match
+    # with no object replaces it — before, it enrich-merged both
+    # values into one live row ("...is 5200. ...is 5444") and kept
+    # serving the stale value.
+    old = await _seed_row(db, emb, OWNER, "The office alarm code is 5200.")
+    obs = _obs([_cand("The office alarm code is 5444.", subject="office alarm",
+                      predicate="has code", obj="5444")])
+    obs.correction_target = old
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("The office alarm code changed to 5444.", turn=1),
+        obs=obs,
+    )
+    assert action.startswith("SUPERSEDE"), action
+    live = await db.fetch(
+        "SELECT id, content, supersedes FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert len(live) == 1 and "5444" in live[0]["content"]
+    assert "5200" not in live[0]["content"]
+    assert str(live[0]["supersedes"]) == old
+
+
+@pytest.mark.asyncio
+async def test_correction_never_merges_objectless_candidate(db, emb):
+    # F1 v2 (battery2 D2): the scribe emits triples
+    # nondeterministically — an object-less correction against a fully
+    # valued match must still supersede, never enrich-merge, or the
+    # stale value lives on inside one franken-row forever.
+    old = await _seed_row(db, emb, OWNER, "The office alarm code is 5200.",
+                          subject="office", predicate="alarm code is",
+                          obj="5200")
+    obs = _obs([_cand("The office alarm code changed to 5444.")])
+    obs.correction_target = old
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("The office alarm code changed to 5444.", turn=1),
+        obs=obs,
+    )
+    assert action.startswith("SUPERSEDE"), action
+    live = await db.fetch(
+        "SELECT id, content, supersedes FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL",
+        (OWNER,),
+    )
+    assert len(live) == 1 and "5444" in live[0]["content"]
+    assert "5200" not in live[0]["content"]
+    assert str(live[0]["supersedes"]) == old
+
+
+@pytest.mark.asyncio
+async def test_enrich_backfills_empty_triple(db, emb):
+    # F1b: a neutral top-up onto a sparse row fills subject/predicate
+    # like object instead of leaving the merged row triple-empty.
+    old = await _seed_row(db, emb, OWNER, "The vault code was set.",
+                          tags=["vault"])
+    action = await scribe.persist(
+        db=db, embedder=emb,
+        turn=_turn("The vault code is 9911.", turn=5),
+        obs=_obs([_cand("The vault code is 9911.", subject="vault",
+                        predicate="code is", obj="9911", tags=["vault"])]),
+    )
+    assert action.startswith("UPDATE"), action
+    row = await db.fetchrow(
+        "SELECT subject, predicate, \"object\" FROM memories "
+        "WHERE id = %s::uuid",
+        (old,),
+    )
+    assert (row["subject"], row["predicate"], row["object"]) == (
+        "vault", "code is", "9911"), row
+
+
+@pytest.mark.asyncio
 async def test_transient_narration_starts_near_zero_stability(db, emb):
     # Live: ~2 rows/min of status chatter ("test count is 200") saved
     # as eternal facts diluted recall. Observer-flagged transient rows
