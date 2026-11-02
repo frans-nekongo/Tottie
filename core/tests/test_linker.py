@@ -159,6 +159,49 @@ async def test_polarity_needs_same_object():
     assert rel == "contradicts", rel
 
 
+def test_same_object_tolerates_paraphrase():
+    """F2b: '4000 chars' vs 'output at 4000 chars' is one slot — exact
+    equality vetoed a 0.998/0.986 symmetric-contra pair live (the
+    truncation twin the sweep could not kill). Real subjects/objects
+    from the production rows."""
+    assert linker.is_opposition(
+        "mcp_client truncates output at 4000 chars.",
+        "mcp_client no longer truncates output at 4000 chars.", 0.91,
+        "4000 chars", "output at 4000 chars",
+        "mcp_client", "mcp_client") is True
+
+
+def test_same_subject_bridges_file_extension_variants():
+    """Sibling scribes wrote 'mcp_client' and 'mcp_client.py' for one
+    entity; the stale truncation row must still die. 'py' is stripped
+    so it can never bridge two DIFFERENT files."""
+    assert linker.is_opposition(
+        "mcp_client.py prints tool output as pretty JSON truncated to 4000 chars.",
+        "mcp_client no longer truncates output at 4000 chars.", 0.85,
+        "output to 4000 chars", "output at 4000 chars",
+        "mcp_client.py", "mcp_client") is True
+
+
+def test_same_object_ignores_stopword_overlap():
+    """'the code' vs 'the gate' share only 'the' — different slots,
+    still vetoed."""
+    assert linker.is_opposition(
+        "The vault code is set.", "The garden gate is not set.", 0.85,
+        "the code", "the gate") is False
+
+
+def test_same_subject_vetoes_feature_vs_test_facets():
+    """Live murder, real production values: objects NEST ('concept
+    boost' in 'concept boost leg') so the overlap rule fires — only
+    the disjoint subjects (retrieve.py vs the test name) silence the
+    gate. A feature fact must never die for its own test."""
+    assert linker.is_opposition(
+        "retrieve.py adds an optional concept-boost leg when recall_concepts is enabled.",
+        "test_concept_boost_promotes_only_matches verifies concept leg is boost-only, no LLM.",
+        0.85, "concept boost leg", "concept boost",
+        "retrieve.py", "test_concept_boost_promotes_only_matches") is False
+
+
 @pytest.mark.asyncio
 async def test_owner_subject_never_links(db, emb):
     a = await _seed(db, emb, "lk4", "Owner fixed the bug.", "owner",

@@ -217,7 +217,9 @@ async def run_sweep(*, db, embedder, settings, owner: str,
                 # NLI alone misfires ~1.00 on boilerplate and facets.
                 if not is_opposition(older["content"], newer["content"],
                                      n["cos"], older.get("object"),
-                                     newer.get("object")):
+                                     newer.get("object"),
+                                     older.get("subject"),
+                                     newer.get("subject")):
                     continue
                 res = fwd
             else:

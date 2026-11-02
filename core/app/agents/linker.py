@@ -59,7 +59,7 @@ async def _candidates(db, owner, row_id, vec_literal, quarantined, entities):
     if not entities:
         return []
     return await db.fetch(
-        'SELECT id, content, "object", '
+        'SELECT id, content, subject, "object", '
         "1 - (embedding <=> %s::vector) AS cos "
         "FROM memories WHERE owner = %s "
         "AND valid_to IS NULL AND id <> %s::uuid AND quarantined = %s "
@@ -94,9 +94,71 @@ def _negation_asymmetry(a_content, b_content) -> bool:
     return neg(a_content) != neg(b_content)
 
 
+_WORD_RE = re.compile(r"[a-z0-9]+")
+_EXT_RE = re.compile(r"\.[a-z0-9]+$")
+
+
+def _same_subject(a_subject: str | None, b_subject: str | None) -> bool:
+    """Entity match for the polarity gate. A reversal is one entity's
+    one slot flipping — a feature fact (subject retrieve.py) and its
+    test (subject test_concept_boost_promotes_only_matches) are
+    different facts even when their objects nest ("concept boost" in
+    "concept boost leg") and the NLI misfires 1.00. Word overlap over
+    content words: file extensions stripped first (sibling scribes
+    write "mcp_client" and "mcp_client.py" for one entity — "py" must
+    not bridge retrieve.py to mcp_client.py), stopwords excluded.
+    Either side NULL or content-empty (pronouns like "it") falls
+    through to True: uninformative subjects can't prove difference,
+    so object+polarity decide as before. Veto-only: disjoint
+    informative subjects silence the gate, never fire it."""
+    from .cues import STOPWORDS
+    if a_subject is None or b_subject is None:
+        return True
+    a_norm, b_norm = _norm(a_subject), _norm(b_subject)
+    if a_norm is None or b_norm is None:
+        return True
+    a_words = {w for w in _WORD_RE.findall(_EXT_RE.sub("", a_norm))
+               if w not in STOPWORDS}
+    b_words = {w for w in _WORD_RE.findall(_EXT_RE.sub("", b_norm))
+               if w not in STOPWORDS}
+    if not a_words or not b_words:
+        return True
+    return bool(a_words & b_words)
+
+
+def _same_object(a_object: str | None, b_object: str | None) -> bool:
+    """Same-slot test for the polarity gate. Exact string equality
+    vetoed true reversals whose scribe elaborated the object (live:
+    "4000 chars" vs "output at 4000 chars" with NLI 0.998/0.986 both
+    ways — the truncation twin the sweep could not kill). Token
+    overlap over content words: half or more of the shorter object's
+    words shared means one slot. Stopwords excluded, or "the code" vs
+    "the gate" would convict on "the". Either side empty after
+    filtering falls back to exact equality (single-word slots like
+    "alcohol" keep today's behavior). String containment was tried
+    and dropped: it missed the true stale-row kill ("output to 4000
+    chars" vs "output at 4000 chars" differ by one preposition).
+    Overlap's own false-fire (nested "concept boost" in "concept
+    boost leg" convicting a feature for its test) is vetoed one layer
+    up by _same_subject, not here."""
+    from .cues import STOPWORDS
+    if a_object is None or b_object is None:
+        return True
+    a_norm, b_norm = _norm(a_object), _norm(b_object)
+    if a_norm is None or b_norm is None:
+        return a_norm == b_norm
+    a_words = {w for w in _WORD_RE.findall(a_norm) if w not in STOPWORDS}
+    b_words = {w for w in _WORD_RE.findall(b_norm) if w not in STOPWORDS}
+    if not a_words or not b_words:
+        return a_norm == b_norm
+    return len(a_words & b_words) / min(len(a_words), len(b_words)) >= 0.5
+
+
 def is_opposition(a_content, b_content, cos: float,
                   a_object: str | None = None,
-                  b_object: str | None = None) -> bool:
+                  b_object: str | None = None,
+                  a_subject: str | None = None,
+                  b_subject: str | None = None) -> bool:
     """Polarity-only opposition gate (linker typing + updater sweep):
     symmetric-NLI-contra misfires ~1.00 on boilerplate and facets, so
     NLI alone never convicts. The old shared-words clause (4+ words,
@@ -116,9 +178,9 @@ def is_opposition(a_content, b_content, cos: float,
     write path (similarity-gated SUPERSEDE) catches live ones."""
     if not _negation_asymmetry(a_content, b_content):
         return False
-    if a_object is not None and b_object is not None:
-        return _norm(a_object) == _norm(b_object)
-    return True
+    if not _same_subject(a_subject, b_subject):
+        return False
+    return _same_object(a_object, b_object)
 
 
 _NUMBER_RE = re.compile(r"\d[\d,.]*")
@@ -188,7 +250,8 @@ def numeric_candidate(a_content: str, b_content: str,
 
 
 async def _type_pair(nli_mod, settings, a_content, b_content, cos,
-                   a_object=None, b_object=None):
+                   a_object=None, b_object=None,
+                   a_subject=None, b_subject=None):
     """NLI edge typing: supports / contradicts / entity (neutral or far)."""
     if cos < TYPED_COSINE:
         return "entity", W_ENTITY, cos
@@ -205,7 +268,7 @@ async def _type_pair(nli_mod, settings, a_content, b_content, cos,
             # edges on code-trace rows at 0.97-1.00; scores can't
             # separate them from real opposition).
             if is_opposition(a_content, b_content, cos, a_object,
-                             b_object):
+                             b_object, a_subject, b_subject):
                 return "contradicts", W_CONTRA, fwd["p_contra"]
         return "entity", W_ENTITY, fwd["p_contra"]
     rev = await nli_mod.verify(b_content, a_content, settings)
@@ -240,7 +303,8 @@ async def link_row(*, db, embedder, settings, memory_id: str) -> dict:
             rel, weight, score = await _type_pair(
                 nli_mod, settings, row["content"], cand["content"],
                 float(cand["cos"]), row.get("object"),
-                cand.get("object"))
+                cand.get("object"), row.get("subject"),
+                cand.get("subject"))
         except nli_mod.NLIError as e:
             log.warning("linker NLI down (%s); stopping row", e)
             break
