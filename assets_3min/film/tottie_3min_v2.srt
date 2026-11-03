@@ -1,0 +1,111 @@
+1
+00:00:03,000 --> 00:00:12,000
+folder B dammit— how MANY times do I have to tell you man?! It's 34 employees!
+
+2
+00:00:15,000 --> 00:00:20,000
+Have you, or anyone you know, rage-quit a coding session? Join the club, buddy.
+
+3
+00:00:20,000 --> 00:00:26,000
+Our agents have a memory problem. Two weeks later, it's like you don't remember what I said.
+
+4
+00:00:26,000 --> 00:00:29,000
+So this is how my girlfriend feels.
+
+5
+00:00:29,000 --> 00:00:37,000
+Every agent wakes up stateless. All that intelligence—and no continuity.
+
+6
+00:00:37,000 --> 00:00:42,000
+But people tell me the fix is simple…
+
+7
+00:00:42,000 --> 00:00:49,000
+Just get a 6-million-billion context window, bro? That isn't memory. It's a TAX.
+
+8
+00:00:49,000 --> 00:00:53,000
+That's big-lab work. I mean, I would, but...
+
+9
+00:00:53,000 --> 00:01:00,000
+My Meta money hasn't landed yet. So until then? I'll just put the fries in the bag. What CAN I do?
+
+10
+00:01:00,000 --> 00:01:07,000
+First: my girlfriend mentioned her friend's dog once. Weeks later, still there. Why does THAT stick?
+
+11
+00:01:07,000 --> 00:01:14,000
+Second: how does a memory show up exactly when I need it, when I never searched for it?
+
+12
+00:01:14,000 --> 00:01:20,000
+Third: how is it all wired together—so one memory drags the next one up with it?
+
+13
+00:01:20,000 --> 00:01:26,000
+Fifty-four papers later: predictive coding gates surprise (the Observer).
+
+14
+00:01:26,000 --> 00:01:32,000
+Tiered storage links synapses (the Scribe). Spreading activation recalls (the Retriever).
+
+15
+00:01:32,000 --> 00:01:38,000
+Simulate the brain's solutions. Never simulate its constraints.
+
+16
+00:01:38,000 --> 00:01:43,000
+All theory. How do you WATCH a memory form? Build a brain you can look at.
+
+17
+00:01:43,000 --> 00:01:50,000
+Tell it a rule once. Watch the right side file it: checks if new, links to the graph.
+
+18
+00:01:50,000 --> 00:01:57,000
+Truth changes: 'I'm vegetarian.' No duplicates. It supersedes non-destructively.
+
+19
+00:01:57,000 --> 00:02:05,000
+New session, zero context. Give it a command: activation spreads, pulling rules.
+
+20
+00:02:05,000 --> 00:02:08,000
+Take the memory away...
+
+21
+00:02:09,500 --> 00:02:13,000
+...and it's a goldfish: 'I don't know.' Flip it ON: the genius is back.
+
+22
+00:02:13,000 --> 00:02:17,000
+Then it sleeps: replays the day's chaos and compresses moments into lessons.
+
+23
+00:02:17,000 --> 00:02:24,000
+How do you test this? I built an automated harness: a second agent to interrogate the first.
+
+24
+00:02:24,000 --> 00:02:30,000
+When an agent gets it wrong, you don't guess: open the graph and trace the exact path.
+
+25
+00:02:30,000 --> 00:02:36,000
+Built on Meta: powered by Muse Spark via Meta Model API, with local Llama fallback.
+
+26
+00:02:36,000 --> 00:02:40,000
+IDEs that know the stack. Personal assistants. Robot brains that learn.
+
+27
+00:02:40,000 --> 00:02:45,000
+And yes... everything I was mad at my girlfriend for... and her birthday.
+
+28
+00:02:45,000 --> 00:02:58,000
+Stop treating AI like an amnesiac. Give it a mind that persists. Tottie. Built on Meta.

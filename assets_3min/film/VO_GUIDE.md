@@ -1,58 +1,40 @@
-# VO RECORD GUIDE — read this, nothing else needed
+# VO Guide (V2 timecodes)
 
-> The video is finished. All visuals, motion, SFX, captions are in the timeline.
-> You record ONE voiceover track, straight through, matching these timecodes.
-> Import it to Audio 2, nudge to sync, export. Done.
->
-> Setup: quiet room, phone mic 15cm away is fine. Record 3 takes, keep the angriest
-> take for Beat 1 and the softest for the close. Pace: the timecodes already fit a
-> natural read — if you run long on a line, the video holds (kinetic text waits).
+Record in one session if you can. Mark takes by timecode.
 
-## How to sync
-
-1. Open `tottie_3min.fcproj`, sequence `TOTTIE_3MIN`.
-2. Import your VO wav/mp3, drop on **Audio 2** starting at 0:00.
-3. Line 1 starts at 0:03. Align your first word to the first typing burst.
-4. The 3 rose markers (0:44, 1:39, 2:49) are SILENCE — leave those gaps empty.
-5. Export per `export_preset.json`.
-
-## The script (timecode-locked)
-
-| TC | Say (verbatim) | Delivery |
+| TC | SAY | Delivery |
 |---|---|---|
-| 0:03–0:12 | "Folder B, dammit— how MANY times do I have to tell you, man?! It's 34 employees. I HAVE 34 EMPLOYEES, MAN! Why am I always reminding youuuu—" | FURIOUS. Real rage. 3 bursts, faster each time. |
+| 0:03–0:12 | "Folder B, dammit— how MANY times do I have to tell you, man?! It's 34 employees. I HAVE 34 EMPLOYEES, MAN! Why am I always reminding youuuu—" | FURIOUS. 3 bursts, faster each time. |
+| 0:12–0:15 | *(nothing — record scratch, then Jordan: "STOP IT. GET SOME HELP.")* | Let his line breathe. DIAGNOSIS card answers on screen. |
 | 0:15–0:20 | "Have you, or anyone you know, rage-quit a coding session? Flipped off… and then back on… an agent? Join the club, buddy." | Calm. Too calm. Smile on "buddy." |
-| 0:20–0:28 | "Our agents have a memory problem. We talk about it today, and two weeks from now it's like… you don't remember what I said?" | Conversational, building. |
-| 0:28–0:32 | "So this is how my girlfriend feels." | Deadpan. Let the ding land. |
-| 0:32–0:40 | "Every agent wakes up stateless. No history. No yesterday. All that intelligence — and it fails the baseline of a mind: continuity." | Slow, serious. Documentary voice. |
-| 0:40–0:45 | "But people tell me the fix is simple…" | Trailing off. Into the mic. Then SILENCE. |
-| 0:45–0:54 | "Just get a six-million-billion context window, bro. Relax — my Meta money hasn't come in yet. And a bigger window isn't memory, it's an expensive scratchpad. Long context isn't memory. It's a tax." | Mocking, then sharp on "tax." |
-| 0:54–0:58 | "Or better — a META job? Pro. Put me in the metaverse, let me cook." | Grinning. Charming. |
-| 0:58–1:05 | "How do we solve context? I'm not. I don't get paid to do that. Put the fries in the bag, bro — that's for the big labs. I asked a smaller, dumber, more dangerous question: what CAN I do?" | Fries line = throwaway. Last line = quiet, dangerous. |
-| 1:05–1:10 | "Question one: WHAT makes me remember? When my girlfriend tells me about her friend's dog's collar collar — where does my brain say 'remember this'?" | Fast, punchy. Keep the stutter. |
-| 1:10–1:15 | "Question two: WHEN does it hand it back? The ice cream, the fridge, the cousin — how does it know NOW is the time?" | Same energy. |
-| 1:15–1:20 | "Question three: WHY a story, not a row? Not a row. A scene." | Slow down on the last four words. |
-| 1:20–1:26 | "So I drew it. Something to watch. Something to save. And something to hand it back. RAG doesn't go away — it gets a job inside a larger machine." | Builder energy. Proud. |
-| 1:26–1:34 | "The Observer asks: worth remembering? The Scribe structures, tiers, and links it — synapses. The Retriever spreads activation and hands back a Context Card stamped with why." | Flowing, one breath per sentence. |
-| 1:34–1:40 | "Simulate the brain's solutions. Never simulate its constraints. We didn't copy the forgetting. We copied the finding." | THE line. Slow. Let silence sit after. |
-| 1:40–1:50 | "Theory is cheap. Watch it think. It just… knows." | Quiet. Let the demo breathe. |
-| 1:50–2:00 | "Truth changes — it rewrites, non-destructively. Noise arrives — it throws it away." | Narrating, light. |
-| 2:00–2:10 | "A command, not a question — and it assembles everything a competent person needs." | Same. |
-| 2:10–2:22 | "And the proof: take the memory away, and the genius becomes a goldfish." | Pause before "goldfish." Smile. |
-| 2:22–2:25 | "Then it sleeps — and generalizes." | Warm. |
-| 2:25–2:33 | "Nothing works the first time. So I built a second agent to fight the first one. Two philosophers, arguing about thought — where one is literally mimicking thought." | Honest. Tired smile. No music under you. |
-| 2:33–2:40 | "We don't ask you to trust it. We measure it. 22 scenarios, memory on versus off. 22 of 22. Zero leak. Four for four." | Confident. Staccato on the numbers. |
-| 2:40–2:46 | "Built on Meta. Observer, Scribe, brain — Muse Spark via the Meta Model API, local open-weights fallback. Build for Your World: one MCP server, any agent mounts it." | Say "Build for Your World" verbatim, clearly. |
-| 2:46–2:50 | "The dev whose IDE knows the stack. The assistant that knows you. The company brain that remembers Server C." | Aspirational. Rising. |
-| 2:50–2:56 | "So I used it to remember everything I was mad at my girlfriend for… and the one thing that actually matters: her birthday." | Soft. Pause before "and." This is the last joke — land it, get out. |
-| 2:56–3:00 | *(silence)* | Let the end card ring. |
+| 0:20–0:26 | "Our agents have a memory problem. We talk about it today, and two weeks from now it's like… you don't remember what I said?" | Exasperated, faster (6s now). |
+| 0:26–0:29 | "So this is how my girlfriend feels." | Deadpan. Let ding #1 land. |
+| 0:29–0:37 | "Every agent wakes up stateless. No history. No yesterday. All that intelligence — and it fails the baseline of a mind: continuity." | Slow, heavy. |
+| 0:37–0:42 | "But people tell me the fix is simple…" | Trailing off. Silence after. |
+| 0:42–0:49 | "Just get a 6-million-billion context window, bro. Relax — my Meta money hasn't come in yet. Bigger window isn't memory, it's an expensive scratchpad. It's a TAX." | Mocking → flat on "TAX." Stonks plays under you. |
+| 0:49–0:53 | "— that's big-lab work. I mean, I would, but —" | Open hands, self-aware shrug. |
+| 0:53–1:00 | "— my Meta money hasn't landed yet. So until then? I'll just put the fries in the bag. So what CAN I do?" | Fries = dismissive comedy → lean in, serious builder energy on "what CAN I do." |
+| 1:00–1:07 | "I started with three questions. First: my girlfriend mentioned her friend's dog once — weeks later, still there. Why does THAT stick?" | Direct, curious. Ding #2 lands on "girlfriend". |
+| 1:07–1:14 | "Second: how does a memory show up exactly when I need it, when I never went looking for it?" | Storyteller energy. |
+| 1:14–1:20 | "Third: how is it all wired together — so one memory drags the next one up with it?" | Slow, intentional. |
+| 1:20–1:32 | "Fifty-four papers later, here’s how the mind actually does it: In the brain, predictive coding throws out what's expected, and salience tags what matters. So we built the Observer: a surprise gate that suppresses routine chatter and only keeps what's new. In the brain, memory is tiered into moments, facts, and lessons, wired by synapses. So we built the Scribe: it sorts into tiers and wires the graph links. And when you recall, a cue triggers spreading activation across the network. So we built the Retriever: it types the cue, spreads activation along the links, and hands back a 400-token Card stamped with WHY. RAG didn't die — it finally got a real job." | Builder authority. Confident, crisp. Lanes light on screen as named. |
+| 1:32–1:38 | "Simulate the brain's solutions. Never simulate its constraints. The brain forgets because of biological limits. We don't have those. We didn't copy the forgetting. We copied the finding." | Quiet, authoritative. Full silence under it. |
+| 1:38–1:43 | "All theory. Backend servers humming in the dark. How do you WATCH a memory form? …You build a brain you can look at." | Grin into camera → cut to screen recording. |
+| 1:43–1:50 | "Tell it a rule once. Watch the right side file it: checks if it's new, links it to the graph. Done." | Conversational, direct over your footage. |
+| 1:50–1:57 | "Truth changes mid-project: 'I'm vegetarian now.' It doesn't duplicate or hallucinate. It supersedes the old fact, non-destructively." | Punchy. |
+| 1:57–2:05 | "New session, zero context. Give it a command: 'Implement feature A.' It doesn't need to ask your stack. Activation spreads, pulling the decisions, conventions, and rules." | Confident, pointing to Context Card. |
+| 2:05–2:08 | "Take the memory away…" | Drops to whisper. |
+| 2:08–2:09.5 | *(Goldfish meme flash — 1.5s)* | *(beat drop)* |
+| 2:09.5–2:13 | "…and it's a goldfish: 'I don't know.' Flip it back ON… and the genius is back." | Back up, triumphant. |
+| 2:13–2:17 | "Then it sleeps. Replays the day's chaos and compresses messy moments into clean lessons." | Warm, watching nodes merge. |
+| 2:17–2:24 | "Now — how do you actually test if an agent's memory works? You don't just chat with it and hope for the best. I built an automated test harness: a second agent whose only job is to interrogate the first one, try to trick it, and catch contradictions." | Serious engineer, true-crime investigative energy. Split-terminal scrolling. |
+| 2:24–2:30 | "And because the whole memory is an explicit graph, when an agent gets something wrong, you don't guess — you open the graph and trace the exact path to see where the connection failed." | Trace Debugger visual. Clear, explainable AI proof. |
+| 2:30–2:36 | "Built on Meta: powered by Muse Spark via the Meta Model API, with local open-weights fallback. Shipped as one universal MCP server any agent or IDE can mount." | Proud, verbatim Meta stack. |
+| 2:36–2:45 | "The dev whose IDE knows their stack. Personal assistants that actually remember you. Robot brains that accumulate skill. And yes… I used it to remember everything I was mad at my girlfriend for… [beat] …and the one thing that matters: her birthday." | Rapid-fire list → soft smile into camera. GF dings 4+5 with fireworks. |
+| 2:45–3:00 | "Stop treating AI like an amnesiac. Give it a mind that persists. Tottie. Built on Meta. Build for your world." | Clean, triumphant close over swelling music bed. |
 
-## What remains (everything else is in the timeline)
+## What remains
 
-1. **This VO.** Only your voice works. (That's this file.) Drop it on Audio 2.
-2. **Music bed.** Pick one track (cinematic-rising → lo-fi → swell per the plan's music
-   column) and lay it on Audio 3 under everything. Keep the 3 rose-marker silences empty.
-3. **Nothing else.** The 1:40–2:25 demo is REAL recorded footage of the live system
-   (raw takes in `assets_3min/demo_raw/b*.webm`, cut to slot lengths in `seg/S19–S23`).
-   Open `tottie_3min.fcproj`, press play: video + captions + SFX all run. Add VO + music,
-   export per `export_preset.json`, upload with `thumbnail.jpg`.
+1. Demo footage per `DEMO_RECORD_SCRIPT.md` (beats above marked "your footage").
+2. This VO.
+3. Music bed (brief in `PRESENTATION_3MIN.md` global spec).
