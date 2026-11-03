@@ -1,7 +1,10 @@
 """GET /events — SSE stream of memory_events with resume.
 
 Auth rides a ?token= query param: EventSource cannot set headers (spec).
-Live tail is a 500ms poll — honest and plenty at demo scale.
+Live tail is a 150ms poll: the brain drops nodes in the instant memories
+land, and a 500ms floor reads as lag on a realtime canvas. 7 queries/s
+per idle viewer is nothing at demo scale; Postgres NOTIFY would be the
+production path.
 Row shape follows schema.sql: utterance + JSONB verdict/action + latency/tokens.
 """
 import asyncio
@@ -67,6 +70,6 @@ async def get_events(
                         default=str,
                     ),
                 )
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.15)
 
     return EventSourceResponse(gen(), ping=15)

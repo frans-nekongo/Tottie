@@ -49,17 +49,25 @@ export default function Home() {
     const q = new URLSearchParams({ owner: watchOwner });
     if (watchSession) q.set("session_id", watchSession);
     const src = new EventSource(`/api/events?${q.toString()}`);
-    src.onmessage = (m) => {
+    // Core emits NAMED `event: memory` frames: onmessage alone NEVER fires
+    // for those (EventSource routes named events only to addEventListener).
+    const onEvent = (m: MessageEvent) => {
       try {
         const e = JSON.parse(m.data) as StreamEvent;
-        if (e.action && (e.action.op === "NEW" || e.action.op === "SUPERSEDE")) {
-          setGraphTick((n) => n + 1);
-          flash("remembering");
-        }
+        const a = e.action as Record<string, unknown> | null;
+        const op = a?.op as string | undefined;
+        if (!op) return; // ping frames carry no op
+        // Every mutation refreshes the brain — including sweeps, whose
+        // kills must vanish the instant they land, not on the next NEW.
+        // Birth animation is clocked by GraphView at first paint.
+        setGraphTick((n) => n + 1);
+        if (op === "NEW" || op === "SUPERSEDE") flash("remembering");
       } catch {
-        /* ping frames carry no data */
+        /* malformed frames never break the stream */
       }
     };
+    src.onmessage = onEvent; // unnamed frames (defensive)
+    src.addEventListener("memory", (ev) => onEvent(ev as MessageEvent));
     return () => src.close();
   }, [session, watchOwner, watchSession]);
 

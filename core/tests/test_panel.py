@@ -60,6 +60,27 @@ async def test_graph_shape_and_tier_filter(client, db, emb):
 
 
 @pytest.mark.asyncio
+async def test_graph_includes_fresh_low_salience(client, db, emb, monkeypatch):
+    """The brain shows births, not just celebrities: a newest row with
+    bottom salience must appear even when the salient cap is full."""
+    import app.routes.graph as graph_mod
+
+    monkeypatch.setattr(graph_mod, "GRAPH_SALIENT", 2)
+    monkeypatch.setattr(graph_mod, "GRAPH_FRESH", 1)
+    ids = await seed(db, emb, "r4fresh", [
+        {"name": "old1", "content": "Old salient fact one.", "salience": 0.9},
+        {"name": "old2", "content": "Old salient fact two.", "salience": 0.9},
+        {"name": "old3", "content": "Old salient fact three.", "salience": 0.9},
+        {"name": "new", "content": "Fresh fact just landed.", "salience": 0.1},
+    ])
+    r = await client.get("/graph?owner=r4fresh", headers=AUTH)
+    assert r.status_code == 200
+    got = {n["id"] for n in r.json()["nodes"]}
+    assert ids["new"] in got, got
+    assert len(got) == 3
+
+
+@pytest.mark.asyncio
 async def test_memories_filters_and_lookup(client, db, emb):
     ids = await seed(db, emb, OWNER, SEEDS)
     r = await client.get(f"/memories?owner={OWNER}", headers=AUTH)

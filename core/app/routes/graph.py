@@ -8,6 +8,12 @@ router = APIRouter()
 
 TIERS = {"identity", "episodic", "knowledge", "procedural"}
 GRAPH_CAP = 300
+# The brain must show births, not just celebrities: salience-only top-N
+# buries fresh low-salience rows past the cap (owner_local holds ~990).
+# 250 salient + 50 newest keeps the cap while guaranteeing a new memory
+# appears the instant it lands.
+GRAPH_SALIENT = 250
+GRAPH_FRESH = 50
 
 
 @router.get("/graph")
@@ -27,21 +33,28 @@ async def get_graph(
             )
     db = request.app.state.db
     who = owner or settings.owner
-    if want is None:
-        rows = await db.fetch(
-            "SELECT id, content, tier, tags, salience, created_at, "
-            "quarantined, ranked_out FROM memories WHERE owner = %s "
-            "AND valid_to IS NULL ORDER BY salience DESC LIMIT %s",
-            (who, GRAPH_CAP),
-        )
-    else:
-        rows = await db.fetch(
-            "SELECT id, content, tier, tags, salience, created_at, "
-            "quarantined, ranked_out FROM memories WHERE owner = %s "
-            "AND valid_to IS NULL AND tier = ANY(%s) "
-            "ORDER BY salience DESC LIMIT %s",
-            (who, want, GRAPH_CAP),
-        )
+    tier_clause = "" if want is None else "AND tier = ANY(%s)"
+    tier_params: tuple = () if want is None else (want,)
+    cols = (
+        "SELECT id, content, tier, tags, salience, created_at, "
+        "quarantined, ranked_out FROM memories WHERE owner = %s "
+        "AND valid_to IS NULL " + tier_clause
+    )
+    salient = await db.fetch(
+        cols + " ORDER BY salience DESC LIMIT %s",
+        (who, *tier_params, GRAPH_SALIENT),
+    )
+    fresh = await db.fetch(
+        cols + " ORDER BY created_at DESC LIMIT %s",
+        (who, *tier_params, GRAPH_FRESH),
+    )
+    seen: set[str] = set()
+    rows = []
+    for r in list(salient) + list(fresh):
+        rid = str(r["id"])
+        if rid not in seen:
+            seen.add(rid)
+            rows.append(r)
     ids = [str(r["id"]) for r in rows]
     links = []
     if ids:
