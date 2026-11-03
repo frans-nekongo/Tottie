@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """tottie CLI: the agent's hands. Stdlib only.
 
-  ./venv/bin/python scripts/tottie.py brief --owner frans --session s1 [--text "..."] [--since 0]
+  ./venv/bin/python scripts/tottie.py brief --owner frans --session s1 --agent dev1 [--text "..."] [--since 0]
   ./venv/bin/python scripts/tottie.py remember --owner frans --session s1 --turn 0 [--trust tool] "text to keep"
-  ./venv/bin/python scripts/tottie.py recall --owner frans --session s1 --text "question?" [--k 8]
+  ./venv/bin/python scripts/tottie.py recall --owner frans --session s1 --agent dev1 --text "question?" [--k 8]
   ./venv/bin/python scripts/tottie.py sleep --owner frans --session s1
   ./venv/bin/python scripts/tottie.py run --owner frans --session s2 "task needing memory"
 
@@ -134,6 +134,8 @@ def main():
     b = sub.add_parser("brief", help="ambient surface for one agent turn")
     b.add_argument("--owner", default="owner_local")
     b.add_argument("--session", required=True)
+    b.add_argument("--agent", required=True,
+                   help="paired agent id (reads serve paired agents only)")
     b.add_argument("--text", default=None)
     b.add_argument("--since", type=int, default=0)
     r = sub.add_parser("remember", help="hand the Scribe a turn")
@@ -146,6 +148,8 @@ def main():
     q = sub.add_parser("recall", help="cue-typed recall + Context Card")
     q.add_argument("--owner", default="owner_local")
     q.add_argument("--session", required=True)
+    q.add_argument("--agent", required=True,
+                   help="paired agent id (reads serve paired agents only)")
     q.add_argument("--text", required=True)
     q.add_argument("--k", type=int, default=None)
     s = sub.add_parser("sleep", help="run consolidation now")
@@ -158,8 +162,8 @@ def main():
     rn.add_argument("--session", required=True)
     rn.add_argument("--k", type=int, default=8)
     rn.add_argument("--brief-lines", type=int, default=25)
-    rn.add_argument("--agent", default=None,
-                    help="inject only if this agent id is paired")
+    rn.add_argument("--agent", required=True,
+                    help="paired agent id (injection serves paired only)")
     rn.add_argument("task")
     ag = sub.add_parser("agents", help="list registered agents")
     ag.add_argument("--owner", default="owner_local")
@@ -182,6 +186,7 @@ def main():
     if args.cmd == "brief":
         code, out = _req("POST", "/briefing", {
             "owner": args.owner, "session_id": args.session,
+            "agent_id": args.agent,
             "text": args.text, "since_event_id": args.since,
         })
         if code != 200:
@@ -200,7 +205,7 @@ def main():
         print(f"queued {out['event_id']} ({out['mode']})")
     elif args.cmd == "recall":
         body = {"query": args.text, "session_id": args.session,
-                "owner": args.owner}
+                "owner": args.owner, "agent_id": args.agent}
         if args.k:
             body["k"] = args.k
         code, out = _req("POST", "/recall", body)
@@ -241,20 +246,20 @@ def main():
         print(f"registered {args.id} "
               f"(paired={out.get('connected')})")
     elif args.cmd == "run":
-        if args.agent:
-            code, out = _req("GET", f"/agents?owner={args.owner}")
-            if code != 200:
-                _fail(f"/agents -> {code} {out}")
-            match = [a for a in out.get("agents", [])
-                     if a["id"] == args.agent]
-            if not match:
-                _fail(f"unknown agent '{args.agent}' "
-                      f"(register it first)")
-            if not match[0]["connected"]:
-                _fail(f"agent '{args.agent}' is not paired "
-                      f"(pair it first: tottie pair {args.agent})")
+        code, out = _req("GET", f"/agents?owner={args.owner}")
+        if code != 200:
+            _fail(f"/agents -> {code} {out}")
+        match = [a for a in out.get("agents", [])
+                 if a["id"] == args.agent]
+        if not match:
+            _fail(f"unknown agent '{args.agent}' "
+                  f"(register it first)")
+        if not match[0]["connected"]:
+            _fail(f"agent '{args.agent}' is not paired "
+                  f"(pair it first: tottie pair {args.agent})")
         code, bout = _req("POST", "/briefing", {
             "owner": args.owner, "session_id": args.session,
+            "agent_id": args.agent,
         })
         if code != 200:
             _fail(f"/briefing -> {code} {bout}")
@@ -262,7 +267,7 @@ def main():
         for q in _split_queries(args.task):
             code, rout = _req("POST", "/recall", {
                 "query": q, "session_id": args.session,
-                "owner": args.owner, "k": args.k,
+                "owner": args.owner, "agent_id": args.agent, "k": args.k,
             })
             if code != 200:
                 _fail(f"/recall -> {code} {rout}")

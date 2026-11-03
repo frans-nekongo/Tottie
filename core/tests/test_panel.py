@@ -11,7 +11,7 @@ import pytest
 from app.config import Settings
 from app.embeddings import Embedder
 from tests.conftest import TEST_TOKEN
-from tests.test_recall import seed  # noqa: F401 (shared seed helper)
+from tests.test_recall import pair_owner, seed  # noqa: F401 (shared helpers)
 
 AUTH = {"Authorization": f"Bearer {TEST_TOKEN}"}
 OWNER = "r4"
@@ -102,7 +102,7 @@ async def test_chat_ablation_on_vs_off(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
     on = await client.post("/chat", json={
         "text": "What is the treehouse password?", "session_id": "abl",
-        "owner": OWNER, "memory": True,
+        "owner": OWNER, "memory": True, "agent_id": "ag-seed",
     }, headers=AUTH)
     assert on.status_code == 200
     body = on.json()
@@ -163,9 +163,10 @@ async def test_chat_inline_mode_curates_synchronously(
         transport = ASGITransport(app=app)
         async with AsyncClient(
                 transport=transport, base_url="http://test") as c:
+            await pair_owner(db, ow)  # chat-curated: pair explicitly
             r = await c.post("/chat", json={
                 "text": "My dog is called Rex.", "session_id": "inline1",
-                "owner": ow, "memory": True,
+                "owner": ow, "memory": True, "agent_id": "ag-seed",
             }, headers=AUTH)
             assert r.status_code == 200, r.text
             assert r.json()["event_id"] is not None

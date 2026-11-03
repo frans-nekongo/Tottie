@@ -54,6 +54,22 @@ def api(path, payload):
         return json.loads(r.read().decode())
 
 
+_PAIRED: set[str] = set()
+
+
+def ensure_paired(owner):
+    """Pair this owner's eval agent (the runner IS the owner accepting
+    their own harness). One agent id per owner: pairing is per owner."""
+    if owner in _PAIRED:
+        return f"eval-agent-{owner}"
+    aid = f"eval-agent-{owner}"
+    api("/agents/register", {"id": aid, "label": "memory eval",
+                             "owner": owner, "transport": "cli"})
+    api("/agents/pair", {"id": aid, "owner": owner})
+    _PAIRED.add(owner)
+    return aid
+
+
 def _seed_eval_owner():
     """Seed recall-probe rows under an isolated owner (direct insert:
     recall is what's asserted, not the write path). Cleaned first so
@@ -132,7 +148,8 @@ def main():
     # stale Mon-Sun clause with live daily-streak rules, need row
     # SPLITTING — a known gap, tracked, not asserted here.)
     d = api("/recall", {"query": "which week boundary does the tracker use",
-                        "session_id": "eval", "owner": "evalseed"})
+                        "session_id": "eval", "owner": "evalseed",
+                        "agent_id": ensure_paired("evalseed")})
     top = (d["hits"][0]["summary"] if d["hits"] else "")
     blob = " ".join(h["summary"] for h in d["hits"])
     check("week_current",
@@ -140,17 +157,20 @@ def main():
           f"top={top[:50]!r}")
     # 2. G5 research comes back on keywords
     d = api("/recall", {"query": "familiarity floor NLI slot indexing fix options",
-                        "session_id": "eval", "owner": "evalseed"})
+                        "session_id": "eval", "owner": "evalseed",
+                        "agent_id": ensure_paired("evalseed")})
     blob = " ".join(h["summary"] for h in d["hits"])
     check("g5_recall", len(d["hits"]) >= 3 and ("0.55" in blob or "slot" in blob),
           f"hits={len(d['hits'])}")
     # 3. nonsense abstains
     d = api("/recall", {"query": "flibbertigibbet quantum banana",
-                        "session_id": "eval", "owner": "owner_local"})
+                        "session_id": "eval", "owner": "owner_local",
+                        "agent_id": ensure_paired("owner_local")})
     check("nonsense_abstain", d["abstain"] is True, f"abstain={d['abstain']}")
     # 4. entity leg fires
     d = api("/recall", {"query": "Anna birthday dinner",
-                        "session_id": "eval", "owner": "evalseed"})
+                        "session_id": "eval", "owner": "evalseed",
+                        "agent_id": ensure_paired("evalseed")})
     check("entity_leg", any("entity #" in h["why"] for h in d["hits"]),
           str([h["why"] for h in d["hits"][:3]]))
     # 5-6, 8-9. DB checks (+ sweeps for 8-9).

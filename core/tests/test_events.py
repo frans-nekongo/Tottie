@@ -210,3 +210,20 @@ async def test_events_owner_scoped(booted_app, db):
         assert frame["data"]["utterance"] == "mine"
         assert await s.next_frame(timeout=2) is None, \
             "another owner's utterance leaked into the stream"
+
+
+@pytest.mark.asyncio
+async def test_fresh_connect_replays_only_recent(booted_app, db):
+    """Fresh connects (no cursor) replay the newest RECENT_N rows, not the
+    owner's whole history — the 600-notification flood on every page load."""
+    for i in range(8):
+        await _seed(db, "cap", utterance=f"old-{i}")
+    async with Stream(booted_app, "session_id=cap&token=test-token") as s:
+        assert s.status == 200
+        got = []
+        for _ in range(5):
+            frame = await s.next_frame()
+            assert frame is not None, "recent row never streamed"
+            got.append(frame["data"]["utterance"])
+        assert got == [f"old-{i}" for i in range(3, 8)], got
+        assert await s.next_frame(timeout=2) is None, "replayed past recent"

@@ -119,7 +119,17 @@ async def test_write_recall_roundtrip(db):
             "object": "cheerful",
         })
         assert json.loads(_text(out))["action"].startswith("NEW")
-        out = await mcp.call_tool("memory.recall", {"query": "quokka mood", "k": 3})
+        # Write side is open; the read side refuses until paired.
+        out = await mcp.call_tool("memory.recall", {"query": "quokka mood",
+                                                   "k": 3})
+        assert json.loads(_text(out))["error"] == "not_paired"
+        await mcp.call_tool("memory.register", {"agent_id": "mcp-ag2",
+                                                "label": "roundtrip"})
+        await db.execute("UPDATE agents SET connected = true "
+                         "WHERE id = 'mcp-ag2'")
+        out = await mcp.call_tool("memory.recall", {"query": "quokka mood",
+                                                   "k": 3,
+                                                   "agent_id": "mcp-ag2"})
         body = json.loads(_text(out))
         assert body["abstain"] is False
         assert "quokka" in body["hits"][0]["summary"].lower()
@@ -133,8 +143,13 @@ async def test_brief_carries_card_new_items_and_cursor(db):
             "tags": ["mcp"], "subject": "wombat", "predicate": "mood",
             "object": "sleepy",
         })
+        await mcp.call_tool("memory.register", {"agent_id": "mcp-ag3",
+                                                "label": "briefer"})
+        await db.execute("UPDATE agents SET connected = true "
+                         "WHERE id = 'mcp-ag3'")
         out = await mcp.call_tool("memory.brief", {
-            "text": "wombat", "session_id": "mcpbrief", "since_event_id": 0})
+            "text": "wombat", "session_id": "mcpbrief", "since_event_id": 0,
+            "agent_id": "mcp-ag3"})
         body = json.loads(_text(out))
         assert "wombat" in body["briefing"].lower()
         assert body["abstain"] is False
@@ -143,9 +158,10 @@ async def test_brief_carries_card_new_items_and_cursor(db):
                    for i in body["new_items"])
         out = await mcp.call_tool("memory.brief", {
             "text": "wombat", "session_id": "mcpbrief",
-            "since_event_id": body["event_id"]})
+            "since_event_id": body["event_id"], "agent_id": "mcp-ag3"})
         assert json.loads(_text(out))["new_items"] == []
-        out = await mcp.call_tool("memory.brief", {"session_id": "mcpbrief"})
+        out = await mcp.call_tool("memory.brief", {"session_id": "mcpbrief",
+                                                   "agent_id": "mcp-ag3"})
         ambient = json.loads(_text(out))
         assert "new since last briefing" in ambient["briefing"]
         assert "wombat" in ambient["briefing"].lower()
@@ -169,12 +185,18 @@ async def test_probe_identity_intend(db):
             "tags": ["user"], "subject": "user", "predicate": "name",
             "object": "Quinn",
         })
-        out = await mcp.call_tool("memory.identity", {})
+        await mcp.call_tool("memory.register", {"agent_id": "mcp-ag4",
+                                                "label": "prober"})
+        await db.execute("UPDATE agents SET connected = true "
+                         "WHERE id = 'mcp-ag4'")
+        out = await mcp.call_tool("memory.identity", {"agent_id": "mcp-ag4"})
         assert "Quinn" in json.loads(_text(out))["identity"][0]["content"]
-        out = await mcp.call_tool("memory.probe", {"tag": "user"})
+        out = await mcp.call_tool("memory.probe", {"tag": "user",
+                                                   "agent_id": "mcp-ag4"})
         assert "Quinn" in json.loads(_text(out))["memories"][0]["content"]
         mid = json.loads(_text(out))["memories"][0]["id"]
-        out = await mcp.call_tool("memory.probe", {"id": mid})
+        out = await mcp.call_tool("memory.probe", {"id": mid,
+                                                   "agent_id": "mcp-ag4"})
         assert "Quinn" in json.loads(_text(out))["content"]
         out = await mcp.call_tool("memory.intend", {
             "content": "stretch", "event_cue": "stand up"})

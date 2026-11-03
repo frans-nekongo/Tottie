@@ -5,6 +5,9 @@ Live tail is a 150ms poll: the brain drops nodes in the instant memories
 land, and a 500ms floor reads as lag on a realtime canvas. 7 queries/s
 per idle viewer is nothing at demo scale; Postgres NOTIFY would be the
 production path.
+Fresh connects (no resume cursor) replay only the newest RECENT_N rows:
+replaying the owner's whole history floods every page load with hundreds
+of stale notifications. Explicit last_event_id still resumes exactly.
 Row shape follows schema.sql: utterance + JSONB verdict/action + latency/tokens.
 """
 import asyncio
@@ -15,6 +18,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
 router = APIRouter()
+
+RECENT_N = 5
 
 
 @router.get("/events")
@@ -37,6 +42,14 @@ async def get_events(
     if session_id:
         filt = "owner = %s AND session_id = %s AND id > %s"
         params = (who, session_id, last_event_id)
+    if last_event_id == 0:
+        # Fresh connect: recent context only, then the live tail.
+        scope = "owner = %s" + (" AND session_id = %s" if session_id else "")
+        start = await db.fetchval(
+            f"SELECT max(id) FROM memory_events WHERE {scope}",
+            params[:-1],
+        )
+        params = params[:-1] + (max(0, (start or 0) - RECENT_N),)
 
     async def gen():
         last = params[-1]

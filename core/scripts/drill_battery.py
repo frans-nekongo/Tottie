@@ -37,6 +37,20 @@ CORE = os.environ.get("TOTTIE_CORE_URL", "http://127.0.0.1:8765")
 TOKEN = os.environ.get("TOTTIE_API_TOKEN", "changeme-local-token")
 OWNER = "battery"
 RESULTS: list[tuple[str, bool, str]] = []
+_PAIRED: set[str] = set()
+
+
+def ensure_paired(owner):
+    """Pair this owner's drill agent (the runner IS the owner accepting
+    their own harness). One agent id per owner: pairing is per owner."""
+    if owner in _PAIRED:
+        return f"drill-agent-{owner}"
+    aid = f"drill-agent-{owner}"
+    api("/agents/register", {"id": aid, "label": "drill battery",
+                             "owner": owner, "transport": "cli"})
+    api("/agents/pair", {"id": aid, "owner": owner})
+    _PAIRED.add(owner)
+    return aid
 
 
 def api(path, payload, timeout=180):
@@ -91,13 +105,15 @@ def wait_for(token, owner=None, timeout=240):
 
 
 def recall(query, k=8, session="battery-probe", owner=None):
+    ow = owner or OWNER
     return api("/recall", {"query": query, "session_id": session, "k": k,
-                           "owner": owner or OWNER})
+                           "owner": ow, "agent_id": ensure_paired(ow)})
 
 
 def brief(text, session="battery-brief", owner=None):
+    ow = owner or OWNER
     d = api("/briefing", {"text": text, "session_id": session,
-                          "owner": owner or OWNER})
+                          "owner": ow, "agent_id": ensure_paired(ow)})
     return d.get("briefing", "")
 
 

@@ -11,6 +11,12 @@ export const runtime = "nodejs";
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   searchParams.set("token", process.env.TOTTIE_API_TOKEN ?? "");
+  // Gapless resume: EventSource auto-sends Last-Event-ID on reconnect;
+  // forward it as the query cursor or every reconnect replays the backlog.
+  const resume = req.headers.get("last-event-id");
+  if (resume && !searchParams.has("last_event_id")) {
+    searchParams.set("last_event_id", resume);
+  }
   const upstream = await fetch(`${coreUrl("/events")}?${searchParams.toString()}`, {
     headers: { Accept: "text/event-stream" },
     cache: "no-store",

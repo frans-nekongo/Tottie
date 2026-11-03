@@ -12,7 +12,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from ..agents import retrieve
+from ..agents import pairing, retrieve
 from ..providers.base import NoProviderAvailable, ProviderError, complete_resilient
 from ..providers.resolve import resolve_provider
 from ..queue import WorkerTurn, curate_turn
@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=128)
     owner: str | None = None
     memory: bool = True
+    agent_id: str | None = Field(default=None, max_length=128)
 
 
 @router.post("/chat")
@@ -50,11 +51,21 @@ async def post_chat(body: ChatRequest, request: Request) -> dict:
     hits: list[dict] = []
     story: str | None = None
     if body.memory:
+        if not body.agent_id:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "agent_id is required when memory=true "
+                "(paired agents only)",
+            )
         if request.app.state.embedder is None:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 {"error": "embedder unavailable", "retryable": True},
             )
+        await pairing.require_paired_http(
+            request.app.state.db, owner, body.agent_id, transport="http",
+            session_id=body.session_id,
+        )
         rec = await retrieve.recall(
             db=request.app.state.db, embedder=request.app.state.embedder,
             owner=owner, query=text, session_id=body.session_id,

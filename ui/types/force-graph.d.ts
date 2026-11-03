@@ -33,6 +33,11 @@ declare module "react-force-graph-3d" {
     enableNodeDrag?: boolean;
     onNodeClick?: (n: GraphNode) => void;
     cooldownTime?: number;
+    // d3 sim damping (runtime-verified in the lib's dist PropTypes):
+    // higher velocityDecay = more friction per tick, higher alphaDecay =
+    // faster settle. Calms the alpha=1 reheat kick on newborn adoption.
+    d3AlphaDecay?: number;
+    d3VelocityDecay?: number;
   }
   export interface Coords {
     x: number;

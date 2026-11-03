@@ -39,6 +39,17 @@ export default function Home() {
   const [syncMs, setSyncMs] = useState<number | null>(null);
   const faceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedKey = useRef(0);
+  // The brain gates the fanfare: notifications/flashes wait until the
+  // graph has adopted its first data (no births announced over a
+  // "growing the brain" placeholder). Ticks still flow pre-ready so the
+  // graph itself catches up.
+  const graphReadyRef = useRef(false);
+  const markGraphReady = useCallback(() => {
+    graphReadyRef.current = true;
+  }, []);
+  useEffect(() => {
+    graphReadyRef.current = false;
+  }, [watchOwner]);
   const onSync = useCallback((ms: number) => setSyncMs(ms), []);
 
   const flash = (s: FaceState, ms = 2200) => {
@@ -67,6 +78,7 @@ export default function Home() {
         // kills shrink out the instant they land, not on the next NEW.
         // Birth animation is clocked by GraphView at first paint.
         setGraphTick((n) => n + 1);
+        if (!graphReadyRef.current) return;
         if (op === "NEW" || op === "SUPERSEDE") {
           flash("remembering");
           const text = (e.utterance ?? "").trim().slice(0, 110);
@@ -167,6 +179,7 @@ export default function Home() {
               fresh={graphTick}
               owner={watchOwner}
               onSync={onSync}
+              onReady={markGraphReady}
             />
           )}
         </div>

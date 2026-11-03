@@ -112,11 +112,15 @@ export default function GraphView({
   fresh,
   owner,
   onSync,
+  onReady,
+  birthGapMs = 550,
 }: {
   path: string[];
   fresh: number; // bump to refetch after writes
   owner: string;
   onSync?: (ms: number) => void; // fetch round-trip per refetch
+  onReady?: () => void; // first data adopted (or fetch settled): graph ready
+  birthGapMs?: number; // stagger between sequential newborn adoptions
 }) {
   const [data, setData] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -142,21 +146,36 @@ export default function GraphView({
   const cache = useRef<GraphCache>(emptyCache());
   const loopRef = useRef(0);
   const burstIds = useRef<string[]>([]);
+  // Sequential births: fresh ids queue here and pop one per birthGapMs —
+  // each node appears and plays its drop-in before the next starts.
+  const pendingRef = useRef<string[]>([]);
+  const popTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const fgRef = useRef<ForceGraph3DHandle | null>(null);
   const reducedMotion = useRef(
     typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
   );
 
+  // Monotonic fetch generation: rapid `fresh` bumps overlap in flight,
+  // and a stale response landing last would yank the brain backwards.
+  const fetchSeq = useRef(0);
   useEffect(() => {
     const t0 = Date.now();
+    const seq = ++fetchSeq.current;
     fetch(`/api/graph?owner=${encodeURIComponent(owner)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((d) => {
+        if (seq !== fetchSeq.current) return; // superseded, drop it
         setData(d);
         onSync?.(Date.now() - t0);
       })
-      .catch((e) => setErr(`graph unavailable (${e})`));
+      .catch((e) => {
+        if (seq !== fetchSeq.current) return;
+        setErr(`graph unavailable (${e})`);
+        onReadyRef.current?.(); // settled (failed): don't gate the feed forever
+      });
   }, [fresh, owner, onSync]);
 
   // One animation frame: mutate pooled objects in place, repaint via
@@ -230,7 +249,29 @@ export default function GraphView({
     loopRef.current = requestAnimationFrame(frame);
   }, [frame]);
 
-  useEffect(() => () => cancelAnimationFrame(loopRef.current), []);
+  // Adopt the queue head: stamp its birth clock, rebuild to include it
+  // (pre-pinned at the sky dock), and let the loop play its drop-in.
+  const popOne = useCallback(() => {
+    const id = pendingRef.current.shift();
+    if (id === undefined) {
+      if (popTimer.current) {
+        clearInterval(popTimer.current);
+        popTimer.current = null;
+      }
+      return;
+    }
+    bornAt.current.set(id, Date.now());
+    setStruct((n) => n + 1);
+    kickLoop();
+  }, [kickLoop]);
+
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(loopRef.current);
+      if (popTimer.current) clearInterval(popTimer.current);
+    },
+    []
+  );
 
   // Stamp births at commit time (≈ first paint — the loop paints heat on
   // its first frame, so event-to-paint lag can't eat the animation).
@@ -246,10 +287,19 @@ export default function GraphView({
     for (const id of [...bornAt.current.keys()]) {
       if (!live.has(id)) bornAt.current.delete(id);
     }
+    // Queued ids that died before popping never appear: drop them silently.
+    if (pendingRef.current.length > 0) {
+      pendingRef.current = pendingRef.current.filter((id) => live.has(id));
+      if (pendingRef.current.length === 0 && popTimer.current) {
+        clearInterval(popTimer.current);
+        popTimer.current = null;
+      }
+    }
     if (!painted.current) {
       // First paint is not a birth: adopt silently, no flashes.
       painted.current = true;
       seenIds.current = live;
+      onReadyRef.current?.();
       return;
     }
     const fresh = data.nodes.filter((n) => !seenIds.current.has(n.id));
@@ -265,13 +315,20 @@ export default function GraphView({
       }
       return;
     }
-    const stamped: string[] = [];
-    for (const n of fresh) {
-      bornAt.current.set(n.id, t);
-      stamped.push(n.id);
-    }
+    const stamped = fresh.map((n) => n.id);
     burstIds.current = stamped;
     setBurst({ ids: stamped, at: t });
+    if (reducedMotion.current) {
+      for (const id of stamped) bornAt.current.set(id, t);
+      kickLoop(); // no-op under reduced motion: births render settled
+      return;
+    }
+    // Sequential adoption: the headliner pops now, the rest one per beat.
+    pendingRef.current.push(...stamped);
+    popOne();
+    if (!popTimer.current && pendingRef.current.length > 0) {
+      popTimer.current = setInterval(popOne, birthGapMs);
+    }
     kickLoop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
@@ -291,6 +348,11 @@ export default function GraphView({
     seenIds.current.clear();
     deadAt.current.clear();
     burstIds.current = [];
+    pendingRef.current = [];
+    if (popTimer.current) {
+      clearInterval(popTimer.current);
+      popTimer.current = null;
+    }
     painted.current = false;
     cancelAnimationFrame(loopRef.current);
     loopRef.current = 0;
@@ -395,8 +457,10 @@ export default function GraphView({
     const onPathSet = pathSet.current;
     const live = new Set(data.nodes.map((n) => n.id));
     if (!reducedMotion.current) {
+      const unpopped = new Set(pendingRef.current);
       for (const [id, pn] of cc.byId) {
         if (id.startsWith("dead:") || live.has(id) || deadAt.current.has(id)) continue;
+        if (unpopped.has(id)) continue; // never appeared: no death scene
         deadAt.current.set(id, {
           t: Date.now(),
           x: pn.x ?? 0,
@@ -428,12 +492,26 @@ export default function GraphView({
         }
         byId.set(n.id, prev);
       } else {
-        byId.set(n.id, { ...n, color: base.color, val: base.val, __base: base });
+        const obj: FGNode = {
+          ...n, color: base.color, val: base.val, __base: base,
+        };
+        if (painted.current) {
+          // True birth (never first paint): seed + pin at the sky dock
+          // BEFORE the sim's first tick. Otherwise d3 plants the newborn
+          // at the spiral center and the alpha=1 reheat kicks the brain.
+          const s = spawnOf(n.id);
+          obj.x = obj.fx = s.x;
+          obj.y = obj.fy = s.y;
+          obj.z = obj.fz = s.z;
+        }
+        byId.set(n.id, obj);
       }
     }
     const nodes: FGNode[] = [];
+    const queued = new Set(pendingRef.current);
     for (const n of data.nodes) {
       if (vis && !vis.has(n.id)) continue;
+      if (queued.has(n.id)) continue; // unpopped: appears on its own beat
       nodes.push(byId.get(n.id)!);
     }
     for (const [id, d] of deadAt.current) {
@@ -459,6 +537,7 @@ export default function GraphView({
     const seenK = new Set<string>();
     for (const l of data.links) {
       if (vis && !(vis.has(l.source) && vis.has(l.target))) continue;
+      if (queued.has(l.source) || queued.has(l.target)) continue;
       const k = `${l.source}>${l.target}:${l.relation}`;
       if (seenK.has(k)) continue;
       seenK.add(k);
@@ -551,6 +630,8 @@ export default function GraphView({
         enableNodeDrag={true}
         onNodeClick={onNodeClick}
         cooldownTime={3000}
+        d3VelocityDecay={0.6}
+        d3AlphaDecay={0.035}
       />
       {detail && (
         <div className="card absolute bottom-2 left-2 right-2 px-3 py-2 text-xs">

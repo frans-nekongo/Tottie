@@ -247,4 +247,100 @@ describe("GraphView", () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(graphCalls()).toBe(1);
   });
+
+  it("seeds and pins newborns at the sky dock before the first frame", async () => {
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a"), node("n")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    const settled = fgNodes().find((n) => n.id === "a")!;
+    expect(settled.fx).toBeUndefined(); // first paint: free, never pinned
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    await screen.findByRole("button", { name: /1 new/ });
+    const s = spawnOf("n");
+    const born = fgNodes().find((n) => n.id === "n")!;
+    // Born pinned at the dock: the sim never sees the spiral center.
+    expect({ x: born.x, y: born.y, z: born.z }).toEqual(s);
+    expect({ x: born.fx, y: born.fy, z: born.fz }).toEqual(s);
+    const props = g().__fgProps as Record<string, unknown>;
+    expect(props.d3VelocityDecay).toBe(0.6);
+    expect(props.d3AlphaDecay).toBe(0.035);
+  });
+
+  it("adopts burst newborns one per beat, headliner first", async () => {
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a"), node("n1"), node("n2"), node("n3")], links: [] },
+    ];
+    const { rerender } = render(
+      <GraphView path={[]} fresh={0} owner="o" birthGapMs={60} />
+    );
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" birthGapMs={60} />);
+    await screen.findByRole("button", { name: /3 new/ });
+    // Headliner pops sync; the tail is still queued, not shown.
+    expect(fgNodes().map((n) => n.id)).toContain("n1");
+    expect(fgNodes().map((n) => n.id)).not.toContain("n3");
+    await waitFor(() =>
+      expect(fgNodes().map((n) => n.id).sort()).toEqual(["a", "n1", "n2", "n3"])
+    );
+  });
+
+  it("drops queued ids that die before popping", async () => {
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a"), node("n1"), node("n2")], links: [] },
+      { nodes: [node("a"), node("n1")], links: [] },
+    ];
+    const { rerender, unmount } = render(
+      <GraphView path={[]} fresh={0} owner="o" birthGapMs={5000} />
+    );
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" birthGapMs={5000} />);
+    await screen.findByRole("button", { name: /2 new/ });
+    expect(fgNodes().map((n) => n.id).sort()).toEqual(["a", "n1"]);
+    // n2 vanishes upstream before its beat: pruned, never shown, no ghost.
+    rerender(<GraphView path={[]} fresh={2} owner="o" birthGapMs={5000} />);
+    await waitFor(() => expect(graphCalls()).toBe(3));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(fgNodes().map((n) => n.id).sort()).toEqual(["a", "n1"]);
+    expect(fgNodes().find((n) => n.id === "dead:n2")).toBeUndefined();
+    unmount();
+  });
+
+  it("drops a stale fetch that lands after a newer refetch", async () => {
+    let release!: (v: unknown) => void;
+    const gate = new Promise((r) => (release = r));
+    fetchMock.mockImplementation(async () => {
+      const n = fetchMock.mock.calls.filter(([u]) =>
+        String(u).startsWith("/api/graph")
+      ).length;
+      if (n === 1) {
+        return {
+          ok: true,
+          json: async () => {
+            await gate; // stale by design: resolves last
+            return { nodes: [node("a"), node("stale")], links: [] };
+          },
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ nodes: [node("a")], links: [] }),
+      };
+    });
+    const onSync = vi.fn();
+    const { rerender } = renderGraph(0, onSync);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" onSync={onSync} />);
+    await waitFor(() => expect(graphCalls()).toBe(2));
+    await waitFor(() => expect(onSync).toHaveBeenCalledTimes(1));
+    release(null); // the stale first response lands now — and dies
+    await new Promise((r) => setTimeout(r, 150));
+    expect(fgNodes().map((n) => n.id).sort()).toEqual(["a"]);
+    expect(onSync).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /show me/ })).toBeNull();
+  });
 });

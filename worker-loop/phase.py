@@ -73,8 +73,11 @@ def cmd_brief(phase: str):
     since = _cursor()
 
     async def go(s):
+        # worker-loop is a stable agent id: pair it once
+        # (tottie pair worker-loop) and every phase briefs.
         out = await s.call_tool("memory.brief", {
-            "session_id": SESSION, "since_event_id": since})
+            "session_id": SESSION, "since_event_id": since,
+            "agent_id": "worker-loop"})
         return json.loads(_text(out))
 
     body = asyncio.run(_run(go))
@@ -100,7 +103,8 @@ def cmd_remember():
 
     async def go(s):
         out = await s.call_tool("memory.remember", {
-            "text": outcome[:2000], "session_id": SESSION})
+            "text": outcome[:2000], "session_id": SESSION,
+            "agent_id": "worker-loop"})
         return json.loads(_text(out))
 
     body = asyncio.run(_run(go))
@@ -114,7 +118,7 @@ def cmd_intend():
         out = await s.call_tool("memory.intend", {
             "content": "Run the FULL pytest suite before declaring the "
                        "mission done.",
-            "time_cue": now})
+            "time_cue": now, "agent_id": "worker-loop"})
         return json.loads(_text(out))
 
     body = asyncio.run(_run(go))

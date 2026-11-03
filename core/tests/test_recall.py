@@ -21,8 +21,23 @@ def emb():
     return Embedder(Settings())
 
 
+async def pair_owner(db, owner, aid="ag-seed"):
+    """Bluetooth setup for read tests: the owner accepts agent `aid`
+    for `owner` (SQL pair; the register route path is covered in
+    test_agents). Reads refuse unpaired agents, so every read test
+    pairs first — explicitly, never via a hidden bypass."""
+    await db.execute(
+        "INSERT INTO agents (id, owner, label, transport, connected) "
+        "VALUES (%s, %s, 'test pair', 'http', true) "
+        "ON CONFLICT (id) DO UPDATE SET owner = EXCLUDED.owner, "
+        "connected = true, last_seen = now()",
+        (aid, owner),
+    )
+
+
 async def seed(db, emb, owner, items):
     """Insert memory rows with real embeddings. Returns {name: id}."""
+    await pair_owner(db, owner)
     ids = {}
     for i, it in enumerate(items):
         vec, _ = await emb.embed(it["content"])
@@ -69,7 +84,7 @@ async def test_ranked_recall_finds_answer(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
     r = await client.post("/recall", json={
         "query": "Where is the deploy checklist?", "session_id": "s",
-        "owner": OWNER,
+        "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     assert r.status_code == 200
     out = r.json()
@@ -100,7 +115,8 @@ async def test_quarantine_superseded_owner_never_leak(client, db, emb):
     ])
     mine = await seed(db, emb, OWNER, SEEDS)
     r = await client.post("/recall", json={
-        "query": "deploy checklist", "session_id": "s", "owner": OWNER, "k": 20,
+        "query": "deploy checklist", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed", "k": 20,
     }, headers=AUTH)
     got = {h["id"] for h in r.json()["hits"]}
     assert mine["quar"] not in got, "quarantined row injected"
@@ -110,10 +126,11 @@ async def test_quarantine_superseded_owner_never_leak(client, db, emb):
 
 
 @pytest.mark.asyncio
-async def test_abstain_on_empty_store(client):
+async def test_abstain_on_empty_store(client, db):
+    await pair_owner(db, "nobody")
     r = await client.post("/recall", json={
         "query": "What is the meaning of life?", "session_id": "s",
-        "owner": "nobody",
+        "owner": "nobody", "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["abstain"] is True
@@ -126,11 +143,13 @@ async def test_abstain_on_empty_store(client):
 async def test_tiers_filter(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
     r = await client.post("/recall", json={
-        "query": "deploy", "session_id": "s", "owner": OWNER, "tiers": ["episodic"],
+        "query": "deploy", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed", "tiers": ["episodic"],
     }, headers=AUTH)
     assert {h["tier"] for h in r.json()["hits"]} <= {"episodic"}
     r = await client.post("/recall", json={
-        "query": "deploy", "session_id": "s", "owner": OWNER, "tiers": ["bogus"],
+        "query": "deploy", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed", "tiers": ["bogus"],
     }, headers=AUTH)
     assert r.status_code == 422
 
@@ -140,7 +159,7 @@ async def test_command_policy_assembles_kit(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
     r = await client.post("/recall", json={
         "query": "Show the deploy checklist for #project/A",
-        "session_id": "s", "owner": OWNER,
+        "session_id": "s", "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "COMMAND"
@@ -158,7 +177,7 @@ async def test_lexical_leg_stems_and_strips(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "What is the vault code?", "session_id": "s",
-        "owner": OWNER,
+        "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     hits = {h["id"]: h for h in r.json()["hits"]}
     assert ids["vault"] in hits
@@ -177,7 +196,7 @@ async def test_non_english_question_recalls(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "Wie lautet der Tresorcode?", "session_id": "s",
-        "owner": OWNER,
+        "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "QUESTION"
@@ -198,6 +217,7 @@ async def test_recall_rehearses_utility(client, db, emb):
     )
     r = await client.post("/recall", json={
         "query": "midnight ramen", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     assert ids["ramen"] in {h["id"] for h in r.json()["hits"]}
     row = await db.fetchrow(
@@ -224,7 +244,7 @@ async def test_command_policy_boosts_principled_rows(client, db, emb):
     )
     r = await client.post("/recall", json={
         "query": "Show the deploy checklist", "session_id": "s",
-        "owner": OWNER,
+        "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["policy"] == "command"
@@ -242,7 +262,7 @@ async def test_bfs_surfaces_associated_row(client, db, emb):
     )
     r = await client.post("/recall", json={
         "query": "deploy checklist runbook Friday procedures",
-        "session_id": "s", "owner": OWNER, "k": 8,
+        "session_id": "s", "owner": OWNER, "agent_id": "ag-seed", "k": 8,
     }, headers=AUTH)
     lake = [h for h in r.json()["hits"] if h["id"] == ids["lake"]]
     assert lake, "BFS missed the linked row"
@@ -259,7 +279,7 @@ async def test_prospective_fires_and_registers(client, db, emb):
     )
     r = await client.post("/recall", json={
         "query": "remind me to water the plants tomorrow",
-        "session_id": "s", "owner": OWNER,
+        "session_id": "s", "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert [f["content"] for f in out["fired_intentions"]] == ["past due"]
@@ -291,6 +311,7 @@ async def test_intentions_fire_exactly_once(client, db, emb):
     async def _fired(query):
         r = await client.post("/recall", json={
             "query": query, "session_id": "s", "owner": OWNER,
+            "agent_id": "ag-seed",
         }, headers=AUTH)
         return sorted(f["content"] for f in r.json()["fired_intentions"])
 
@@ -465,9 +486,11 @@ async def test_replay_branch_orders_session(client, db, emb):
         )
     await client.post("/recall", json={  # recall events must not pollute replay
         "query": "noise", "session_id": "rsess", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     r = await client.post("/recall", json={
         "query": "where were we?", "session_id": "rsess", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["mode"] == "replay"
@@ -498,6 +521,7 @@ async def test_replay_follows_turns_not_insert_order(client, db, emb):
         )
     r = await client.post("/recall", json={
         "query": "where were we?", "session_id": "inv", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["mode"] == "replay"
@@ -514,6 +538,7 @@ async def test_associative_leg_case_insensitive(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "anything on #FOOD?", "session_id": "ci", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["abstain"] is False
@@ -536,6 +561,7 @@ async def test_entity_leg_fires_on_subject_slot(client, db, emb):
         (ids["vault"],))
     r = await client.post("/recall", json={
         "query": "vault status update", "session_id": "e1", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["abstain"] is False, out
@@ -550,7 +576,8 @@ async def test_probe_case_insensitive(client, db, emb):
         {"name": "ramen", "content": "The user adores midnight ramen.",
          "tags": ["food"]},
     ])
-    r = await client.get(f"/probe?tag=%23FOOD&owner={OWNER}", headers=AUTH)
+    r = await client.get(
+        f"/probe?tag=%23FOOD&owner={OWNER}&agent_id=ag-seed", headers=AUTH)
     got = {m["content"] for m in r.json()["memories"]}
     assert any("ramen" in c for c in got), got
 
@@ -558,9 +585,11 @@ async def test_probe_case_insensitive(client, db, emb):
 @pytest.mark.asyncio
 async def test_identity_and_probe_endpoints(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
-    r = await client.get(f"/identity?owner={OWNER}", headers=AUTH)
+    r = await client.get(f"/identity?owner={OWNER}&agent_id=ag-seed",
+                           headers=AUTH)
     assert "Recallia" in r.json()["identity"][0]["content"]
-    r = await client.get(f"/probe?tag=deploy&owner={OWNER}", headers=AUTH)
+    r = await client.get(f"/probe?tag=deploy&owner={OWNER}&agent_id=ag-seed",
+                         headers=AUTH)
     got = {m["content"] for m in r.json()["memories"]}
     assert any("runbook" in c for c in got)
     assert not any("without review" in c for c in got)  # quarantined stays out
@@ -586,7 +615,10 @@ def test_card_truncates_at_line_boundary():
 
 @pytest.mark.asyncio
 async def test_recall_auth_and_shapes(client):
-    body = {"query": "x", "session_id": "s", "owner": OWNER}
+    # ag-shape is deliberately never paired: the blank-query 422 fires
+    # before the pairing gate, so this still tests shape validation.
+    body = {"query": "x", "session_id": "s", "owner": OWNER,
+            "agent_id": "ag-shape"}
     assert (await client.post("/recall", json=body)).status_code == 401
     # Deliberately wrong token, built so no literal secret sits in source.
     bad = {"Authorization": "Bearer " + "x" * 12}
@@ -615,9 +647,11 @@ async def test_recall_latency_smoke(client, db, emb):
              [f"t{i % 7}"], Json({"session": "perf", "turn": i}),
              pgvector_literal(vecs[i % 5]), emb.model_name, uuid.uuid4().hex),
         )
+    await pair_owner(db, OWNER)  # raw-SQL seeds: pair explicitly
     t0 = time.monotonic()
     r = await client.post("/recall", json={
         "query": "routine topic 3", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     dt = (time.monotonic() - t0) * 1000
     print(f"\nrecall p1 over 100 rows: {dt:.0f}ms")
@@ -640,9 +674,10 @@ async def test_live_write_recall_roundtrip(client, db):
         if n and n >= 1:
             break
         await asyncio.sleep(2)
+    await pair_owner(db, OWNER)  # live write path: pair explicitly
     r = await client.post("/recall", json={
         "query": "What does grandmother's soup need?", "session_id": "r2live",
-        "owner": OWNER,
+        "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["abstain"] is False, out
@@ -657,15 +692,16 @@ async def test_recall_story_narrates(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "What is at the lake cabin?", "session_id": "rstory",
-        "owner": "rstory",
+        "owner": "rstory", "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert "QUESTION" in out["story"]
     assert "vector" in out["story"] or "lexical" in out["story"]
     assert "confidence" in out["story"]
+    await pair_owner(db, "rstory_empty")  # empty store, paired reader
     r = await client.post("/recall", json={
         "query": "Anything at all?", "session_id": "rstory",
-        "owner": "rstory_empty",
+        "owner": "rstory_empty", "agent_id": "ag-seed",
     }, headers=AUTH)
     assert "abstained" in r.json()["story"]
     assert len(ids) == 1
@@ -693,7 +729,7 @@ async def test_reference_resolves_referent_from_session(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "use that DB we discussed", "session_id": "rfsess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "REFERENCE"
@@ -723,7 +759,7 @@ async def test_reference_pronoun_falls_back_to_most_recent(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "Do the same as yesterday", "session_id": "rpsess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "REFERENCE"
@@ -744,7 +780,7 @@ async def test_reference_abstains_without_session_referent(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "use that DB we discussed", "session_id": "empty-sess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "REFERENCE"
@@ -769,7 +805,7 @@ async def test_reference_unmatched_definite_abstains(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "use that DB we discussed", "session_id": "gsess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "REFERENCE"
@@ -792,7 +828,7 @@ async def test_reference_definite_needs_word_boundary(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "use that DB we discussed", "session_id": "rfsess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["abstain"] is True, out
@@ -822,7 +858,7 @@ async def test_reference_plural_those_resolves_all_matching(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "use those DBs we discussed", "session_id": "plsess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "REFERENCE"
@@ -857,6 +893,7 @@ async def test_reference_plural_pronouns_resolve_all_recent(client, db, emb):
                   "use them as we discussed"):
         r = await client.post("/recall", json={
             "query": query, "session_id": "pnsess", "owner": ow,
+            "agent_id": "ag-seed",
         }, headers=AUTH)
         out = r.json()
         assert out["cue"]["type"] == "REFERENCE", query
@@ -887,7 +924,7 @@ async def test_reference_tie_break_picks_most_recent_turn(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "use that DB we discussed", "session_id": "tiesess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "REFERENCE"
@@ -913,7 +950,7 @@ async def test_reference_plural_unmatched_definite_abstains(client, db, emb):
     ])
     r = await client.post("/recall", json={
         "query": "use those DBs we discussed", "session_id": "pgsess",
-        "owner": ow,
+        "owner": ow, "agent_id": "ag-seed",
     }, headers=AUTH)
     out = r.json()
     assert out["cue"]["type"] == "REFERENCE"

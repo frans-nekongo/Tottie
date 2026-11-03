@@ -15,6 +15,7 @@ from app.embeddings import Embedder
 from app.providers.base import Completion, NoProviderAvailable
 from app.providers.resolve import resolve_provider
 from tests.conftest import TEST_TOKEN
+from tests.test_recall import pair_owner
 
 AUTH = {"Authorization": f"Bearer {TEST_TOKEN}"}
 
@@ -113,8 +114,10 @@ async def test_quarantine_visible_never_injected(client, db):
         "SELECT id, quarantined FROM memories WHERE owner = %s", (ow,))
     assert row["quarantined"] is True, "web-sourced claim must quarantine"
     mid = str(row["id"])
+    await pair_owner(db, ow)  # write-seeded: pair explicitly
     rec = await client.post("/recall", json={
         "query": "Who runs Globex?", "session_id": ow, "owner": ow,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     assert rec.status_code == 200
     card = rec.json()["card"] or ""
@@ -125,6 +128,7 @@ async def test_quarantine_visible_never_injected(client, db):
     assert c.status_code == 200
     rec2 = await client.post("/recall", json={
         "query": "Who runs Globex?", "session_id": ow, "owner": ow,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     assert "Globex" in (rec2.json()["card"] or ""), \
         "confirmed row must inject"
@@ -372,8 +376,9 @@ async def test_revival_ranked_out_returns_via_probe(client, db, emb):
     mid = await _seed_episode(
         db, emb, ow, "Sunset at the lake cabin with old friends.",
         ["lake", "cabin"])
+    await pair_owner(db, ow)  # episode-seeded: pair explicitly
     q = {"query": "What happened at the lake cabin?",
-         "session_id": ow, "owner": ow}
+         "session_id": ow, "owner": ow, "agent_id": "ag-seed"}
     before = await client.post("/recall", json=q, headers=AUTH)
     assert before.status_code == 200
     assert mid in {h["id"] for h in before.json()["hits"]}, \
@@ -384,7 +389,8 @@ async def test_revival_ranked_out_returns_via_probe(client, db, emb):
     assert mid not in {h["id"] for h in after.json()["hits"]}, \
         "ranked-out row leaked into ambient recall"
     probe = await client.get(
-        "/probe", params={"tag": "lake", "owner": ow}, headers=AUTH)
+        "/probe", params={"tag": "lake", "owner": ow, "agent_id": "ag-seed"},
+        headers=AUTH)
     assert probe.status_code == 200
     assert mid in {m["id"] for m in probe.json()["memories"]}, \
         "deliberate probe must revive the ranked-out row"

@@ -6,7 +6,7 @@ from psycopg.types.json import Json
 from app.config import Settings
 from app.embeddings import Embedder
 from tests.conftest import TEST_TOKEN
-from tests.test_recall import seed  # noqa: F401 (shared seed helper)
+from tests.test_recall import pair_owner, seed  # noqa: F401 (shared helpers)
 
 AUTH = {"Authorization": f"Bearer {TEST_TOKEN}"}
 OWNER = "br"
@@ -25,7 +25,7 @@ def emb():
 async def test_briefing_explicit_text(client, db, emb):
     await seed(db, emb, OWNER, SEEDS)
     r = await client.post("/briefing", json={
-        "session_id": "br1", "owner": OWNER,
+        "session_id": "br1", "owner": OWNER, "agent_id": "ag-seed",
         "text": "Where does Frans live?", "since_event_id": 0,
     }, headers=AUTH)
     assert r.status_code == 200
@@ -45,7 +45,7 @@ async def test_briefing_session_context_no_text(client, db, emb):
         (OWNER, "brctx", "Where does Frans live?"),
     )
     r = await client.post("/briefing", json={
-        "session_id": "brctx", "owner": OWNER,
+        "session_id": "brctx", "owner": OWNER, "agent_id": "ag-seed",
     }, headers=AUTH)
     assert r.status_code == 200
     assert "Windhoek" in (r.json()["card"] or ""), \
@@ -56,8 +56,8 @@ async def test_briefing_session_context_no_text(client, db, emb):
 async def test_briefing_since_cursor(client, db, emb):
     ids = await seed(db, emb, OWNER, SEEDS)
     r = await client.post("/briefing", json={
-        "session_id": "brc", "owner": OWNER, "text": "hi",
-        "since_event_id": 0,
+        "session_id": "brc", "owner": OWNER, "agent_id": "ag-seed",
+        "text": "hi", "since_event_id": 0,
     }, headers=AUTH)
     cur = r.json()["event_id"]
     await db.execute(
@@ -67,15 +67,15 @@ async def test_briefing_since_cursor(client, db, emb):
          Json({"op": "NEW", "memory_ids": [ids["city"]]})),
     )
     r2 = await client.post("/briefing", json={
-        "session_id": "brc", "owner": OWNER, "text": "hi",
-        "since_event_id": cur,
+        "session_id": "brc", "owner": OWNER, "agent_id": "ag-seed",
+        "text": "hi", "since_event_id": cur,
     }, headers=AUTH)
     got = {it["id"] for it in r2.json()["new_items"]}
     assert ids["city"] in got, "cursor must surface formed-since memories"
     assert "new since last briefing" in r2.json()["briefing"]
     r3 = await client.post("/briefing", json={
-        "session_id": "brc", "owner": OWNER, "text": "hi",
-        "since_event_id": r2.json()["event_id"],
+        "session_id": "brc", "owner": OWNER, "agent_id": "ag-seed",
+        "text": "hi", "since_event_id": r2.json()["event_id"],
     }, headers=AUTH)
     assert r3.json()["new_items"] == []
 
@@ -97,11 +97,11 @@ async def test_briefing_suppresses_identity_on_work_stimulus(client, db, emb):
          "tags": ["streak"]},
     ])
     first = await client.post("/briefing", json={
-        "session_id": "brw", "owner": ow,
+        "session_id": "brw", "owner": ow, "agent_id": "ag-seed",
         "text": "how do streaks count", "since_event_id": 0,
     }, headers=AUTH)
     r = await client.post("/briefing", json={
-        "session_id": "brw", "owner": ow,
+        "session_id": "brw", "owner": ow, "agent_id": "ag-seed",
         "text": "how do streaks count",
         "since_event_id": first.json()["event_id"],
     }, headers=AUTH)
@@ -123,7 +123,7 @@ async def test_briefing_includes_identity_on_identity_frame(client, db, emb):
          "content": "Owner is Amara Quietstorm.", "tags": ["owner"]},
     ])
     r = await client.post("/briefing", json={
-        "session_id": "bri", "owner": ow,
+        "session_id": "bri", "owner": ow, "agent_id": "ag-seed",
         "text": "tell me who am i", "since_event_id": 0,
     }, headers=AUTH)
     assert "Amara Quietstorm" in (r.json()["card"] or "")
@@ -131,8 +131,10 @@ async def test_briefing_includes_identity_on_identity_frame(client, db, emb):
 
 @pytest.mark.asyncio
 async def test_briefing_empty_abstains(client, db):
+    await pair_owner(db, "brempty")
     r = await client.post("/briefing", json={
         "session_id": "brempty", "owner": "brempty",
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     assert r.status_code == 200
     assert r.json()["abstain"] is True

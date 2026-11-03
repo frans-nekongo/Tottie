@@ -3,12 +3,14 @@
 GET /identity — the ambient identity slice (what the card header shows).
 GET /probe — the deliberate probe: a tag room's live rows, ranked-out
 included (the revival path), quarantined excluded.
-Auth is wired in main.py (router-level dependency), same as /write.
+All three serve paired agents only (agent_id required); unknown ids are
+left visible for the owner to pair. Auth is wired in main.py
+(router-level dependency), same as /write.
 """
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from ..agents import memories, retrieve
+from ..agents import memories, pairing, retrieve
 
 router = APIRouter()
 
@@ -18,6 +20,7 @@ TIERS = {"identity", "episodic", "knowledge", "procedural"}
 class RecallRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     session_id: str = Field(min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
     owner: str | None = None
     tiers: list[str] | None = None
     k: int | None = Field(default=None, ge=1, le=32)
@@ -43,10 +46,15 @@ async def post_recall(body: RecallRequest, request: Request) -> dict:
             status.HTTP_503_SERVICE_UNAVAILABLE,
             {"error": "embedder unavailable", "retryable": True},
         )
+    owner = body.owner or settings.owner
+    await pairing.require_paired_http(
+        request.app.state.db, owner, body.agent_id, transport="http",
+        session_id=body.session_id,
+    )
     return await retrieve.recall(
         db=request.app.state.db,
         embedder=request.app.state.embedder,
-        owner=body.owner or settings.owner,
+        owner=owner,
         query=query,
         session_id=body.session_id,
         k=body.k or settings.recall_k,
@@ -57,24 +65,30 @@ async def post_recall(body: RecallRequest, request: Request) -> dict:
 
 @router.get("/identity")
 async def get_identity(
-    request: Request, owner: str = Query(""), limit: int = Query(20, ge=1, le=100)
+    request: Request, agent_id: str = Query(...),
+    owner: str = Query(""), limit: int = Query(20, ge=1, le=100)
 ) -> dict:
     settings = request.app.state.settings
-    rows = await memories.get_identity(
-        request.app.state.db, owner or settings.owner, limit
+    who = owner or settings.owner
+    await pairing.require_paired_http(
+        request.app.state.db, who, agent_id, transport="http",
     )
-    return {"owner": owner or settings.owner, "identity": rows}
+    rows = await memories.get_identity(request.app.state.db, who, limit)
+    return {"owner": who, "identity": rows}
 
 
 @router.get("/probe")
 async def get_probe(
     request: Request,
     tag: str = Query(...),
+    agent_id: str = Query(...),
     owner: str = Query(""),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict:
     settings = request.app.state.settings
-    rows = await memories.probe_room(
-        request.app.state.db, owner or settings.owner, tag, limit
+    who = owner or settings.owner
+    await pairing.require_paired_http(
+        request.app.state.db, who, agent_id, transport="http",
     )
-    return {"tag": tag, "owner": owner or settings.owner, "memories": rows}
+    rows = await memories.probe_room(request.app.state.db, who, tag, limit)
+    return {"tag": tag, "owner": who, "memories": rows}

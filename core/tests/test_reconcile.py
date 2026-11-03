@@ -14,7 +14,7 @@ from app.db import pgvector_literal
 from app.embeddings import Embedder
 from app.queue import WorkerTurn
 from tests.conftest import TEST_TOKEN
-from tests.test_recall import seed  # noqa: F401 (shared seed helper)
+from tests.test_recall import pair_owner, seed  # noqa: F401 (shared helpers)
 
 AUTH = {"Authorization": f"Bearer {TEST_TOKEN}"}
 OWNER = "r3"
@@ -50,6 +50,7 @@ def _turn(text, trust="user_direct", session="r3", turn=0, owner=OWNER):
 async def _seed_row(db, emb, owner, content, kind="preference", tier="knowledge",
                     subject=None, predicate=None, obj=None, tags=None,
                     trust="user_direct", quarantined=False):
+    await pair_owner(db, owner)
     vec, _ = await emb.embed(content)
     row = await db.execute_returning(
         'INSERT INTO memories (owner, tier, kind, subject, predicate, "object", '
@@ -437,8 +438,10 @@ async def test_poison_never_supersedes_user(client, db, emb):
     assert len(rows) == 2
     user = [r for r in rows if not r["quarantined"]][0]
     assert user["valid_to"] is None and "vegetarian" in user["content"]
+    await pair_owner(db, OWNER)  # scribe-seeded: pair explicitly
     r = await client.post("/recall", json={
         "query": "what is my diet", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     assert "vegetarian" in " ".join(h["summary"] for h in r.json()["hits"])
     assert "meat here" not in " ".join(h["summary"] for h in r.json()["hits"])
@@ -454,7 +457,7 @@ async def test_correction_supersedes_active_row(client, db, emb):
         kind="fact", obj="8080", tags=["server"])
     r = await client.post("/recall", json={
         "query": "server runs on port 8080", "session_id": "fix",
-        "owner": OWNER, "k": 1,
+        "owner": OWNER, "agent_id": "ag-seed", "k": 1,
     }, headers=AUTH)
     active_id = r.json()["hits"][0]["id"]
     other_id = b if active_id == a else a
@@ -749,7 +752,7 @@ async def test_unrelated_correction_does_not_bind(client, db, emb):
                     kind="fact", tags=["server"])
     r = await client.post("/recall", json={
         "query": "lake house weekend", "session_id": "fix2",
-        "owner": OWNER, "k": 1,
+        "owner": OWNER, "agent_id": "ag-seed", "k": 1,
     }, headers=AUTH)
     assert r.json()["hits"][0]["id"] == lake
     action = await scribe.persist(
@@ -934,7 +937,8 @@ async def test_bfs_ignores_quarantined_link(client, db, emb):
         (OWNER, a, q),
     )
     r = await client.post("/recall", json={
-        "query": "clean deploy note", "session_id": "s", "owner": OWNER, "k": 8,
+        "query": "clean deploy note", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed", "k": 8,
     }, headers=AUTH)
     got = {h["id"] for h in r.json()["hits"]}
     assert q not in got
@@ -946,6 +950,7 @@ async def test_confirm_releases_row(client, db, emb):
                         trust="web", quarantined=True)
     r = await client.post("/recall", json={
         "query": "worth keeping", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     assert q not in {h["id"] for h in r.json()["hits"]}
     r = await client.post(f"/memories/{q}/confirm", json={"owner": OWNER},
@@ -953,6 +958,7 @@ async def test_confirm_releases_row(client, db, emb):
     assert r.status_code == 200 and r.json()["quarantined"] is False
     r = await client.post("/recall", json={
         "query": "worth keeping", "session_id": "s", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=AUTH)
     assert q in {h["id"] for h in r.json()["hits"]}
     r = await client.post(f"/memories/{q}/confirm", json={"owner": "intruder"},
@@ -1024,8 +1030,10 @@ async def test_vegetarian_chain_live(client, db):
         if n and n >= 1:
             break
         await asyncio.sleep(2)
+    await pair_owner(db, OWNER)  # write-seeded live chain: pair first
     await client.post("/recall", json={
         "query": "what do I eat", "session_id": "veg", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=auth)
     r = await client.post("/write", json={
         "text": "actually, I'm vegetarian now.", "session_id": "veg",
@@ -1041,6 +1049,7 @@ async def test_vegetarian_chain_live(client, db):
         await asyncio.sleep(2)
     r = await client.post("/recall", json={
         "query": "what is my diet", "session_id": "veg", "owner": OWNER,
+        "agent_id": "ag-seed",
     }, headers=auth)
     summaries = " ".join(h["summary"] for h in r.json()["hits"])
     assert "vegetarian" in summaries, r.json()
