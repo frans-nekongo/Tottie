@@ -1,0 +1,203 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import GraphView from "../GraphView";
+import { spawnOf } from "../graphMath";
+
+// The GL renderer is third-party: stub it, capture exactly what Tottie
+// feeds it, and expose the camera API as spies. Everything else is real.
+vi.mock("next/dynamic", () => ({
+  default: () => {
+    const Stub = (props: Record<string, unknown>) => {
+      const g = globalThis as Record<string, unknown>;
+      g.__fgProps = props;
+      const ref = props.ref as { current: unknown } | undefined;
+      if (ref && typeof ref === "object") ref.current = g.__fgInstance;
+      return null;
+    };
+    Stub.displayName = "ForceGraphStub";
+    return Stub;
+  },
+}));
+
+interface FGNode {
+  id: string;
+  color: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [k: string]: any;
+}
+
+const g = () => globalThis as unknown as Record<string, unknown>;
+const fgNodes = () =>
+  (g().__fgProps as { graphData: { nodes: FGNode[] } }).graphData.nodes;
+const fgSpy = () =>
+  g().__fgInstance as { cameraPosition: ReturnType<typeof vi.fn> };
+
+type G = { nodes: Record<string, unknown>[]; links: Record<string, unknown>[] };
+const node = (id: string, tier = "knowledge", salience = 0.5, tags: string[] = []) => ({
+  id,
+  label: `label ${id}`,
+  tier,
+  tags,
+  salience,
+  quarantined: false,
+});
+
+let graphResponses: G[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let fetchMock: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  graphResponses = [];
+  g().__fgProps = undefined;
+  g().__fgInstance = { cameraPosition: vi.fn(), zoomToFit: vi.fn() };
+  fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const calls = fetchMock.mock.calls.filter(([u]) =>
+      String(u).startsWith("/api/graph")
+    ).length;
+    const body = graphResponses[Math.min(calls - 1, graphResponses.length - 1)];
+    return { ok: true, json: async () => body };
+  });
+  vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
+});
+
+afterEach(() => {
+  window.matchMedia = g().__defaultMatchMedia as typeof window.matchMedia;
+});
+
+const graphCalls = () =>
+  fetchMock.mock.calls.filter(([u]) => String(u).startsWith("/api/graph")).length;
+
+const renderGraph = (fresh = 0, onSync = vi.fn()) =>
+  render(<GraphView path={[]} fresh={fresh} owner="o" onSync={onSync} />);
+
+describe("GraphView", () => {
+  it("maps fetched nodes to tier colors and reports sync ms", async () => {
+    graphResponses = [
+      { nodes: [node("a"), node("b", "episodic")], links: [] },
+    ];
+    const onSync = vi.fn();
+    renderGraph(0, onSync);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    await waitFor(() => expect(onSync).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(g().__fgProps).toBeDefined());
+    expect(onSync.mock.calls[0][0]).toEqual(expect.any(Number));
+    expect(onSync.mock.calls[0][0]).toBeGreaterThanOrEqual(0);
+    const byId = Object.fromEntries(fgNodes().map((n) => [n.id, n]));
+    expect(byId.a.color).toBe("#9a7bd0"); // knowledge tier, settled
+    expect(byId.b.color).toBe("#4cc3d9"); // episodic tier
+    expect(byId.a.val).toBe(2.5); // (1 + 0.5*3), no heat on first paint
+  });
+
+  it("adopts the first paint silently: no pill, no heat", async () => {
+    graphResponses = [{ nodes: [node("a"), node("b")], links: [] }];
+    renderGraph();
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    await waitFor(() =>
+      expect(fgNodes().map((n) => n.id).sort()).toEqual(["a", "b"])
+    );
+    expect(screen.queryByRole("button", { name: /show me/ })).toBeNull();
+    for (const n of fgNodes()) expect(n.color).toBe("#9a7bd0");
+  });
+
+  it("pops newborns white-hot with a pill on the next refetch", async () => {
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a"), node("n")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    const pill = await screen.findByRole("button", { name: /1 new/ });
+    expect(pill).toHaveTextContent("1 new — show me");
+    const born = fgNodes().find((n) => n.id === "n")!;
+    expect(born.color).not.toBe("#9a7bd0"); // white-hot, not tier color
+    expect(born.val).toBeGreaterThan(2.5); // size-boosted pop
+  });
+
+  it("shrinks removed ids out red where they fell", async () => {
+    graphResponses = [
+      { nodes: [node("a"), node("b")], links: [] },
+      { nodes: [node("a")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    await waitFor(() => {
+      const ghost = fgNodes().find((n) => n.id === "dead:b");
+      expect(ghost).toBeDefined();
+      expect(ghost!.color).toBe("#d9534f");
+    });
+  });
+
+  it("flies the pill click to the newborn centroid", async () => {
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a"), node("n")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    const pill = await screen.findByRole("button", { name: /1 new/ });
+    fireEvent.click(pill);
+    const c = spawnOf("n"); // no sim in jsdom: spawn coords are exact
+    expect(fgSpy().cameraPosition).toHaveBeenCalledTimes(1);
+    expect(fgSpy().cameraPosition).toHaveBeenCalledWith(
+      { x: c.x, y: c.y + 55, z: c.z + 220 },
+      c,
+      800
+    );
+    expect(screen.queryByRole("button", { name: /show me/ })).toBeNull();
+  });
+
+  it("filters by area chip and clears the filter on fly-to", async () => {
+    graphResponses = [
+      { nodes: [node("a", "knowledge", 0.5, ["area:x"]), node("b", "knowledge", 0.5, ["area:y"])], links: [] },
+      { nodes: [node("a", "knowledge", 0.5, ["area:x"]), node("b", "knowledge", 0.5, ["area:y"]), node("c", "knowledge", 0.5, ["area:y"])], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    const chip = await screen.findByRole("button", { name: /x 1/ });
+    fireEvent.click(chip);
+    await waitFor(() =>
+      expect(fgNodes().map((n) => n.id)).toEqual(["a"])
+    );
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    const pill = await screen.findByRole("button", { name: /1 new/ });
+    fireEvent.click(pill);
+    await waitFor(() =>
+      expect(fgNodes().map((n) => n.id).sort()).toEqual(["a", "b", "c"])
+    );
+    expect(fgSpy().cameraPosition).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders births settled under reduced motion", async () => {
+    window.matchMedia = (() => ({ matches: true })) as unknown as typeof window.matchMedia;
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a"), node("n")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    await screen.findByRole("button", { name: /1 new/ });
+    const born = fgNodes().find((n) => n.id === "n")!;
+    expect(born.color).toBe("#9a7bd0");
+    expect(born.val).toBe(2.5);
+  });
+
+  it("shows unavailable on fetch failure", async () => {
+    fetchMock.mockImplementationOnce(async () => ({ ok: false, status: 500 }));
+    graphResponses = [{ nodes: [], links: [] }];
+    renderGraph();
+    await screen.findByText(/graph unavailable/);
+  });
+
+  it("does not refetch when the fresh prop is unchanged", async () => {
+    graphResponses = [{ nodes: [node("a")], links: [] }];
+    const onSync = vi.fn();
+    const { rerender } = renderGraph(0, onSync);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={0} owner="o" onSync={onSync} />);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(graphCalls()).toBe(1);
+  });
+});

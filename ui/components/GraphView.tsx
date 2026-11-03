@@ -9,6 +9,7 @@ import type {
   GraphLink,
   GraphNode,
 } from "react-force-graph-3d";
+import { heatAt, mixHex, popScale, spawnOf } from "./graphMath";
 
 // dynamic()'s own types don't carry the imperative ref API, so restate the
 // component type here. The kapsule runtime exposes its instance via ref;
@@ -62,36 +63,6 @@ const TIER_COLOR: Record<string, string> = {
 
 const FRESH_MS = 2600; // white-hot drop-in window per newborn node
 const DIE_MS = 700; // red shrink-out window per killed node
-
-function hashStr(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) / 4294967295;
-}
-
-function mixHex(a: string, b: string, t: number): string {
-  // t=0 -> a, t=1 -> b; plain lerp, no deps
-  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
-  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
-  return (
-    "#" +
-    pa
-      .map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, "0"))
-      .join("")
-  );
-}
-
-function spawnOf(id: string): { x: number; y: number; z: number } {
-  // Newborns spawn high above the cluster; the force layout pulls them
-  // down into place — a literal drop-in. Deterministic scatter per id
-  // so siblings don't stack.
-  const h1 = hashStr(id);
-  const h2 = hashStr(id + ":z");
-  return { x: (h1 - 0.5) * 70, y: 130 + h1 * 50, z: (h2 - 0.5) * 70 };
-}
 
 export default function GraphView({
   path,
@@ -318,15 +289,10 @@ export default function GraphView({
   const shownNodes = data.nodes.filter(
     (n) => visibleIds === null || visibleIds.has(n.id));
   const clock = now || Date.now();
-  const freshOf = (id: string): number => {
-    // 1 = just born, 0 = cooled. Absent birth = long settled.
-    if (reducedMotion.current) return 0;
-    const b = bornAt.current.get(id);
-    if (b === undefined) return 0;
-    const age = clock - b;
-    if (age < 0 || age >= FRESH_MS) return 0;
-    return 1 - age / FRESH_MS;
-  };
+  const freshOf = (id: string): number =>
+    reducedMotion.current
+      ? 0
+      : heatAt(bornAt.current.get(id), clock, FRESH_MS);
   const nodes = shownNodes.map((n) => {
     const onPath = pathSet.current.has(n.id);
     const heat = freshOf(n.id);
@@ -338,9 +304,7 @@ export default function GraphView({
     const node: FGNode = {
       ...n,
       color: heat > 0 ? mixHex("#ffffff", base, 1 - heat) : base,
-      // Ease-out pop: violent shrink at first, gentle settle at the end.
-      val: (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1) *
-        (1 + 1.2 * Math.pow(heat, 1.5)),
+      val: (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1) * popScale(heat),
     };
     if (heat > 0.55) {
       const s = spawnOf(n.id);
