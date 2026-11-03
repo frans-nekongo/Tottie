@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { hashStr, heatAt, mixHex, popScale, spawnOf } from "../graphMath";
+import {
+  baseDisplay,
+  hashStr,
+  heatAt,
+  linkBaseColor,
+  linkGlowColor,
+  mixHex,
+  popScale,
+  spawnOf,
+} from "../graphMath";
 
 describe("mixHex", () => {
   it("returns the endpoints at t=0 and t=1", () => {
@@ -50,6 +59,45 @@ describe("heatAt", () => {
 
   it("honors a custom window", () => {
     expect(heatAt(0, 500, 1000)).toBeCloseTo(0.5, 9);
+  });
+});
+
+describe("baseDisplay", () => {
+  it("maps tiers to colors and salience to size", () => {
+    expect(baseDisplay({ tier: "knowledge" }, false)).toEqual({
+      color: "#9a7bd0",
+      val: 2.5,
+    });
+    expect(baseDisplay({ tier: "episodic", salience: 1 }, false)).toEqual({
+      color: "#4cc3d9",
+      val: 4,
+    });
+    expect(baseDisplay({ tier: "mystery" }, false).color).toBe("#e8e6e1");
+  });
+
+  it("grays quarantined and ranked-out rows, whites the path", () => {
+    expect(
+      baseDisplay({ tier: "knowledge", quarantined: true }, false).color
+    ).toBe("#5a5a66");
+    expect(
+      baseDisplay({ tier: "knowledge", ranked_out: true }, false).color
+    ).toBe("#5a5a66");
+    const onPath = baseDisplay({ tier: "knowledge" }, true);
+    expect(onPath.color).toBe("#ffffff");
+    expect(onPath.val).toBeCloseTo(4.5, 9);
+  });
+});
+
+describe("link colors", () => {
+  it("grounds paths, supersedes, and plain links", () => {
+    expect(linkBaseColor("supports", true)).toBe("#ffffff");
+    expect(linkBaseColor("supersedes", false)).toBe("#d9534f");
+    expect(linkBaseColor("supports", false)).toBe("rgba(160,160,175,0.35)");
+  });
+
+  it("glows white with heat", () => {
+    expect(linkGlowColor(1)).toBe("rgba(255,255,255,0.90)");
+    expect(linkGlowColor(0)).toBe("rgba(255,255,255,0.25)");
   });
 });
 

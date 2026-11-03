@@ -1,6 +1,33 @@
 // Pure animation math for the 3D brain: heat decay, pop easing, spawn
 // layout, color mixing. No React, no three.js — unit-tested directly.
 
+export const TIER_COLOR: Record<string, string> = {
+  identity: "#d9a441",
+  episodic: "#4cc3d9",
+  knowledge: "#9a7bd0",
+  procedural: "#6fbf73",
+};
+
+export interface BaseNode {
+  tier: string;
+  salience?: number | null;
+  quarantined?: boolean | null;
+  ranked_out?: boolean | null;
+}
+
+export function baseDisplay(
+  n: BaseNode,
+  onPath: boolean
+): { color: string; val: number } {
+  const color = onPath
+    ? "#ffffff"
+    : n.quarantined || n.ranked_out
+      ? "#5a5a66"
+      : TIER_COLOR[n.tier] ?? "#e8e6e1";
+  const val = (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1);
+  return { color, val };
+}
+
 export function hashStr(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -46,4 +73,14 @@ export function heatAt(
 export function popScale(heat: number): number {
   // Ease-out pop: violent shrink at first, gentle settle at the end.
   return 1 + 1.2 * Math.pow(Math.max(0, heat), 1.5);
+}
+
+export function linkBaseColor(relation: string, onPath: boolean): string {
+  if (onPath) return "#ffffff";
+  if (relation === "supersedes") return "#d9534f";
+  return "rgba(160,160,175,0.35)";
+}
+
+export function linkGlowColor(heat: number): string {
+  return `rgba(255,255,255,${(0.25 + heat * 0.65).toFixed(2)})`;
 }

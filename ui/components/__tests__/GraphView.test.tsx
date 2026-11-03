@@ -27,10 +27,13 @@ interface FGNode {
 }
 
 const g = () => globalThis as unknown as Record<string, unknown>;
-const fgNodes = () =>
-  (g().__fgProps as { graphData: { nodes: FGNode[] } }).graphData.nodes;
+const fgGraphData = () =>
+  (g().__fgProps as { graphData: { nodes: FGNode[] } }).graphData;
+const fgNodes = () => fgGraphData().nodes;
 const fgSpy = () =>
   g().__fgInstance as { cameraPosition: ReturnType<typeof vi.fn> };
+const refreshSpy = () =>
+  g().__fgInstance as { refresh: ReturnType<typeof vi.fn> };
 
 type G = { nodes: Record<string, unknown>[]; links: Record<string, unknown>[] };
 const node = (id: string, tier = "knowledge", salience = 0.5, tags: string[] = []) => ({
@@ -49,7 +52,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   graphResponses = [];
   g().__fgProps = undefined;
-  g().__fgInstance = { cameraPosition: vi.fn(), zoomToFit: vi.fn() };
+  g().__fgInstance = { cameraPosition: vi.fn(), zoomToFit: vi.fn(), refresh: vi.fn() };
   fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const calls = fetchMock.mock.calls.filter(([u]) =>
       String(u).startsWith("/api/graph")
@@ -109,9 +112,53 @@ describe("GraphView", () => {
     rerender(<GraphView path={[]} fresh={1} owner="o" />);
     const pill = await screen.findByRole("button", { name: /1 new/ });
     expect(pill).toHaveTextContent("1 new — show me");
-    const born = fgNodes().find((n) => n.id === "n")!;
-    expect(born.color).not.toBe("#9a7bd0"); // white-hot, not tier color
-    expect(born.val).toBeGreaterThan(2.5); // size-boosted pop
+    // Heat is painted by the rAF loop, not the commit: wait for it.
+    await waitFor(() => {
+      const born = fgNodes().find((n) => n.id === "n")!;
+      expect(born.color).not.toBe("#9a7bd0"); // white-hot, not tier color
+      expect(born.val).toBeGreaterThan(2.5); // size-boosted pop
+    });
+  });
+
+  it("holds graphData identity while heat animates (no reheat)", async () => {
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a"), node("n")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    await screen.findByRole("button", { name: /1 new/ });
+    await waitFor(() => {
+      expect(fgNodes().find((n) => n.id === "n")!.color).not.toBe("#9a7bd0");
+    });
+    const wrapper = fgGraphData();
+    const arr = fgNodes();
+    const before = arr.find((n) => n.id === "n")!.color;
+    await new Promise((r) => setTimeout(r, 400));
+    // Same references the lib compares by: zero digest, zero reheat —
+    // yet the animation visibly progressed via refresh().
+    expect(fgGraphData()).toBe(wrapper);
+    expect(fgNodes()).toBe(arr);
+    expect(fgNodes().find((n) => n.id === "n")!.color).not.toBe(before);
+    expect(refreshSpy().refresh).toHaveBeenCalled();
+  });
+
+  it("treats an identical refetch as a no-op (zero digest)", async () => {
+    graphResponses = [
+      { nodes: [node("a")], links: [] },
+      { nodes: [node("a")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    await waitFor(() => expect(g().__fgProps).toBeDefined());
+    const wrapper = fgGraphData();
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    await waitFor(() => expect(graphCalls()).toBe(2));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(fgGraphData()).toBe(wrapper);
+    expect(refreshSpy().refresh).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /show me/ })).toBeNull();
   });
 
   it("shrinks removed ids out red where they fell", async () => {

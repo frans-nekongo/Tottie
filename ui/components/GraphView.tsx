@@ -9,7 +9,15 @@ import type {
   GraphLink,
   GraphNode,
 } from "react-force-graph-3d";
-import { heatAt, mixHex, popScale, spawnOf } from "./graphMath";
+import {
+  baseDisplay,
+  heatAt,
+  linkBaseColor,
+  linkGlowColor,
+  mixHex,
+  popScale,
+  spawnOf,
+} from "./graphMath";
 
 // dynamic()'s own types don't carry the imperative ref API, so restate the
 // component type here. The kapsule runtime exposes its instance via ref;
@@ -39,12 +47,38 @@ interface FGNode extends Node {
   x?: number;
   y?: number;
   z?: number;
-  // Pinned coords for tombstones (the dying stay where they fell).
+  // d3 fixed-position pins (birth hold + tombstones). The sim reads these
+  // directly; null/undefined unpins.
   fx?: number;
   fy?: number;
   fz?: number;
+  // Settled display. The rAF loop derives the animated color/val from this
+  // plus heat; the render path never touches display except at rebuild.
+  __base: { color: string; val: number };
   // GraphNode carries an index signature; satisfy it explicitly.
   [key: string]: unknown;
+}
+interface FGLink {
+  // NOTE: d3-force swaps source/target for node object refs at runtime.
+  // Read endpoints via endId(), never raw.
+  source: string;
+  target: string;
+  relation: string;
+  reason?: string;
+  color: string;
+  __base: string;
+  [key: string]: unknown;
+}
+interface GraphCache {
+  data: { nodes: Node[]; links: Link[] } | null;
+  area: string | null;
+  pathKey: string;
+  struct: number;
+  nodes: FGNode[];
+  links: FGLink[];
+  graphData: { nodes: FGNode[]; links: FGLink[] };
+  byId: Map<string, FGNode>;
+  linkByKey: Map<string, FGLink>;
 }
 interface Detail {
   content: string;
@@ -54,15 +88,24 @@ interface Detail {
   salience: number;
 }
 
-const TIER_COLOR: Record<string, string> = {
-  identity: "#d9a441",
-  episodic: "#4cc3d9",
-  knowledge: "#9a7bd0",
-  procedural: "#6fbf73",
-};
-
 const FRESH_MS = 2600; // white-hot drop-in window per newborn node
 const DIE_MS = 700; // red shrink-out window per killed node
+
+const endId = (e: string | GraphNode): string =>
+  typeof e === "string" ? e : e.id;
+const WHITE_PARTICLE = () => "#ffffff";
+
+const emptyCache = (): GraphCache => ({
+  data: null,
+  area: null,
+  pathKey: "",
+  struct: -1,
+  nodes: [],
+  links: [],
+  graphData: { nodes: [], links: [] },
+  byId: new Map(),
+  linkByKey: new Map(),
+});
 
 export default function GraphView({
   path,
@@ -79,20 +122,25 @@ export default function GraphView({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [area, setArea] = useState<string | null>(null);
   const [err, setErr] = useState("");
-  const [now, setNow] = useState(0); // animation clock, ticks while fresh
   const [burst, setBurst] = useState<{ ids: string[]; at: number } | null>(null);
+  // Bumped only when graph membership changes (never per animation frame).
+  const [struct, setStruct] = useState(0);
   const pathSet = useRef<Set<string>>(new Set(path));
   pathSet.current = new Set(path);
   const bornAt = useRef(new Map<string, number>());
   const seenIds = useRef(new Set<string>());
   const painted = useRef(false); // first data adoptive, even when empty
-  // Tombstones: id -> death time + last sim coords + size, for the red
-  // shrink-out. prevNodes holds the node objects of the previous render
-  // (the sim mutates them in place, so they carry live coords).
+  // Tombstones: id -> death time + snapshot size. Coords live on the ghost
+  // objects themselves (pinned via fx/fy/fz).
   const deadAt = useRef(
     new Map<string, { t: number; x: number; y: number; z: number; val: number }>()
   );
-  const prevNodes = useRef(new Map<string, FGNode>());
+  // Node object pool with a STABLE graphData wrapper. kapsule compares props
+  // by reference and reheats the whole sim to alpha=1 on every new identity,
+  // so animation ticks must never rebuild this — the rAF loop mutates the
+  // pooled objects in place and calls refresh() instead.
+  const cache = useRef<GraphCache>(emptyCache());
+  const loopRef = useRef(0);
   const burstIds = useRef<string[]>([]);
   const fgRef = useRef<ForceGraph3DHandle | null>(null);
   const reducedMotion = useRef(
@@ -111,38 +159,93 @@ export default function GraphView({
       .catch((e) => setErr(`graph unavailable (${e})`));
   }, [fresh, owner, onSync]);
 
-  // Stamp births on the first frame that can actually paint them — not on
-  // SSE arrival. Event-to-paint lag (refetch + a slow compositor) would
-  // otherwise eat the drop-in window before a single frame shows it.
-  // Deaths (superseded / swept rows the refetch no longer carries) become
-  // tombstones: a red shrink-out at their last sim coords.
+  // One animation frame: mutate pooled objects in place, repaint via
+  // refresh(). No setState here — React never re-renders for animation,
+  // so graphData keeps its identity and the sim is never reheated.
+  const frame = useCallback(() => {
+    loopRef.current = 0;
+    const t = Date.now();
+    const c = cache.current;
+    let active = false;
+    for (const [id, b] of bornAt.current) {
+      const n = c.byId.get(id);
+      if (!n) {
+        bornAt.current.delete(id);
+        continue;
+      }
+      const heat = heatAt(b, t, FRESH_MS);
+      if (heat <= 0) {
+        bornAt.current.delete(id);
+        n.color = n.__base.color;
+        n.val = n.__base.val;
+        n.fx = n.fy = n.fz = undefined;
+        continue;
+      }
+      active = true;
+      n.color = mixHex("#ffffff", n.__base.color, 1 - heat);
+      n.val = n.__base.val * popScale(heat);
+      // Hold newborns above the cluster with d3 fixed pins (no fighting
+      // the sim), release into a free drop once cooling.
+      if (heat > 0.55) {
+        const s = spawnOf(id);
+        n.fx = s.x;
+        n.fy = s.y;
+        n.fz = s.z;
+      } else {
+        n.fx = n.fy = n.fz = undefined;
+      }
+    }
+    for (const l of c.links) {
+      const heat = Math.max(
+        heatAt(bornAt.current.get(endId(l.source as string | GraphNode)), t, FRESH_MS),
+        heatAt(bornAt.current.get(endId(l.target as string | GraphNode)), t, FRESH_MS)
+      );
+      const glow = heat > 0 ? linkGlowColor(heat) : l.__base;
+      if (l.color !== glow) l.color = glow;
+    }
+    let expiredGhost = false;
+    for (const [id, d] of deadAt.current) {
+      const p = 1 - (t - d.t) / DIE_MS;
+      if (p <= 0) {
+        deadAt.current.delete(id);
+        c.byId.delete(`dead:${id}`);
+        expiredGhost = true;
+        continue;
+      }
+      active = true;
+      const gh = c.byId.get(`dead:${id}`);
+      if (gh) gh.val = Math.max(0.15, d.val * p);
+    }
+    if (expiredGhost) setStruct((n) => n + 1); // rebuild minus ghosts
+    try {
+      fgRef.current?.refresh?.();
+    } catch {
+      /* headless test stub */
+    }
+    if (active) loopRef.current = requestAnimationFrame(frame);
+  }, []);
+
+  const kickLoop = useCallback(() => {
+    if (reducedMotion.current || loopRef.current !== 0) return;
+    loopRef.current = requestAnimationFrame(frame);
+  }, [frame]);
+
+  useEffect(() => () => cancelAnimationFrame(loopRef.current), []);
+
+  // Stamp births at commit time (≈ first paint — the loop paints heat on
+  // its first frame, so event-to-paint lag can't eat the animation).
   useEffect(() => {
     if (!data) return;
     const t = Date.now();
     const live = new Set(data.nodes.map((n) => n.id));
-    for (const [id, pn] of prevNodes.current) {
-      if (!live.has(id) && !deadAt.current.has(id)) {
-        deadAt.current.set(id, {
-          t,
-          x: pn.x ?? 0,
-          y: pn.y ?? 0,
-          z: pn.z ?? 0,
-          val: pn.val ?? 2,
-        });
-      }
-    }
-    for (const [id, d] of deadAt.current) {
-      if (t - d.t >= DIE_MS) deadAt.current.delete(id);
-    }
+    // An empty refetch against a populated pool is a backend blip, not a
+    // massacre: keep the pool (the rebuild does the same) and don't wipe
+    // seenIds, or the recovery refetch would flash the whole brain.
+    if (live.size === 0 && seenIds.current.size > 0) return;
     // Prune the dead so the maps never grow past the graph.
     for (const id of [...bornAt.current.keys()]) {
       if (!live.has(id)) bornAt.current.delete(id);
     }
-    // The sim mutates these objects in place; their coords are fresh by
-    // the time the next refetch diffs against them.
-    prevNodes.current = new Map(
-      nodes.filter((n) => !n.id.startsWith("dead:")).map((n) => [n.id, n])
-    );
     if (!painted.current) {
       // First paint is not a birth: adopt silently, no flashes.
       painted.current = true;
@@ -150,54 +253,28 @@ export default function GraphView({
       return;
     }
     const fresh = data.nodes.filter((n) => !seenIds.current.has(n.id));
+    seenIds.current = live;
     if (fresh.length === 0) {
-      seenIds.current = live;
-      return;
-    }
-    const raf = requestAnimationFrame(() => {
-      const rt = Date.now();
-      const stamped: string[] = [];
-      for (const n of fresh) {
-        if (!seenIds.current.has(n.id)) {
-          bornAt.current.set(n.id, rt);
-          stamped.push(n.id);
-        }
-      }
-      seenIds.current = live;
-      if (stamped.length > 0) {
-        burstIds.current = stamped;
-        setBurst({ ids: stamped, at: rt });
-        setNow(rt); // kick the animation clock + repaint
-      }
-    });
-    return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
-
-  // Tick the animation clock only while newborns are cooling down or
-  // tombstones are shrinking out.
-  useEffect(() => {
-    if (reducedMotion.current) return;
-    const t = Date.now();
-    let any = false;
-    for (const b of bornAt.current.values()) {
-      if (t - b < FRESH_MS) {
-        any = true;
-        break;
-      }
-    }
-    if (!any) {
+      // Deaths alone still animate — but a pure no-op refetch must not
+      // even schedule a frame, or "zero digest" is a lie.
       for (const d of deadAt.current.values()) {
         if (t - d.t < DIE_MS) {
-          any = true;
+          kickLoop();
           break;
         }
       }
+      return;
     }
-    if (!any) return;
-    const iv = setInterval(() => setNow(Date.now()), 120);
-    return () => clearInterval(iv);
-  }, [data, now]);
+    const stamped: string[] = [];
+    for (const n of fresh) {
+      bornAt.current.set(n.id, t);
+      stamped.push(n.id);
+    }
+    burstIds.current = stamped;
+    setBurst({ ids: stamped, at: t });
+    kickLoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   useEffect(() => {
     if (!burst) return;
@@ -213,9 +290,11 @@ export default function GraphView({
     bornAt.current.clear();
     seenIds.current.clear();
     deadAt.current.clear();
-    prevNodes.current.clear();
     burstIds.current = [];
     painted.current = false;
+    cancelAnimationFrame(loopRef.current);
+    loopRef.current = 0;
+    cache.current = emptyCache();
   }, [owner]);
 
   const pickArea = (slug: string | null) => {
@@ -232,7 +311,7 @@ export default function GraphView({
     // Frame the newborns' live centroid at a fixed friendly distance.
     // (zoomToFit on a lone newborn dives inside the sphere — verified.)
     const pts = ids.map((id) => {
-      const pn = prevNodes.current.get(id);
+      const pn = cache.current.byId.get(id);
       return pn?.x !== undefined && pn?.y !== undefined && pn?.z !== undefined
         ? { x: pn.x, y: pn.y, z: pn.z }
         : spawnOf(id);
@@ -270,6 +349,18 @@ export default function GraphView({
       .catch(() => setDetail(null));
   }, [owner]);
 
+  // Stable callback identity: a fresh closure per render would re-trigger
+  // the lib's object digest on every React commit (no reheat, but churn).
+  const onPath = useCallback(
+    (l: GraphLink): number =>
+      pathSet.current.size > 0 &&
+      pathSet.current.has(endId(l.source)) &&
+      pathSet.current.has(endId(l.target))
+        ? 3
+        : 0,
+    []
+  );
+
   if (err) return <p className="dim text-sm">{err}</p>;
   if (!data) return <p className="dim text-sm">growing the brain…</p>;
   const areaOf = (n: Node): string | null => {
@@ -288,82 +379,124 @@ export default function GraphView({
       : new Set(data.nodes.filter((n) => areaOf(n) === area).map((n) => n.id));
   const shownNodes = data.nodes.filter(
     (n) => visibleIds === null || visibleIds.has(n.id));
-  const clock = now || Date.now();
-  const freshOf = (id: string): number =>
-    reducedMotion.current
-      ? 0
-      : heatAt(bornAt.current.get(id), clock, FRESH_MS);
-  const nodes = shownNodes.map((n) => {
-    const onPath = pathSet.current.has(n.id);
-    const heat = freshOf(n.id);
-    const base = onPath
-      ? "#ffffff"
-      : n.quarantined || n.ranked_out
-        ? "#5a5a66"
-        : TIER_COLOR[n.tier] ?? "#e8e6e1";
-    const node: FGNode = {
-      ...n,
-      color: heat > 0 ? mixHex("#ffffff", base, 1 - heat) : base,
-      val: (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1) * popScale(heat),
-    };
-    if (heat > 0.55) {
-      const s = spawnOf(n.id);
-      node.x = s.x;
-      node.y = s.y;
-      node.z = s.z;
+  const pathKey = path.join("\0");
+
+  // Reconcile the fetch payload into the pooled graph. Survivors keep
+  // their object identity (sim coords, velocity, pins untouched); only
+  // true membership changes mint a new wrapper — and only a new wrapper
+  // makes the lib pause + reheat. A refetch with identical rows is free.
+  const rebuildCache = (vis: Set<string> | null) => {
+    const cc = cache.current;
+    // Empty blip guard (mirrors the stamp effect): keep the pool.
+    if (data.nodes.length === 0 && cc.byId.size > 0) {
+      cc.data = data;
+      return;
     }
-    return node;
-  });
-  const shownLinks = data.links.filter(
-    (l) =>
-      visibleIds === null ||
-      (visibleIds.has(l.source) && visibleIds.has(l.target)));
-  const links = shownLinks.map((l) => {
-    const heat = Math.max(freshOf(l.source), freshOf(l.target));
-    return {
-      ...l,
-      color:
-        pathSet.current.has(l.source) && pathSet.current.has(l.target)
-          ? "#ffffff"
-          : heat > 0
-            ? `rgba(255,255,255,${(0.25 + heat * 0.65).toFixed(2)})`
-            : l.relation === "supersedes"
-              ? "#d9534f"
-              : "rgba(160,160,175,0.35)",
-    };
-  });
-  // Tombstones: the killed shrink out red where they fell.
-  const ghosts: FGNode[] = [];
-  if (!reducedMotion.current) {
+    const onPathSet = pathSet.current;
+    const live = new Set(data.nodes.map((n) => n.id));
+    if (!reducedMotion.current) {
+      for (const [id, pn] of cc.byId) {
+        if (id.startsWith("dead:") || live.has(id) || deadAt.current.has(id)) continue;
+        deadAt.current.set(id, {
+          t: Date.now(),
+          x: pn.x ?? 0,
+          y: pn.y ?? 0,
+          z: pn.z ?? 0,
+          val: pn.val ?? 2,
+        });
+      }
+    }
+    const byId = new Map<string, FGNode>();
+    for (const n of data.nodes) {
+      const base = baseDisplay(n, onPathSet.has(n.id));
+      const prev = cc.byId.get(n.id);
+      if (prev) {
+        prev.label = n.label;
+        prev.tier = n.tier;
+        prev.tags = n.tags;
+        prev.salience = n.salience;
+        prev.quarantined = n.quarantined;
+        prev.ranked_out = n.ranked_out;
+        const baseChanged =
+          prev.__base.color !== base.color || prev.__base.val !== base.val;
+        prev.__base = base;
+        // A burning node belongs to the loop; otherwise settle + repaint.
+        if (!bornAt.current.has(n.id) && baseChanged) {
+          prev.color = base.color;
+          prev.val = base.val;
+          kickLoop();
+        }
+        byId.set(n.id, prev);
+      } else {
+        byId.set(n.id, { ...n, color: base.color, val: base.val, __base: base });
+      }
+    }
+    const nodes: FGNode[] = [];
+    for (const n of data.nodes) {
+      if (vis && !vis.has(n.id)) continue;
+      nodes.push(byId.get(n.id)!);
+    }
     for (const [id, d] of deadAt.current) {
-      const p = 1 - (clock - d.t) / DIE_MS;
-      if (p <= 0 || p > 1) continue;
-      ghosts.push({
-        id: `dead:${id}`,
-        label: "",
-        tier: "",
-        tags: [],
-        salience: 0,
-        quarantined: false,
-        color: "#d9534f",
-        val: Math.max(0.15, d.val * p),
-        x: d.x,
-        y: d.y,
-        z: d.z,
-        fx: d.x,
-        fy: d.y,
-        fz: d.z,
-      });
+      if (Date.now() - d.t >= DIE_MS) {
+        deadAt.current.delete(id);
+        continue;
+      }
+      const gid = `dead:${id}`;
+      let gh = cc.byId.get(gid);
+      if (!gh) {
+        gh = {
+          id: gid, label: "", tier: "", tags: [], salience: 0,
+          quarantined: false, color: "#d9534f", val: d.val,
+          x: d.x, y: d.y, z: d.z, fx: d.x, fy: d.y, fz: d.z,
+          __base: { color: "#d9534f", val: d.val },
+        };
+      }
+      byId.set(gid, gh);
+      nodes.push(gh);
     }
+    const links: FGLink[] = [];
+    const linkByKey = new Map<string, FGLink>();
+    const seenK = new Set<string>();
+    for (const l of data.links) {
+      if (vis && !(vis.has(l.source) && vis.has(l.target))) continue;
+      const k = `${l.source}>${l.target}:${l.relation}`;
+      if (seenK.has(k)) continue;
+      seenK.add(k);
+      const base = linkBaseColor(
+        l.relation, onPathSet.has(l.source) && onPathSet.has(l.target));
+      const prev = cc.linkByKey.get(k);
+      if (prev) {
+        if (prev.__base !== base) {
+          prev.__base = base;
+          prev.color = base;
+          kickLoop();
+        }
+        prev.reason = l.reason ?? l.relation;
+        links.push(prev);
+      } else {
+        links.push({ ...l, color: base, __base: base });
+      }
+      linkByKey.set(k, links[links.length - 1]);
+    }
+    const sameNodes =
+      nodes.length === cc.nodes.length && nodes.every((n, i) => n === cc.nodes[i]);
+    const sameLinks =
+      links.length === cc.links.length && links.every((l, i) => l === cc.links[i]);
+    cc.data = data;
+    cc.area = area;
+    cc.pathKey = pathKey;
+    cc.struct = struct;
+    cc.byId = byId;
+    cc.linkByKey = linkByKey;
+    if (sameNodes && sameLinks) return; // zero digest, zero reheat
+    cc.nodes = nodes;
+    cc.links = links;
+    cc.graphData = { nodes, links };
+  };
+  const cc = cache.current;
+  if (cc.data !== data || cc.area !== area || cc.pathKey !== pathKey || cc.struct !== struct) {
+    rebuildCache(visibleIds);
   }
-  const endId = (e: string | GraphNode): string =>
-    typeof e === "string" ? e : e.id;
-  const onPath = (l: GraphLink): number =>
-    pathSet.current.size > 0 &&
-    pathSet.current.has(endId(l.source)) &&
-    pathSet.current.has(endId(l.target))
-      ? 3
-      : 0;
 
   return (
     <div className="relative h-full min-h-[420px] flex flex-col">
@@ -403,7 +536,7 @@ export default function GraphView({
       )}
       <ForceGraph3D
         ref={fgRef}
-        graphData={{ nodes: [...nodes, ...ghosts], links }}
+        graphData={cc.graphData}
         nodeLabel="label"
         nodeColor="color"
         nodeVal="val"
@@ -412,7 +545,7 @@ export default function GraphView({
         linkWidth={1.2}
         linkDirectionalParticles={onPath}
         linkDirectionalParticleSpeed={0.006}
-        linkDirectionalParticleColor={() => "#ffffff"}
+        linkDirectionalParticleColor={WHITE_PARTICLE}
         backgroundColor="#101014"
         showNavInfo={false}
         enableNodeDrag={true}

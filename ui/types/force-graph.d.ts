@@ -52,5 +52,8 @@ declare module "react-force-graph-3d" {
       lookAt?: Coords,
       transitionMs?: number
     ): void;
+    // Re-runs the object digest (colors/sizes) WITHOUT touching the sim.
+    // The per-frame animation path: mutate node objects, then refresh().
+    refresh(): void;
   }
 }
