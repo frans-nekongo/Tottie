@@ -50,3 +50,21 @@ button.action {
 }
 button.action:hover:not(:disabled) { border-color: var(--dim); }
 button.action:disabled { opacity: 0.45; cursor: not-allowed; }
+.livedot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dim);
+}
+.livedot.live {
+  background: var(--green);
+  animation: dotpulse 1.6s ease-in-out infinite;
+}
+@keyframes dotpulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .livedot.live { animation: none; }
+}

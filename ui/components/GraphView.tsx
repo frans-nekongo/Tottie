@@ -2,9 +2,20 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GraphLink, GraphNode } from "react-force-graph-3d";
+import type { FC, Ref } from "react";
+import type ForceGraph3DHandle from "react-force-graph-3d";
+import type {
+  ForceGraph3DProps,
+  GraphLink,
+  GraphNode,
+} from "react-force-graph-3d";
 
-const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), { ssr: false });
+// dynamic()'s own types don't carry the imperative ref API, so restate the
+// component type here. The kapsule runtime exposes its instance via ref;
+// the headless pill-click probe proves the flight lands.
+const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), {
+  ssr: false,
+}) as unknown as FC<ForceGraph3DProps & { ref?: Ref<ForceGraph3DHandle> }>;
 
 interface Node {
   id: string;
@@ -27,6 +38,10 @@ interface FGNode extends Node {
   x?: number;
   y?: number;
   z?: number;
+  // Pinned coords for tombstones (the dying stay where they fell).
+  fx?: number;
+  fy?: number;
+  fz?: number;
   // GraphNode carries an index signature; satisfy it explicitly.
   [key: string]: unknown;
 }
@@ -46,6 +61,7 @@ const TIER_COLOR: Record<string, string> = {
 };
 
 const FRESH_MS = 2600; // white-hot drop-in window per newborn node
+const DIE_MS = 700; // red shrink-out window per killed node
 
 function hashStr(s: string): number {
   let h = 2166136261;
@@ -68,47 +84,94 @@ function mixHex(a: string, b: string, t: number): string {
   );
 }
 
+function spawnOf(id: string): { x: number; y: number; z: number } {
+  // Newborns spawn high above the cluster; the force layout pulls them
+  // down into place — a literal drop-in. Deterministic scatter per id
+  // so siblings don't stack.
+  const h1 = hashStr(id);
+  const h2 = hashStr(id + ":z");
+  return { x: (h1 - 0.5) * 70, y: 130 + h1 * 50, z: (h2 - 0.5) * 70 };
+}
+
 export default function GraphView({
   path,
   fresh,
   owner,
+  onSync,
 }: {
   path: string[];
   fresh: number; // bump to refetch after writes
   owner: string;
+  onSync?: (ms: number) => void; // fetch round-trip per refetch
 }) {
   const [data, setData] = useState<{ nodes: Node[]; links: Link[] } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [area, setArea] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [now, setNow] = useState(0); // animation clock, ticks while fresh
+  const [burst, setBurst] = useState<{ ids: string[]; at: number } | null>(null);
   const pathSet = useRef<Set<string>>(new Set(path));
   pathSet.current = new Set(path);
   const bornAt = useRef(new Map<string, number>());
   const seenIds = useRef(new Set<string>());
   const painted = useRef(false); // first data adoptive, even when empty
+  // Tombstones: id -> death time + last sim coords + size, for the red
+  // shrink-out. prevNodes holds the node objects of the previous render
+  // (the sim mutates them in place, so they carry live coords).
+  const deadAt = useRef(
+    new Map<string, { t: number; x: number; y: number; z: number; val: number }>()
+  );
+  const prevNodes = useRef(new Map<string, FGNode>());
+  const burstIds = useRef<string[]>([]);
+  const fgRef = useRef<ForceGraph3DHandle | null>(null);
   const reducedMotion = useRef(
     typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
   );
 
   useEffect(() => {
+    const t0 = Date.now();
     fetch(`/api/graph?owner=${encodeURIComponent(owner)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        onSync?.(Date.now() - t0);
+      })
       .catch((e) => setErr(`graph unavailable (${e})`));
-  }, [fresh, owner]);
+  }, [fresh, owner, onSync]);
 
   // Stamp births on the first frame that can actually paint them — not on
   // SSE arrival. Event-to-paint lag (refetch + a slow compositor) would
   // otherwise eat the drop-in window before a single frame shows it.
+  // Deaths (superseded / swept rows the refetch no longer carries) become
+  // tombstones: a red shrink-out at their last sim coords.
   useEffect(() => {
     if (!data) return;
+    const t = Date.now();
     const live = new Set(data.nodes.map((n) => n.id));
+    for (const [id, pn] of prevNodes.current) {
+      if (!live.has(id) && !deadAt.current.has(id)) {
+        deadAt.current.set(id, {
+          t,
+          x: pn.x ?? 0,
+          y: pn.y ?? 0,
+          z: pn.z ?? 0,
+          val: pn.val ?? 2,
+        });
+      }
+    }
+    for (const [id, d] of deadAt.current) {
+      if (t - d.t >= DIE_MS) deadAt.current.delete(id);
+    }
     // Prune the dead so the maps never grow past the graph.
     for (const id of [...bornAt.current.keys()]) {
       if (!live.has(id)) bornAt.current.delete(id);
     }
+    // The sim mutates these objects in place; their coords are fresh by
+    // the time the next refetch diffs against them.
+    prevNodes.current = new Map(
+      nodes.filter((n) => !n.id.startsWith("dead:")).map((n) => [n.id, n])
+    );
     if (!painted.current) {
       // First paint is not a birth: adopt silently, no flashes.
       painted.current = true;
@@ -121,21 +184,27 @@ export default function GraphView({
       return;
     }
     const raf = requestAnimationFrame(() => {
-      const t = Date.now();
-      let stamped = false;
+      const rt = Date.now();
+      const stamped: string[] = [];
       for (const n of fresh) {
         if (!seenIds.current.has(n.id)) {
-          bornAt.current.set(n.id, t);
-          stamped = true;
+          bornAt.current.set(n.id, rt);
+          stamped.push(n.id);
         }
       }
       seenIds.current = live;
-      if (stamped) setNow(t); // kick the animation clock + repaint
+      if (stamped.length > 0) {
+        burstIds.current = stamped;
+        setBurst({ ids: stamped, at: rt });
+        setNow(rt); // kick the animation clock + repaint
+      }
     });
     return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  // Tick the animation clock only while newborns are cooling down.
+  // Tick the animation clock only while newborns are cooling down or
+  // tombstones are shrinking out.
   useEffect(() => {
     if (reducedMotion.current) return;
     const t = Date.now();
@@ -146,16 +215,35 @@ export default function GraphView({
         break;
       }
     }
+    if (!any) {
+      for (const d of deadAt.current.values()) {
+        if (t - d.t < DIE_MS) {
+          any = true;
+          break;
+        }
+      }
+    }
     if (!any) return;
     const iv = setInterval(() => setNow(Date.now()), 120);
     return () => clearInterval(iv);
   }, [data, now]);
 
   useEffect(() => {
+    if (!burst) return;
+    // 9s: the demo narrator finishes the sentence before it leaves.
+    const to = setTimeout(() => setBurst(null), 9000);
+    return () => clearTimeout(to);
+  }, [burst]);
+
+  useEffect(() => {
     setArea(null);
     setDetail(null);
+    setBurst(null);
     bornAt.current.clear();
     seenIds.current.clear();
+    deadAt.current.clear();
+    prevNodes.current.clear();
+    burstIds.current = [];
     painted.current = false;
   }, [owner]);
 
@@ -163,6 +251,45 @@ export default function GraphView({
     setArea(slug);
     setDetail(null);
   };
+
+  const flyToNew = useCallback(() => {
+    const ids = burstIds.current;
+    if (ids.length === 0) return;
+    burstIds.current = [];
+    setBurst(null);
+    pickArea(null); // newborns may hide behind the area filter
+    // Frame the newborns' live centroid at a fixed friendly distance.
+    // (zoomToFit on a lone newborn dives inside the sphere — verified.)
+    const pts = ids.map((id) => {
+      const pn = prevNodes.current.get(id);
+      return pn?.x !== undefined && pn?.y !== undefined && pn?.z !== undefined
+        ? { x: pn.x, y: pn.y, z: pn.z }
+        : spawnOf(id);
+    });
+    const c = {
+      x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+      y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+      z: pts.reduce((s, p) => s + p.z, 0) / pts.length,
+    };
+    let spread = 0;
+    for (const p of pts) {
+      spread = Math.max(
+        spread,
+        Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z)
+      );
+    }
+    const d = Math.min(600, Math.max(220, spread * 2.5 + 120));
+    try {
+      fgRef.current?.cameraPosition(
+        { x: c.x, y: c.y + d * 0.25, z: c.z + d },
+        c,
+        800
+      );
+    } catch {
+      /* graph not ready */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onNodeClick = useCallback((n: { id?: string }) => {
     if (!n.id) return;
@@ -211,17 +338,15 @@ export default function GraphView({
     const node: FGNode = {
       ...n,
       color: heat > 0 ? mixHex("#ffffff", base, 1 - heat) : base,
-      val: (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1) * (1 + heat * 1.1),
+      // Ease-out pop: violent shrink at first, gentle settle at the end.
+      val: (1 + (n.salience ?? 0.5) * 3) * (onPath ? 1.8 : 1) *
+        (1 + 1.2 * Math.pow(heat, 1.5)),
     };
     if (heat > 0.55) {
-      // Newborns spawn high above the cluster; the force layout pulls
-      // them down into place — a literal drop-in. Deterministic scatter
-      // per id so siblings don't stack.
-      const h1 = hashStr(n.id);
-      const h2 = hashStr(n.id + ":z");
-      node.x = (h1 - 0.5) * 70;
-      node.y = 130 + h1 * 50;
-      node.z = (h2 - 0.5) * 70;
+      const s = spawnOf(n.id);
+      node.x = s.x;
+      node.y = s.y;
+      node.z = s.z;
     }
     return node;
   });
@@ -243,6 +368,30 @@ export default function GraphView({
               : "rgba(160,160,175,0.35)",
     };
   });
+  // Tombstones: the killed shrink out red where they fell.
+  const ghosts: FGNode[] = [];
+  if (!reducedMotion.current) {
+    for (const [id, d] of deadAt.current) {
+      const p = 1 - (clock - d.t) / DIE_MS;
+      if (p <= 0 || p > 1) continue;
+      ghosts.push({
+        id: `dead:${id}`,
+        label: "",
+        tier: "",
+        tags: [],
+        salience: 0,
+        quarantined: false,
+        color: "#d9534f",
+        val: Math.max(0.15, d.val * p),
+        x: d.x,
+        y: d.y,
+        z: d.z,
+        fx: d.x,
+        fy: d.y,
+        fz: d.z,
+      });
+    }
+  }
   const endId = (e: string | GraphNode): string =>
     typeof e === "string" ? e : e.id;
   const onPath = (l: GraphLink): number =>
@@ -280,8 +429,17 @@ export default function GraphView({
         </div>
       )}
       <div className="relative flex-1 min-h-0">
+      {burst && burst.ids.length > 0 && (
+        <button
+          onClick={flyToNew}
+          className="absolute top-2 left-1/2 -translate-x-1/2 z-10 card px-3 py-1 text-xs mono"
+        >
+          <span className="livedot live" /> {burst.ids.length} new — show me
+        </button>
+      )}
       <ForceGraph3D
-        graphData={{ nodes, links }}
+        ref={fgRef}
+        graphData={{ nodes: [...nodes, ...ghosts], links }}
         nodeLabel="label"
         nodeColor="color"
         nodeVal="val"

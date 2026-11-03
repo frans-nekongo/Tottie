@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AgentsView from "../components/AgentsView";
+import BirthFeed, { FeedItem } from "../components/BirthFeed";
 import GraphView from "../components/GraphView";
 import PendingStrip from "../components/PendingStrip";
 import type { StreamEvent } from "../components/Timeline";
@@ -33,7 +34,12 @@ export default function Home() {
   const [sleeping, setSleeping] = useState(false);
   const [sleepNote, setSleepNote] = useState<string | null>(null);
   const [graphTick, setGraphTick] = useState(0);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [live, setLive] = useState(false);
+  const [syncMs, setSyncMs] = useState<number | null>(null);
   const faceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedKey = useRef(0);
+  const onSync = useCallback((ms: number) => setSyncMs(ms), []);
 
   const flash = (s: FaceState, ms = 2200) => {
     setFace(s);
@@ -58,26 +64,48 @@ export default function Home() {
         const op = a?.op as string | undefined;
         if (!op) return; // ping frames carry no op
         // Every mutation refreshes the brain — including sweeps, whose
-        // kills must vanish the instant they land, not on the next NEW.
+        // kills shrink out the instant they land, not on the next NEW.
         // Birth animation is clocked by GraphView at first paint.
         setGraphTick((n) => n + 1);
-        if (op === "NEW" || op === "SUPERSEDE") flash("remembering");
+        if (op === "NEW" || op === "SUPERSEDE") {
+          flash("remembering");
+          const text = (e.utterance ?? "").trim().slice(0, 110);
+          if (text) {
+            const key = ++feedKey.current;
+            setFeed((f) => [{ key, op, text }, ...f].slice(0, 4));
+          }
+        }
       } catch {
         /* malformed frames never break the stream */
       }
     };
     src.onmessage = onEvent; // unnamed frames (defensive)
     src.addEventListener("memory", (ev) => onEvent(ev as MessageEvent));
+    src.onopen = () => setLive(true);
+    src.onerror = () => setLive(false);
     return () => src.close();
   }, [session, watchOwner, watchSession]);
+
+  useEffect(() => {
+    if (feed.length === 0) return;
+    // 12s from the event: slow demo boxes paint seconds late.
+    const to = setTimeout(() => setFeed([]), 12000);
+    return () => clearTimeout(to);
+  }, [feed]);
 
   return (
     <main className="h-screen max-w-[1440px] mx-auto flex flex-col px-4 py-3 gap-3">
       <header className="flex items-center gap-3">
         <TottieFace state={face} />
         <div className="flex-1">
-          <h1 className="text-lg font-semibold leading-tight">Tottie</h1>
-          <p className="dim text-xs mono">watching {watchOwner} · {watchSession || "all sessions"} · agent observatory</p>
+          <h1 className="text-lg font-semibold leading-tight">
+            Tottie{" "}
+            <span
+              className={live ? "livedot live" : "livedot"}
+              title={live ? "stream live" : "stream reconnecting"}
+            />
+          </h1>
+          <p className="dim text-xs mono">watching {watchOwner} · {watchSession || "all sessions"} · agent observatory · sync {syncMs === null ? "—" : `${syncMs}ms`}</p>
         </div>
         <button
           className="action text-sm"
@@ -114,7 +142,10 @@ export default function Home() {
         {sleepNote && <p className="text-xs dim mono">{sleepNote}</p>}
       </header>
       <PendingStrip refreshKey={graphTick} owner={watchOwner} />
-      <div className="flex-1 min-h-0 flex flex-col card p-3">
+      <div className="flex-1 min-h-0 flex flex-col card p-3 relative">
+        <div className="absolute top-3 right-3 z-10">
+          <BirthFeed items={feed} />
+        </div>
         <div className="flex gap-2 mb-2">
           {(["agents", "graph"] as const).map((t) => (
             <button
@@ -131,7 +162,12 @@ export default function Home() {
           {tab === "agents" ? (
             <AgentsView owner={watchOwner} />
           ) : (
-            <GraphView path={[]} fresh={graphTick} owner={watchOwner} />
+            <GraphView
+              path={[]}
+              fresh={graphTick}
+              owner={watchOwner}
+              onSync={onSync}
+            />
           )}
         </div>
       </div>

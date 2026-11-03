@@ -34,5 +34,23 @@ declare module "react-force-graph-3d" {
     onNodeClick?: (n: GraphNode) => void;
     cooldownTime?: number;
   }
-  export default class ForceGraph3D extends Component<ForceGraph3DProps> {}
+  export interface Coords {
+    x: number;
+    y: number;
+    z: number;
+  }
+  export default class ForceGraph3D extends Component<ForceGraph3DProps> {
+    // Imperative camera API the kapsule runtime exposes via ref
+    // (useImperativeHandle). Declared here so Tottie can fly to newborns.
+    zoomToFit(
+      durationMs?: number,
+      padding?: number,
+      nodeFilter?: (node: GraphNode) => boolean
+    ): void;
+    cameraPosition(
+      position: Partial<Coords>,
+      lookAt?: Coords,
+      transitionMs?: number
+    ): void;
+  }
 }
