@@ -1,238 +1,104 @@
-# TOTTIE — 3-Minute Video: Complete Shot Plan (V2 — BRAIN FIRST)
+# TOTTIE — The Complete 3-Minute Master Video Plan (180 Seconds)
 
-> **Runtime: 180 seconds exactly.** FilmCraft project
-> `assets_3min/film/tottie_3min.fcproj`, active sequence **`TOTTIE_V2`**
-> (old `TOTTIE_3MIN` kept as rollback).
-> **Story in one line:** "I was mad at my agent for forgetting → here's how a
-> real brain remembers (encoding, retrieval, connection) → I mapped each
-> mechanism onto a machine → watch it work → measured, not promised →
-> here's every paper it stands on."
+## 1. Production Bible & Recording Spec
 
-## The spine (what the story is saying)
+### Camera & Audio Setup
+• Talking Head: 1080p minimum, slightly loose chest-up framing. Natural/window light or one softbox. Lived-in developer desk in frame.  
+• Audio: Crisp microphone close to your chest/mouth. Punchy delivery—fast cuts, zero lingering breaths.  
+• Energy Arc: Mid-rage explosion (0:00) → relaxed comedic deadpan (0:15) → energized explainer (1:00) → confident builder showing real software (1:38) → rigorous engineer (2:17) → triumphant close (2:45).  
 
-1. **ACT I — THE DISEASE (0:00–1:00).** Agents forget. Stateless, not stupid.
-   Bigger context is a tax. So: what CAN I do?
-2. **ACT II — THE BRAIN, THEN THE MACHINE (1:00–2:17).** How the human mind
-   remembers (notebook-sourced diagrams) → how each mechanism became a Tottie
-   component → the "watch it" joke → your live demo with explainer overlays.
-3. **ACT III — RECEIPTS + SHOULDERS (2:17–3:00).** We tried to break it, we
-   measured it, it's built on Meta, it matters everywhere — girlfriend payoff —
-   literature credits roll.
+### Visual Hierarchy & Palette
+• Bio / Brain Visuals: Warm Amber (#B45309)  
+• Machine / Tottie System: Deep Teal / Cyan (#0F766E / #06B6D4)  
+• Meta Branding: Blue (#0A84FF)  
+• Rejections / Strike-throughs: Dark Red (#B91C1C)  
+• Girlfriend Counter: Top-right corner pill overlay (💀 girlfriend mentions: N). Pops with a scale bounce and soft "ding" sound on every trigger. Final tally: 5 (5th trigger gets celebration fireworks).  
 
-## Open loops — every question planted, where it's answered
-
-| # | Planted | Line | Answered | How |
-|---|---|---|---|---|
-| 1 | 0:03 | "Why am I always reminding youuuu?" | 0:12, 0:29, 1:20 | DIAGNOSIS card (Tulving) → "stateless" → the mapping → demo |
-| 2 | 0:15 | "Join the club." | 0:20 | "OUR agents have a memory problem" — shared disease |
-| 3 | 0:20 | "Two weeks later it's gone?" | 0:29 | "Wakes up stateless… fails continuity" + Groundhog ×3 |
-| 4 | 0:26 | "How my girlfriend feels." | 2:38–2:45 | Running gag, 5 dings, payoff in close |
-| 5 | 0:37 | "…the fix is simple…" | 0:42 | "6-million-billion window" mocked → TAX chart kills it |
-| 6 | 0:57 | "What CAN I do?" | 1:00 | The three brain questions → mapping → demo |
-| 7 | 1:00 | Q1 — WHAT makes me remember? | 1:01 (same beat) | ENCODING card: LTP + amygdala + prediction error (notebook) |
-| 8 | 1:07 | Q2 — WHEN does it hand it back? | 1:08 (same beat) | RETRIEVING card: cue → spread → best match (notebook) |
-| 9 | 1:14 | Q3 — HOW does it all connect? | 1:15 (same beat) | Network card: synapses, pulse, CA3 completion (notebook) |
-| 10 | 1:20 | "RAG gets a job" | 1:26 | "3 legs, RRF fused" on map + demo beat 3 |
-| 11 | 1:32 | "Never simulate its constraints" | 1:26–1:32 | REFUSED footer + thesis silence + non-destructive demo |
-| 12 | 1:38 | "How do you WATCH a memory form?" | 1:38–2:17 | Brain-you-can-look-at → live demo + explainer bug |
-| 13 | 2:05 | "…the genius becomes a goldfish" | 2:08 | Goldfish flash + OFF "I don't know" / ON knows |
-| 14 | 2:13 | "Then it sleeps — and generalizes" | 2:13–2:17 | Intention fires + Sleep 5→1 (replay → semanticise) |
-| 15 | 2:17 | "Second agent to fight the first" | 2:17–2:23 | Spidey-pointing cold open + philo terminals + trace |
-| 16 | 2:23 | "We measure it" | 2:23–2:28 | 22/22 · 0.0 · 4/4 + small print |
-| 17 | 2:28 | "Built on Meta" | 2:28–2:32 | Lower-third + three-bodies strip + verbatim VO |
-| 18 | 2:32 | "Who is this for?" | 2:32–2:38 | 3 cards + rapid-fire VO list (robots, NPCs, copilots…) |
-| 19 | 2:38 | GF payoff | 2:38–2:45 | Dings 4+5, fireworks, birthday |
-| 20 | 2:45 | "What is all this standing on?" | 2:45–3:00 | Credits: 34 sources in 3 groups + lockup + stinger |
-
-## Global spec (applies to every shot)
-
-- **Frame:** 1920×1080, 30fps. Gist text ≥ 48px; diagram detail ≥ 26px.
-- **Theme: LIGHT** (`#F3F5F9`, ink `#111827`); credits roll is dark (`#0B0E14`).
-- **Color code:** brain = amber `#B45309`; system = teal `#0F766E`;
-  danger/refused = red `#B91C1C`; Meta = blue `#0A84FF`.
-- **Fonts:** Helvetica Bold/Regular, Menlo (terminals).
-- **GF counter:** top-right pill (x1300–1880, y48–136), 26→165s. +1 = pop + ding.
-  Total **5** (5th = fireworks variant).
-- **ONE caption layer:** single burned-in black bar per beat. No caption track.
-- **Diagrams:** white cards, fade in, hold. Generator:
-  `assets_3min/build/overlay_diagrams.py`; beat builder:
-  `assets_3min/build/build_beats.py`. Brain facts cite the META notebook
-  (54 sources; queries for encoding/retrieval/consolidation on file).
-- **Fullscreen meme rhythm:** 6 full-takeover moments (rage, Jordan, stonks,
-  Norman, goldfish, spidey) — spaced, each ≤2s except Jordan (3s).
-- **Music:** RAGE → lo-fi pulse (0:20–1:00) → wonder (1:00–1:20) → cinematic
-  rise (1:20–2:17) → quiet (2:17–2:28) → swell + resolve (2:28–2:45) →
-  credits bed (2:45–3:00). Silence stings at 0:41, 1:37, 2:35.
+### Screen Capture Rules (The Demo Beats)
+• Resolution & Zoom: 1920×1080, browser and terminal zoom bumped to 150%–175% so text is razor-sharp on mobile. Highlight cursor clicks.  
+• Layout: Split-screen. Agent Chat Terminal on Left (45%) | Tottie 3D Visual Graph on Right (55%).  
+• Seed State: Pinned model, temperature 0, clean local Postgres DB.  
 
 ---
 
-## BEAT 1 — RAGE HOOK (0:00–0:20) · S01–S04
+## 2. Complete Beat-by-Beat Timeline (0:00 – 3:00)
 
-> FLOW IN: cold open, just pain. FLOW OUT: "Join the club" recruits; Beat 2
-> names the club's disease.
+```
+[0:00 ────────── 0:42]  ACT I: The Disease & Amnesia Loop (42s)
+[0:42 ────────── 1:00]  ACT II: The Context Trap & Underdog Pivot (18s)
+[1:00 ────────── 1:38]  ACT III: The Three Brain Questions & Software Mapping (38s)
+[1:38 ────────── 2:17]  ACT IV: Live Screen Demo — Watch It Think (39s)
+[2:17 ────────── 2:36]  ACT V: Real Engineering — Automated Testing & Tracing (19s)
+[2:36 ────────── 3:00]  ACT VI: Built on Meta, Who It's For & Triumphant Close (24s)
+```
 
-| TC | ON SCREEN | SAYING | ANIMATION / SFX |
-|---|---|---|---|
-| 0:00–0:03 | S01: Black. **"POV: your agent forgot again."** | *(silence)* | Slam-in, shake, bass hit. |
-| 0:03–0:12 | S02: furious typing, 3 outbursts accelerating. **Rage FULLSCREEN flash** (local 5–6.5s) at the peak. | "folder B dammit— how MANY times… It's 34 employees. I HAVE 34 EMPLOYEES MAN!!! Why am I always reminding youuuu—" | Speed-ramp. Flash = the smash visualized. |
-| 0:12–0:15 | S03: Freeze. Jordan full-frame + **DIAGNOSIS card** (AVAILABLE vs INACCESSIBLE — Tulving & Pearlstone). | *(record scratch + Jordan "STOP IT. GET SOME HELP." on A1)* | Vine boom. Loop #1 first answer. |
-| 0:15–0:20 | S04: calm. Leo PiP pointing at viewer. `lower_name.png` V2. | "Have you… rage-quit a coding session? Flipped OFF… and back ON… an agent? Join the club, buddy." | Punch-in. Leo points AT the club. |
+---
 
-## BEAT 2 — AMNESIA (0:20–0:42) · S05–S08 (trimmed −3s)
+### ACT I — THE DISEASE & AMNESIA LOOP (0:00 – 0:42)
 
-> FLOW IN: "our agents" inherits "the club". FLOW OUT: "…the fix is simple…"
-> dangles over the sting — Beat 3 walks into the trap.
+| Timecode | On-Screen Visual | Audio / SFX | Script / Voiceover | Assets & Animation Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **0:00–0:03** | Pure black. Kinetic type slams onto screen: "POV: your agent forgot again." | Heavy cinematic sub-bass hit. Absolute silence after. | *(No dialogue — let the audience feel the pain for 2 seconds)* | Bass drop. Screen shake on text slam. |
+| **0:03–0:12** | Smash-cut to screen recording: Cursor aggressively typing into terminal chat. Keystrokes subtitled huge as you type. Speed-ramps faster. | Aggressive mechanical keyboard clatter maxed in mix. Record scratch on 0:11. | "Folder B, dammit—how MANY times do I have to tell you, man?! It's 34 employees. I HAVE 34 EMPLOYEES, MAN! Why am I always reminding youuuu—" | Screaming freeze-frame on face at 0:11. Text flashes red. |
+| **0:12–0:15** | Fullscreen meme takeover: Michael Jordan PSA. | Jordan voice clip: "Stop it. Get some help." + Vine boom. | *(Jordan audio carries the beat)* | `assets_3min/memes/jordan_psa.mp4` |
+| **0:15–0:20** | Talking head. Calm, deadpan smile. Cut to Leo DiCaprio pointing meme picture-in-picture. | Lo-fi chillhop beat starts playing low in background. | "Have you ever rage-quit a coding session? Flipped an agent OFF… and back ON? Join the club, buddy." | `assets_3min/memes/leo_point.mp4`. Punch-in zoom on "buddy." |
+| **0:20–0:26** | Montage of terminal chats asking repetitive questions: "What is your name?", "What stack?" Calendar timelapse flipping: Day 1 → Day 90. | Comedy typewriter TICK sound on every calendar flip. | "Our agents have a memory problem. Two weeks later, it's like we never talked." | Kinetic text overlay: "Wakes up with zero yesterday." |
+| **0:26–0:29** | Deadpan stare directly into the lens. Stinks meme pops in corner. | Pop sound + clean DING. | "So this is how my girlfriend feels." | `assets_3min/memes/stinks.webm`. GF Counter appears: 1. |
+| **0:29–0:37** | Motion graphic: An illustrated brain labeled "AGENT" waking up in an empty room, looped 3 times (Groundhog Day). | Monotonous alarm clock beep. | "Every agent wakes up stateless. No history. No yesterday. All that intelligence — and zero continuity." | Stamped across screen: "State persistence problem, not a reasoning problem." |
+| **0:37–0:42** | Extreme close-up on your eyes. "Press X to DOUBT" meme. Music bed abruptly cuts to dead silence. | Silence sting. Room tone only. | "But people tell me the fix is simple…" | `assets_3min/memes/xdoubt.webm`. Total silence creates anticipation. |
 
-| TC | ON SCREEN | SAYING | ANIMATION / SFX |
-|---|---|---|---|
-| 0:20–0:26 | S05 (6s): re-asking "What is your name?" Calendar day 1 → 90. Goldfish PiP. | "Our agents have a memory problem. We talk today, two weeks from now… you don't remember what I said?" | TICK per re-ask. Tighter cut, same montage. |
-| 0:26–0:29 | S06 (3s): deadpan. **GF counter #1** born. Stinks-audience PiP. | "So this is how my girlfriend feels." | Ding #1. Hold — audience must NOTICE. |
-| 0:29–0:37 | S07 (8s): brain labeled AGENT, Groundhog loop ×3. **"a state persistence problem."** | "Every agent wakes up stateless. No history. No yesterday. All that intelligence — and it fails the baseline of a mind: continuity." | Untouched (protects the ×3 loop). |
-| 0:37–0:42 | S08 (5s): close-up. Phelps PiP + "press X to DOUBT". Music → nothing. | "But people tell me the fix is simple…" | Silence sting. Hard-cut INTO the trap. |
+---
 
-## BEAT 3 — CONTEXT TRAP + BRAIN BABY (0:42–1:00) · S09–S13 (trimmed −2s)
+### ACT II — THE CONTEXT TRAP & THE PIVOT (0:42 – 1:00)
 
-> FLOW IN: sting resolves into the mocked "simple fix". FLOW OUT: "…what CAN
-> I do?" — Beat 4 multiplies it into three brain questions.
+| Timecode | On-Screen Visual | Audio / SFX | Script / Voiceover | Assets & Animation Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **0:42–0:49** | Split screen: You on left with fake swagger. Right side slams Stonks meme → transforms into a brutal cost chart (context ↑, cost/latency ↑↑, accuracy ↓). | Cash register CHA-CHING followed by warning buzz. | "'Just get a 6-million-billion context window, bro.' Except that isn't memory. It's a TAX. And I can't solve that —" | `assets_3min/memes/stonks.webm`. Giant red rubber stamp: "THE CONTEXT TAX". |
+| **0:49–0:53** | Talking head, shrugging with open hands. Meme arrow pointing to your head: "Meta hire me". | Gentle meme horn. | "— that's big-lab work. I mean, I would, but —" | Quick self-aware grin. |
+| **0:53–1:00** | Fullscreen Fries in the bag meme → smash cut to you standing up, leaning forward with serious energy. | Bass thump on fries → warm cinematic synth pad rises. | "— my Meta money hasn't landed yet. So until then? I'll just put the fries in the bag. So what CAN I do?" | `assets_3min/memes/fries.jpg`. Complete tone shift on "what CAN I do": from joke to serious builder. |
 
-| TC | ON SCREEN | SAYING | ANIMATION / SFX |
-|---|---|---|---|
-| 0:42–0:49 | S09 (2s) + S10 (5s): "6-million-billion window" → **stonks FULLSCREEN 2s** → chart builds (context ↑, cost/latency ↑↑, accuracy ↓). **"it's a TAX."** | "Just get a 6-million-billion context window, bro. Except that isn't memory. It's a TAX. And I can't solve that —" | TAX stamp + cash register. Stonks = the ironic punchline. |
-| 0:49–0:53 | S11: Fry PiP. Open hands shrug. | "— that's big-lab work. I mean, I would, but —" | Gentle meme horn. |
-| 0:53–1:00 | S12: fries + "PUT THE FRIES IN THE BAG." → S13: **Norman FULLSCREEN 1.5s.** | "— my Meta money hasn't landed yet. So until then? I'll just put the fries in the bag. So what CAN I do?" | Fries = dismissive comedy → lean in, serious builder energy on "what CAN I do." |
+---
 
-## BEAT 4 — THE BRAIN (1:00–1:20) · S14–S16 (REBUILT, notebook-sourced)
+### ACT III — THE THREE BRAIN QUESTIONS & SOFTWARE MAPPING (1:00 – 1:38)
 
-> FLOW IN: "what CAN I do" → "here's how I thought about it: the organ that
-> already solved it". FLOW OUT: "…That's the whole game." → "So I drew it" —
-> the machine that copies it. **Human diagrams only. No system parts here.**
+| Timecode | On-Screen Visual | Audio / SFX | Script / Voiceover | Assets & Animation Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **1:00–1:07** | Left: Amber biological neuron firing. Right: Cartoon image of an absurdly detailed dog collar (`dog.jpg`). | Pop + DING on "girlfriend". | "I started with three questions. First: my girlfriend mentioned her friend's dog once — weeks later, still there. Why does THAT stick?" | `assets_3min/memes/dog.jpg`. GF Counter pops to 2. |
+| **1:07–1:14** | Re-run a quick 2-second flash of walking into your kitchen (`icecream.jpg`), opening the fridge, and remembering ice cream. | Dreamy harp glissando. | "Second: how does a memory show up exactly when I need it, when I never went looking for it?" | `assets_3min/memes/icecream.jpg`. Kinetic text: "Cues, not searches." |
+| **1:14–1:20** | Network motion graphic: Nodes lighting up along glowing links like electric sparks across synapses. | Electric buzzing pulse. | "Third: how is it all wired together — so one memory drags the next one up with it?" | Visual shows a cluster lighting up from one touched node. |
+| **1:20–1:32** | The Centerpiece Diagram: Overhead animated map. Amber brain on left → Teal Tottie architecture on right. Lanes light up as you speak them. | Crisp technological whoosh as each lane locks into place. | "Fifty-four papers later, here’s how the mind actually does it:<br><br>In the brain, you don't record a raw video of life—predictive coding throws out what's expected, and salience tags what matters. So we built the **Observer**: a surprise gate that suppresses routine chatter and only keeps what's new.<br><br>In the brain, memory isn't a flat bucket—it’s tiered into moments, facts, and lessons, wired together by synapses. So we built the **Scribe**: it sorts memories into tiers and links them into a live graph.<br><br>And when you recall, you don't run a keyword search—a cue triggers spreading activation across the network. So we built the **Retriever**: it types the cue, spreads activation along the links, and hands back a 400-token Card stamped with WHY. RAG didn't die—it finally got a real job." | Lane 1: Attention & Surprise Gate lights up.<br>Lane 2: Tiered Scribe + Synaptic Links forms.<br>Lane 3: Retriever + Spreading Activation radiates.<br>RAG shown as 1 of 3 legs inside Retriever. |
+| **1:32–1:38** | Everything stops. Direct to camera. Clean white card with crisp black typography. | Total silence. No music, no room buzz. | "Simulate the brain's solutions. Never simulate its constraints. The brain forgets because of biological limits. We don't have those. We didn't copy the forgetting. We copied the finding." | The thesis of the entire project. Let the silence hang for 1 second after the line. |
 
-| TC | ON SCREEN | SAYING (new VO) | SOURCE |
-|---|---|---|---|
-| 1:00–1:07 | S14: Q1 + dog + **ENCODING card**: fire-together-wire-together (LTP) / emotion tags it (amygdala) / surprise gates it (prediction error). Footer: Craik & Lockhart. | "I started with three questions. First: my girlfriend mentioned her friend's dog once — weeks later, still there. Why does THAT stick?" | Notebook: LTP, salience, prediction-error/repetition-suppression, levels-of-processing answers. |
-| 1:07–1:14 | S15: Q2 + ice cream + **RETRIEVING card**: cue lights a node / activation spreads + decays / best match wins (Tulving). Footer: divers (Godden & Baddeley '75). | "Second: how does a memory show up exactly when I need it, when I never went looking for it?" | Notebook: spreading-activation, encoding-specificity, availability-vs-accessibility answers. |
-| 1:14–1:20 | S16: Q3 (amber, NEW question) + **network card**: cue → traveling pulses → memory back + "a fragment completes the whole scene (CA3)". | "Third: how is it all wired together — so one memory drags the next one up with it?" | Notebook: spreading-activation + pattern-completion answers. |
+---
 
-## BEAT 5 — THE MAPPING (1:20–1:38) · S17 (12s) + S18
+### ACT IV — SCREEN RECORDING DEMO: WATCH IT THINK (1:38 – 2:17)
 
-> FLOW IN: "Fifty-four papers later" — the drawing OF the three brain answers. FLOW OUT:
-> full silence under the thesis → smash-cut to the joke.
+*(Screen setup: Terminal Chat Left (45%) | Tottie 3D Visual Graph Right (55%))*
 
-| TC | ON SCREEN | SAYING | NOTES |
-|---|---|---|---|
-| 1:20–1:32 | S17: ONE BRAIN · THREE WORKERS. Lanes light in order. Deep overlay: brain chips (predictive coding / separation+Nader / spread+decay / CA3), in-box mechanisms, **REFUSED footer**, "35+ papers" tag. V2 RAG bar 1:20–1:26. | "Fifty-four papers later, here’s how the mind actually does it: In the brain, predictive coding throws out what's expected, and salience tags what matters. So we built the Observer: a surprise gate that suppresses routine chatter and only keeps what's new. In the brain, memory is tiered into moments, facts, and lessons, wired by synapses. So we built the Scribe: it sorts into tiers and wires the graph links. And when you recall, a cue triggers spreading activation across the network. So we built the Retriever: it types the cue, spreads activation along the links, and hands back a 400-token Card stamped with WHY. RAG didn't die — it finally got a real job." | Each lane = one brain mechanism, mapped. Origin story of every component. |
-| 1:32–1:38 | S18: thesis card. Silence. | "Simulate the brain's solutions. Never simulate its constraints. We didn't copy the forgetting. We copied the finding." | Full silence. Smash-cut. |
+| Timecode | Screen Action (What You Do) | Graph Reaction (What UI Does) | Script / Voiceover | Recording Walkthrough |
+| :--- | :--- | :--- | :--- | :--- |
+| **1:38–1:43** | Transition from talking head to the full UI screen recording. Graph nodes gently floating in 3D space. | The 3D force graph rotates smoothly. Particles pulse along edges. | "All theory. Backend servers humming in the dark. How do you WATCH a memory form? Build a brain you can look at." | Full screen capture starts. Smooth cursor movement. |
+| **1:43–1:50** | **Beat 1 (Ingestion):** Type: `"Remember: Project A uses Postgres 16."` Hit enter. | Live feed on right flashes teal: `[BIRTH: KNOWLEDGE]`. A new node materializes and links to Project A. | "Tell it a rule once. Watch the right side file it: checks if it's new, links it to the graph. Done." | Zoom in slightly (110%) on the new node glowing and connecting. |
+| **1:50–1:57** | **Beat 2 (Truth Changes):** Type: `"Actually, I'm vegetarian now."` (Contradicting old meat preference). | Old node turns red with strike-through line (`valid_to = now`). Brand new teal node connects. | "Truth changes mid-project: 'I'm vegetarian.' It doesn't duplicate or hallucinate. It supersedes the old fact, non-destructively." | Point cursor at the struck-through old node and the live new node. |
+| **1:57–2:05** | **Beat 3 (Associative Command):** Clear terminal session (`cmd+k`). Type a command: `"Implement authentication."` | Graph lights up: 3 nodes pulse (JWT rule, Postgres schema, security lesson). Card pops in terminal. | "New session, zero context. Give it a command: 'Implement feature A.' It doesn't need to ask your stack. Activation spreads, pulling the decisions, conventions, and rules." | Highlight the Context Card in the terminal: 400 tokens, stamped with WHY. |
+| **2:05–2:13** | **Beat 4 (The Ablation):** Toggle Tottie toggle to OFF. Ask: `"What database are we using?"` Agent: `"I don't know."` Toggle Tottie ON. Ask again. Agent: `"Postgres 16."` | Graph dims to gray when OFF. Flashes white-hot when turned ON. | "Take the memory away…(Goldfish flash 1s)…and it's a goldfish: 'I don't know.' Flip it back ON… and the genius is back." | Fullscreen 1-second meme flash of `assets_3min/memes/goldfish.webm` right on "goldfish". Instant cut back to terminal answering. |
+| **2:13–2:17** | **Beat 5 (Sleep):** Click the "Sleep (Consolidate)" button in UI. | 5 loose episodic nodes pulse, collapse inward, and merge into 1 golden summary node. | "Then it sleeps. Replays the day's chaos and compresses messy moments into clean lessons." | The node merge animation is visual proof of memory consolidation. |
 
-## BEAT 6a — THE JOKE (1:38–1:43) · S19 (NEW)
+---
 
-> FLOW IN: the smash-cut. FLOW OUT: the demo IS the brain you can look at.
+### ACT V — REAL ENGINEERING: AUTOMATED TESTING & TRACING (2:17 – 2:36)
 
-| TC | ON SCREEN | SAYING |
-|---|---|---|
-| 1:38–1:43 | S19: "But it's all theory." + "backend services humming in the dark." + LIVE node-graph card, "+ NEW memory" pops at 1:42. | "Now — all of this is theory. Backend services humming in the dark. How do you WATCH a memory form? …You build a brain you can look at." |
+| Timecode | On-Screen Visual | Audio / SFX | Script / Voiceover | Assets & Animation Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **2:17–2:24** | Screen capture: Split-terminal running the automated test battery. Left terminal: Agent 1 (Subject). Right terminal: Agent 2 (Interrogator). Fast dialogue scrolling. Spider-Man pointing meme overlay. | Fast data-crunching chatter / digital beeps. | "Now—how do you actually test if an agent's memory works? You don't just chat with it and hope for the best. I built an automated test harness: a second agent whose only job is to interrogate the first one, try to trick it, and catch contradictions." | `assets_3min/memes/spidey.webm` in corner. Shows you built real evaluation infrastructure, not just a toy. |
+| **2:24–2:30** | Screen capture: The 3D Graph showing a highlighted red trace line hopping between three nodes. | Electronic trace click. | "And because the whole memory is an explicit graph, when an agent gets something wrong, you don't guess—you open the graph and trace the exact path to see where the connection failed." | Red trace path highlights failed association hop → fixes weight. Visual proof of explainable AI. |
+| **2:30–2:36** | Architecture diagram: Meta Muse Spark / Llama 3 model logos connecting over MCP to VS Code, Cursor, and Chrome. | Confident bass pulse. | "Built on Meta: powered by Muse Spark via the Meta Model API, with local open-weights fallback. Shipped as one universal MCP server any agent or IDE can mount." | Clear Meta branding and MCP server architecture badge. |
 
-## BEAT 6b — DEMO (1:43–2:17) · placeholders → YOUR FOOTAGE
+---
 
-> All slates: agent LEFT, UI RIGHT, bottom 180px clear for the explainer bug
-> (loop diagram: agent acts → Observer/Scribe file it → store → recall serves
-> context back, automatic — composited after footage lands). See
-> `film/DEMO_RECORD_SCRIPT.md`. VO lines below are the baked slate hints.
+### ACT VI — WHO IT'S FOR & THE TRIUMPHANT CLOSE (2:36 – 3:00)
 
-| TC | SLATE | BEAT | VO |
-|---|---|---|---|
-| 1:43–1:50 | D1 (7s) LEARNS LIVE | Tell it the rule once; UI files NEW live. | "Tell it the rule once. Watch the right side file it: checks if it's new, links it to the graph. Done." |
-| 1:50–1:57 | D2 (7s) TRUTH CHANGES | Contradict mid-task; SUPERSEDE flashes, version kept. | "Truth changes mid-project: 'I'm vegetarian now.' It doesn't duplicate or hallucinate. It supersedes the old fact, non-destructively." |
-| 1:57–2:05 | D3 (8s) FRESH SESSION, COMMAND | New session, zero context; Card arrives with WHY. | "New session, zero context. Give it a command: 'Implement feature A.' It doesn't need to ask your stack. Activation spreads, pulling the decisions, conventions, and rules." |
-| 2:05–2:08 | D4a (3s) MEMORY OFF | Same question, memory OFF → honest "I don't know." | "Take the memory away…" |
-| 2:08–2:09.5 | FLASH (1.5s) | **Goldfish FULLSCREEN.** | *(beat drop)* |
-| 2:09.5–2:13 | D4b (3.5s) MEMORY ON | Flip ON → instant answer. | "…and it's a goldfish: 'I don't know.' Flip it back ON… and the genius is back." |
-| 2:13–2:17 | D5 (4s) SLEEPS + PINGS | Intention fires; Sleep 5→1. | "Then it sleeps. Replays the day's chaos and compresses messy moments into clean lessons." |
-
-## BEAT 7 — BREAKING IT (2:17–2:30) · S24 (7s) + S25 (6s)
-
-> FLOW IN: warm Sleep snaps cold: "How do you test this?". FLOW OUT:
-> explainable tracing → Meta stack.
-
-| TC | ON SCREEN | SAYING |
-|---|---|---|
-| 2:17–2:24 | S24: **Spidey-pointing FULLSCREEN 2s** cold open → philo terminals (automated adversarial test rig). | "Now — how do you actually test if an agent's memory works? You don't just chat with it and hope for the best. I built an automated test harness: a second agent whose only job is to interrogate the first one, try to trick it, and catch contradictions." |
-| 2:24–2:30 | S25: **Graph Trace Debugger** (Cue → Gate → Seeds → 2-Hop Spreading Activation). | "And because the whole memory is an explicit graph, when an agent gets something wrong, you don't guess — you open the graph and trace the exact path to see where the connection failed." |
-
-## BEAT 8 — CLOSE (2:30–2:45) · S26 (6s) + S27/S28 (9s)
-
-> FLOW IN: "what's it built on" → Meta. FLOW OUT: payoff → triumphant finish.
-
-| TC | ON SCREEN | SAYING |
-|---|---|---|
-| 2:30–2:36 | S26: "BUILT ON META. Muse Spark." + three-bodies strip. V2 lower_meta. | "Built on Meta: powered by Muse Spark via the Meta Model API, with local open-weights fallback. Shipped as one universal MCP server any agent or IDE can mount." |
-| 2:36–2:45 | S27 & S28: 3 cards (IDE DEV / PERSONAL AI / COMPANY BRAIN) → close-up, soft smile. Counter → 4, → 5 fireworks. | "The dev whose IDE knows their stack. Personal assistants that actually remember you. Robot brains that accumulate skill. And yes… I used it to remember everything I was mad at my girlfriend for… [beat] …and the one thing that matters: her birthday." Ding #4, #5. |
-
-## OUTRO (2:45–3:00) · S32 (15s)
-
-Clean lockup: TOTTIE. / It just remembers. / repo / 54 papers scrolling under rich music resolution.
-"Stop treating AI like an amnesiac. Give it a mind that persists. Tottie. Built on Meta. Build for your world."
-
-## GF-counter ledger (V2 TCs)
-
-| Ding | TC | Line |
-|---|---|---|
-| 1 | 0:27 | "So this is how my girlfriend feels." |
-| 2 | 1:02 | ENCODING beat (girlfriend question context) |
-| 3 | — | CUT (merged into close) |
-| 4 | 2:40 | "…everything I was mad at my girlfriend for…" |
-| 5 | 2:43.5 | "…her birthday." (fireworks variant) |
-
-> V3 spans: `gf_counter_1` 26–60s · `gf_counter_2` 60–158s · `gf_counter_4`
-> 158–163s · `gf_counter_final` 163–165s.
-
-## Meme ledger (V2 — 6 fullscreen + PiPs)
-
-| # | Meme | Source → window | Placement | Note |
-|---|---|---|---|---|
-| 1 | Rage smash FULLSCREEN 1.5s | `rage.mp4` 188–189.5 | S02 local 5–6.5 | Peak flash |
-| 2 | Jordan + DIAGNOSIS (full-frame 3s) | `jordan_b.mp4` + A1 line | S03 | Unchanged |
-| 3 | Leo pointing PiP | `leo_point.mp4` 12.5–15.5 | S04 local 2–5 | Unchanged |
-| 4 | Stonks FULLSCREEN 2s | `stonks.webm` 69–71 | S10 local 0.3–2.3 | NEW — tax punchline |
-| 5 | Norman FULLSCREEN 1.5s | `scientist.webm` 2.4–3.9 | S13 local 1–2.5 | Was PiP, now fullscreen |
-| 6 | Goldfish FULLSCREEN 1.5s | `goldfish.webm` 4–5.5 | FLASH seg 2:08–2:09.5 | NEW seg |
-| 7 | Spidey-pointing FULLSCREEN 2s | `spidey.webm` 8–10 | S24 local 0.5–2.5 | NEW — two philosophers |
-| 8–13 | Dory PiP S05 · stinks S06 · X-doubt S08 · Fry S11 · fries S12 · dog S14 · ice cream S15 | (as before) | PiPs unchanged | S14/S15 photos rebuilt into new brain segs |
-
-## Diagram ledger (V2)
-
-| Asset | Beat | Content source |
-|---|---|---|
-| ENCODING / RETRIEVING cards (S14/S15) | Brain | NotebookLM encoding + retrieval answers |
-| Network + CA3 card (S16) | Brain | NotebookLM spreading-activation answer |
-| LIVE graph card (S19 joke) | Joke | Same motif, teal (system watching itself) |
-| Deep map overlay (S17) | Mapping | cognition.tex roster + neuro-basis table |
-| Diagnosis card (S03) | Hook | cognition.tex availability vs accessibility |
-| Three-bodies strip (S26) | Tooling | architecture.tex Fig. 1 |
-| Eval small print (S25) | Depth | Beamer deck eval numbers |
-| Explainer bug (demo) | Demo | PENDING — built after user footage lands |
-| `diagrams/figsheet.pdf` | Pool | Verbatim TikZ from docs |
-
-## Meta rubric coverage (V2)
-
-| Rubric | Beat | Proof |
-|---|---|---|
-| Impact | 8 (2:28–2:38) | Verbatim statement + 6-item applications list |
-| Meta Tooling | 8 (2:28–2:32) | Muse Spark / Model API / fallback (VO + lower-third) |
-| Technical Depth | 4 + 5 + 7 | Notebook brain science + mapping + trace-back + 22/22 |
-| Demo | 6b | User footage (5 beats + ablation + sleep), shot-card protocol |
-| Not "basic RAG" | 5 (1:20–1:26) | "3 legs, RRF fused" + write-time flip |
-
-## Current state + revision workflow
-
-> STATUS: V2 visual cut complete on sequence `TOTTIE_V2` (180.0s, 32 V1 clips,
-> zero gaps; brain beats rebuilt; 6 fullscreen memes; demo = labeled slates;
-> credits roll in). Old `TOTTIE_3MIN` untouched as rollback. Remaining:
-> (1) YOUR demo footage per `film/DEMO_RECORD_SCRIPT.md`, (2) VO per
-> `film/VO_GUIDE.md`, (3) music bed, (4) explainer-bug composite after (1).
-
-- Retired (not in V2): S19–S23 demo segs, S29 endcard, 5 demo V2 captions.
-  Files stay on disk; `_v1snap/` holds the pre-trim V1 set.
-- Swap rule unchanged: same filename + same duration = timeline auto-picks it up.
-- New-seg generator: `assets_3min/build/build_beats.py` (S14/S15/S16/S19/
-  slates/credits). Overlay generator: `build/overlay_diagrams.py`.
-- Sidecar: `film/tottie_3min_v2.srt` (V2 TCs; `[USER FOOTAGE]` demo lines).
+| Timecode | On-Screen Visual | Audio / SFX | Script / Voiceover | Assets & Animation Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| **2:36–2:45** | Rapid-fire 1-second B-roll cards: (1) Developer in VS Code, (2) Personal assistant on mobile, (3) Robot arm simulation. Smash cut back to talking head smiling. | Soft piano notes enter behind the synth. Double DING! + celebratory fireworks crackle. | "The dev whose IDE knows their stack. Personal assistants that actually remember you. Robot brains that accumulate skill. And yes… I used it to remember everything I was mad at my girlfriend for… (beat) …and the one thing that matters: her birthday." | GF Counter hits 5 with confetti/fireworks animation. The girlfriend payoff lands cleanly. |
+| **2:45–3:00** | Tottie clean logo lockup in center. Subtitle: Built on Meta · Meta Global AI Developer Hackathon 2026. Beneath it: GitHub URL and a neat, scrolling bibliographic citation strip citing the papers (Tulving, Hebb, Friston, McClelland). | The music swells to a full, rich cinematic resolution. No awkward silence. | "Stop treating AI like an amnesiac. Give it a mind that persists. Tottie. Built on Meta. Build for your world." | Cinematic fade out on the final music chord. |
