@@ -38,6 +38,10 @@ declare module "react-force-graph-3d" {
     // faster settle. Calms the alpha=1 reheat kick on newborn adoption.
     d3AlphaDecay?: number;
     d3VelocityDecay?: number;
+    // Engine lifecycle (runtime-verified in the lib's dist PropTypes).
+    // onEngineStop fires when the sim cools: the one safe moment to frame.
+    onEngineTick?: () => void;
+    onEngineStop?: () => void;
   }
   export interface Coords {
     x: number;

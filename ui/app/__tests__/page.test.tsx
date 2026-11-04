@@ -4,17 +4,13 @@ import Home from "../page";
 
 // Renderer stub (same contract as the GraphView suite): capture props,
 // expose the camera API. The stream, the refetch, the feed are all real.
-vi.mock("next/dynamic", () => ({
-  default: () => {
-    const Stub = (props: Record<string, unknown>) => {
-      const g = globalThis as Record<string, unknown>;
-      g.__fgProps = props;
-      const ref = props.ref as { current: unknown } | undefined;
-      if (ref && typeof ref === "object") ref.current = g.__fgInstance;
-      return null;
-    };
-    Stub.displayName = "ForceGraphStub";
-    return Stub;
+vi.mock("react-force-graph-3d", () => ({
+  default: (props: Record<string, unknown>) => {
+    const g = globalThis as Record<string, unknown>;
+    g.__fgProps = props;
+    const ref = props.ref as { current: unknown } | undefined;
+    if (ref && typeof ref === "object") ref.current = g.__fgInstance;
+    return null;
   },
 }));
 

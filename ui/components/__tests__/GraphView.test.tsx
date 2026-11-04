@@ -5,17 +5,13 @@ import { spawnOf } from "../graphMath";
 
 // The GL renderer is third-party: stub it, capture exactly what Tottie
 // feeds it, and expose the camera API as spies. Everything else is real.
-vi.mock("next/dynamic", () => ({
-  default: () => {
-    const Stub = (props: Record<string, unknown>) => {
-      const g = globalThis as Record<string, unknown>;
-      g.__fgProps = props;
-      const ref = props.ref as { current: unknown } | undefined;
-      if (ref && typeof ref === "object") ref.current = g.__fgInstance;
-      return null;
-    };
-    Stub.displayName = "ForceGraphStub";
-    return Stub;
+vi.mock("react-force-graph-3d", () => ({
+  default: (props: Record<string, unknown>) => {
+    const g = globalThis as Record<string, unknown>;
+    g.__fgProps = props;
+    const ref = props.ref as { current: unknown } | undefined;
+    if (ref && typeof ref === "object") ref.current = g.__fgInstance;
+    return null;
   },
 }));
 
@@ -342,5 +338,29 @@ describe("GraphView", () => {
     expect(fgNodes().map((n) => n.id).sort()).toEqual(["a"]);
     expect(onSync).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: /show me/ })).toBeNull();
+  });
+
+  it("frames the whole graph once when the engine settles", async () => {
+    graphResponses = [
+      { nodes: [], links: [] },
+      { nodes: [node("a"), node("b")], links: [] },
+    ];
+    const { rerender } = renderGraph(0);
+    await waitFor(() => expect(graphCalls()).toBe(1));
+    await waitFor(() => expect(g().__fgProps).toBeDefined());
+    const ztf = () =>
+      (g().__fgInstance as { zoomToFit: ReturnType<typeof vi.fn> }).zoomToFit;
+    const stop = () =>
+      (g().__fgProps as { onEngineStop: () => void }).onEngineStop;
+    // Empty pool: skip, a later stop retries.
+    stop()();
+    expect(ztf()).not.toHaveBeenCalled();
+    rerender(<GraphView path={[]} fresh={1} owner="o" />);
+    await waitFor(() => expect(fgNodes().length).toBe(2));
+    stop()();
+    expect(ztf()).toHaveBeenCalledTimes(1);
+    // Later stops must not yank the camera again.
+    stop()();
+    expect(ztf()).toHaveBeenCalledTimes(1);
   });
 });
