@@ -167,12 +167,22 @@ async def chat_completions(
     active_model = body.model or settings.meta_model or "muse-spark-1.3-contributor"
 
     try:
-        token_budget = max(body.max_tokens or 2048, 1024)
-        completion = await complete_resilient(
-            provider,
-            prompt_msgs,
-            max_tokens=token_budget,
-        )
+        token_budget = max(body.max_tokens or 4096, 4096)
+        try:
+            completion = await complete_resilient(
+                provider,
+                prompt_msgs,
+                max_tokens=token_budget,
+            )
+        except ProviderError as pe:
+            if "finish=length" in str(pe):
+                completion = await complete_resilient(
+                    provider,
+                    prompt_msgs,
+                    max_tokens=token_budget * 2,
+                )
+            else:
+                raise
         reply_content = completion.text
     finally:
         await provider.close()
