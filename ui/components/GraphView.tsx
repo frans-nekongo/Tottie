@@ -1,14 +1,8 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { FC, Ref } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import type ForceGraph3DHandle from "react-force-graph-3d";
-import type {
-  ForceGraph3DProps,
-  GraphLink,
-  GraphNode,
-} from "react-force-graph-3d";
+import type { GraphLink, GraphNode } from "react-force-graph-3d";
 import {
   baseDisplay,
   heatAt,
@@ -19,12 +13,10 @@ import {
   spawnOf,
 } from "./graphMath";
 
-// dynamic()'s own types don't carry the imperative ref API, so restate the
-// component type here. The kapsule runtime exposes its instance via ref;
-// the headless pill-click probe proves the flight lands.
-const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), {
-  ssr: false,
-}) as unknown as FC<ForceGraph3DProps & { ref?: Ref<ForceGraph3DHandle> }>;
+// React.lazy, NOT next/dynamic: dynamic() swallows the imperative ref, which
+// silently kills refresh(), camera flights, and zoomToFit — the graph renders
+// but never animates and never frames. lazy preserves ref to the instance.
+const ForceGraph3D = lazy(() => import("react-force-graph-3d"));
 
 interface Node {
   id: string;
@@ -134,6 +126,7 @@ export default function GraphView({
   const bornAt = useRef(new Map<string, number>());
   const seenIds = useRef(new Set<string>());
   const painted = useRef(false); // first data adoptive, even when empty
+  const framed = useRef(false); // one zoomToFit per owner, after first paint
   // Tombstones: id -> death time + snapshot size. Coords live on the ghost
   // objects themselves (pinned via fx/fy/fz).
   const deadAt = useRef(
@@ -318,6 +311,10 @@ export default function GraphView({
     const stamped = fresh.map((n) => n.id);
     burstIds.current = stamped;
     setBurst({ ids: stamped, at: t });
+    if (!reducedMotion.current) {
+      // Auto-frame camera onto the newborn node
+      setTimeout(() => flyToNew(), 250);
+    }
     if (reducedMotion.current) {
       for (const id of stamped) bornAt.current.set(id, t);
       kickLoop(); // no-op under reduced motion: births render settled
@@ -354,6 +351,7 @@ export default function GraphView({
       popTimer.current = null;
     }
     painted.current = false;
+    framed.current = false;
     cancelAnimationFrame(loopRef.current);
     loopRef.current = 0;
     cache.current = emptyCache();
@@ -608,11 +606,12 @@ export default function GraphView({
       {burst && burst.ids.length > 0 && (
         <button
           onClick={flyToNew}
-          className="absolute top-2 left-1/2 -translate-x-1/2 z-10 card px-3 py-1 text-xs mono"
+          className="absolute top-2 left-1/2 -translate-x-1/2 z-10 card px-3 py-1.5 text-xs mono border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)] animate-pulse"
         >
-          <span className="livedot live" /> {burst.ids.length} new — show me
+          <span className="livedot live mr-1" /> ✨ {burst.ids.length} new memory formed — click to center
         </button>
       )}
+      <Suspense fallback={<p className="dim text-sm">growing the brain…</p>}>
       <ForceGraph3D
         ref={fgRef}
         graphData={cc.graphData}
@@ -632,7 +631,22 @@ export default function GraphView({
         cooldownTime={3000}
         d3VelocityDecay={0.6}
         d3AlphaDecay={0.035}
+        onEngineStop={() => {
+          // One framing pass once the layout settles, so the brain fills
+          // the view instead of sitting wherever the sim drops it. Skips
+          // empty pools (a later stop retries); never refires per refetch.
+          if (framed.current || cache.current.nodes.length === 0) return;
+          framed.current = true;
+          try {
+            fgRef.current?.zoomToFit?.(
+              reducedMotion.current ? 0 : 600, 80
+            );
+          } catch {
+            /* graph not ready */
+          }
+        }}
       />
+      </Suspense>
       {detail && (
         <div className="card absolute bottom-2 left-2 right-2 px-3 py-2 text-xs">
           <button

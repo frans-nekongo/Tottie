@@ -65,6 +65,54 @@ are built in; the physics loop runs outside React's render cycle and the UI only
   \texttt{check\_page} runs, screenshots, fresh-player critique) before it is allowed on camera.
 \end{itemize}
 
+\section{Physical Realtime Animation Mechanics and Birth Lifecycle}
+To give the Architect immediate visual confirmation that Tottie is persistently learning without
+requiring manual browser clicks, the 3D brain implements a physical drop-in animation lifecycle
+driven by Server-Sent Events (\texttt{GET /events}) and rendered in WebGL via
+\texttt{react-force-graph-3d}:
+
+\begin{enumerate}
+  \item \textbf{The Realtime Event Stream (\texttt{GET /events}):}
+  The browser maintains an active EventSource connection to the Tottie backend with a 150\,ms live
+  tail poll over PostgreSQL \texttt{memory\_events}. When the transparent proxy or an agent turn
+  commits a new memory or supersedes an old one, the backend emits a named \texttt{event: memory} frame.
+  \item \textbf{Avatar Reaction (\texttt{TottieFace}):}
+  Upon receiving \texttt{op = NEW} or \texttt{SUPERSEDE}, \texttt{page.tsx} instantly calls
+  \texttt{flash('remembering', 2200)}, switching the header SVG sprite from \texttt{idle} to the glowing
+  \texttt{remembering} state.
+  \item \textbf{Ephemeral Birth Feed Banner (\texttt{BirthFeed}):}
+  A toast slides down in the top-right corner of the canvas displaying the exact operation chip
+  (\texttt{[NEW]} or \texttt{[SUPERSEDE]}) along with the first 110 characters of the captured utterance,
+  persisting for 12 seconds before decaying.
+  \item \textbf{Sky Dock Pinning and Heat Curve (\texttt{GraphView.tsx}):}
+  When new nodes are fetched via \texttt{GET /api/graph}, they are clocked with a birth timestamp.
+  Over a window of $\tau_{\text{fresh}} = 2600\,\text{ms}$, the node's temperature scales via:
+  \begin{equation}
+    \text{heat}(t) = \max\left(0, 1 - \frac{t - t_{\text{born}}}{\tau_{\text{fresh}}}\right)
+  \end{equation}
+  \begin{itemize}
+    \item \textbf{White-Hot Incandescence:} The node color interpolates between pure white (\texttt{\#ffffff})
+    and the tier base hue via $\text{mixHex}(\texttt{\#ffffff}, \text{baseColor}, 1 - \text{heat})$.
+    \item \textbf{Pop-Scale Expansion:} The physical node sphere scales up to $2.5\times$ its normal salience
+    radius via $\text{popScale}(\text{heat}) = 1 + 1.5 \cdot \text{heat}$.
+    \item \textbf{Sky Dock Fixed Hold:} While $\text{heat} > 0.55$, the node's coordinates are pinned
+    elevated above the main cluster using d3-force fixed pins ($fx, fy, fz = \text{spawnOf}(id)$).
+    Once cooled below $0.55$, $fx, fy, fz$ are released, causing the node to gravitationally drop into the
+    surrounding semantic graph.
+    \item \textbf{Link Glow Pulse:} Links connected to the newborn pulse in neon cyan
+    (\texttt{linkGlowColor(heat)}) before settling into relation-based styling.
+  \end{itemize}
+  \item \textbf{Automated Camera Flight (\texttt{flyToNew}):}
+  The Three.js camera does not stay stationary. Within 250\,ms of newborn node adoption, the viewport
+  smoothly glides over 800\,ms to center and focus directly on the live centroid of the newly arrived
+  memory nodes at a friendly framing distance ($d \in [220, 600]$), ensuring the user never misses the
+  birth drop-in even if zoomed elsewhere.
+  \item \textbf{Tombstone Shrink-out on Supersede (\texttt{DIE\_MS = 700ms}):}
+  When an existing memory is superseded (e.g. migrating frameworks or updating facts), the victim node is
+  unlinked from the active cluster, turned into a pinned crimson ghost node (\texttt{\#d9534f}), scaled
+  down linearly to zero over 700\,ms, and unmounted without resetting or reheating the force simulation.
+\end{enumerate}
+
 \section{The Sleep Button}
 A single \textbf{Sleep} control runs the Consolidator on demand. During the run the Panel shows a
 progress strip (\emph{``replaying N episodes\ldots''}) and then a summary

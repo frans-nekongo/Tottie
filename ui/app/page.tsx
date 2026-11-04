@@ -23,13 +23,15 @@ export default function Home() {
     // (React #418: server HTML must match the first client render).
     setSession(`ui-${Math.random().toString(36).slice(2, 8)}`);
     const q = new URLSearchParams(window.location.search);
-    if (q.get("tab") === "graph") {
+    if (q.get("tab") === "agents") {
+      setTab("agents");
+    } else if (q.get("tab") === "graph") {
       setTab("graph");
     }
     if (q.get("owner")) setWatchOwner(q.get("owner")!);
     if (q.get("session")) setWatchSession(q.get("session")!);
   }, []);
-  const [tab, setTab] = useState<"agents" | "graph">("agents");
+  const [tab, setTab] = useState<"agents" | "graph">("graph");
   const [face, setFace] = useState<FaceState>("idle");
   const [sleeping, setSleeping] = useState(false);
   const [sleepNote, setSleepNote] = useState<string | null>(null);
@@ -78,7 +80,6 @@ export default function Home() {
         // kills shrink out the instant they land, not on the next NEW.
         // Birth animation is clocked by GraphView at first paint.
         setGraphTick((n) => n + 1);
-        if (!graphReadyRef.current) return;
         if (op === "NEW" || op === "SUPERSEDE") {
           flash("remembering");
           const text = (e.utterance ?? "").trim().slice(0, 110);
