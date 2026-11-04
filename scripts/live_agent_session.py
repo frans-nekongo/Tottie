@@ -16,18 +16,18 @@ HEADERS = {
 
 TURNS = [
     {
-        "title": "Turn 1: Learning a New Architectural Fact",
-        "prompt": "Key architecture decision: For Project Apex, our core cache layer is Redis Enterprise cluster on port 6380, and the lead architect is Elena Rostova.",
+        "title": "Turn 1: Learning a New Architectural Fact (Live Birth)",
+        "prompt": "Key architecture decision: For Project Helios, our backend service uses Rust with Tokio on port 8080, and Marcus Vance is the security architect.",
         "wait_after": 15,
     },
     {
         "title": "Turn 2: Superseding Outdated Knowledge (Live Reconcile)",
-        "prompt": "Correction on Project Apex: We migrated away from Redis due to licensing. Project Apex now strictly uses Dragonfly on port 6379.",
+        "prompt": "Correction on Project Helios: We migrated from Rust to Go with Gin on port 9090 to boost team velocity.",
         "wait_after": 15,
     },
     {
         "title": "Turn 3: Associative Recall (Context Card Grounding)",
-        "prompt": "Can you remind me what cache Project Apex uses and who is the lead architect?",
+        "prompt": "Can you remind me what language and port Project Helios uses, and who is the security architect?",
         "wait_after": 5,
     },
 ]
@@ -76,7 +76,7 @@ def main():
         sys.stdout.flush()
 
         if turn["wait_after"] > 0:
-            print(f"[{time.strftime('%X')}] [Visualizer Camera] Watching 3D canvas for {turn['wait_after']}s (birth, camera swooping, and graph pulse)...")
+            print(f"[{time.strftime('%X')}] [Visualizer Camera] Watching 3D canvas for {turn['wait_after']}s (birth drop-in, living breathing pulse, and graph glow)...")
             sys.stdout.flush()
             time.sleep(turn["wait_after"])
 
