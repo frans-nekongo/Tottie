@@ -208,60 +208,13 @@ export default function GraphView({
         n.fx = n.fy = n.fz = undefined;
       }
     }
-    // Living organic 3D spatial drift across settled nodes so the graph breathes, moves and floats
+    // Living idle neural breathing across resting nodes so the graph never looks frozen or lagging
     if (!reducedMotion.current && c.nodes.length > 0) {
-      const tSec = t * 0.001;
       for (let i = 0; i < c.nodes.length; i++) {
         const n = c.nodes[i];
         if (bornAt.current.has(n.id) || n.id.startsWith("dead:")) continue;
-        if (n.__hx === undefined && n.x !== undefined) {
-          n.__hx = n.x;
-          n.__hy = n.y;
-          n.__hz = n.z;
-        }
-        if (n.__hx !== undefined && n.fx === undefined) {
-          // Subtle floating 3D spatial drift: distinct phase per node so they gently float like celestial bodies
-          const phase = i * 1.618;
-          const driftX = Math.sin(tSec * 0.7 + phase) * 2.8;
-          const driftY = Math.cos(tSec * 0.6 + phase * 1.3) * 3.2;
-          const driftZ = Math.sin(tSec * 0.8 + phase * 0.7) * 2.4;
-          n.x = (n.__hx as number) + driftX;
-          n.y = (n.__hy as number) + driftY;
-          n.z = (n.__hz as number) + driftZ;
-
-          // Directly synchronize Three.js WebGL mesh position so the 3D sphere moves in real-time
-          const threeObj = (n as unknown as { __threeObj?: { position?: { x: number; y: number; z: number } } }).__threeObj;
-          if (threeObj?.position) {
-            threeObj.position.x = n.x;
-            threeObj.position.y = n.y;
-            threeObj.position.z = n.z;
-          }
-        }
-      }
-
-      // Synchronize connecting link lines in WebGL so they follow floating nodes
-      for (let i = 0; i < c.links.length; i++) {
-        const l = c.links[i];
-        const start = l.source as unknown as GraphNode;
-        const end = l.target as unknown as GraphNode;
-        if (!start || !end || typeof start.x !== "number" || typeof end.x !== "number") continue;
-        const lineObj = (l as unknown as { __lineObj?: { children?: Array<{ geometry?: { getAttribute?: (name: string) => { array?: Float32Array; needsUpdate?: boolean } } }>; geometry?: { getAttribute?: (name: string) => { array?: Float32Array; needsUpdate?: boolean } } } }).__lineObj;
-        if (lineObj) {
-          const targetObj = (lineObj.children && lineObj.children.length > 0) ? lineObj.children[0] : lineObj;
-          const geom = targetObj?.geometry;
-          if (geom?.getAttribute) {
-            const posAttr = geom.getAttribute("position");
-            if (posAttr?.array && posAttr.array.length >= 6) {
-              posAttr.array[0] = start.x;
-              posAttr.array[1] = typeof start.y === "number" ? start.y : 0;
-              posAttr.array[2] = typeof start.z === "number" ? start.z : 0;
-              posAttr.array[3] = end.x;
-              posAttr.array[4] = typeof end.y === "number" ? end.y : 0;
-              posAttr.array[5] = typeof end.z === "number" ? end.z : 0;
-              posAttr.needsUpdate = true;
-            }
-          }
-        }
+        const breathe = Math.sin(t * 0.002 + i * 0.7) * 0.10;
+        n.val = n.__base.val * (1 + breathe);
       }
     }
     for (const l of c.links) {
@@ -287,16 +240,7 @@ export default function GraphView({
     }
     if (expiredGhost) setStruct((n) => n + 1); // rebuild minus ghosts
     try {
-      if (active) fgRef.current?.refresh?.();
-      // Tick OrbitControls auto-rotation if present
-      const controls = (fgRef.current as unknown as { controls?: () => { update?: () => void; autoRotate?: boolean; autoRotateSpeed?: number } })?.controls?.();
-      if (controls) {
-        if (!controls.autoRotate) {
-          controls.autoRotate = true;
-          controls.autoRotateSpeed = 0.45;
-        }
-        controls.update?.();
-      }
+      fgRef.current?.refresh?.();
     } catch {
       /* headless test stub */
     }
@@ -363,7 +307,6 @@ export default function GraphView({
       painted.current = true;
       seenIds.current = live;
       onReadyRef.current?.();
-      if (!reducedMotion.current) kickLoop();
       return;
     }
     const fresh = data.nodes.filter((n) => !seenIds.current.has(n.id));
