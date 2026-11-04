@@ -1,0 +1,16 @@
+# MEGA sync exclusions (mirror in MEGA Desktop > Settings > Excluded file names,
+# which matches by name/extension — MEGA has no ignore-file mechanism itself)
+FilmCraft Previews
+Auto-Save
+fcproj.tmp
+*_preview.mp4
+*_cut.mp4
+final_cut_*.mp4
+visual_*.png
+check_*.png
+seq
+seq2
+demo_raw
+__pycache__
+node_modules
+venv
