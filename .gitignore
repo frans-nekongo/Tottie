@@ -59,3 +59,9 @@ Thumbs.db
 
 # ---- orch ----
 ORCH_STATE.md
+
+# ---- filmcraft & assets ----
+**/FilmCraft Previews/
+**/Auto-Save/
+**/*.fcproj.tmp
+assets_3min/
