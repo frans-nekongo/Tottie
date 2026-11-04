@@ -26,14 +26,26 @@ import sys
 import time
 import urllib.request
 
+def find_latest_session_log() -> str | None:
+    base = os.path.expanduser("~/.local/share/muse/sessions")
+    if not os.path.exists(base):
+        return None
+    import glob
+    files = glob.glob(f"{base}/**/session.jsonl", recursive=True)
+    if not files:
+        return None
+    files.sort(key=os.path.getmtime, reverse=True)
+    return files[0]
+
 SESSION_ID = os.environ.get(
-    "MUSE_SESSION_ID", "01a1783d-40f9-7552-8e6f-6cdf013c5a7e"
+    "MUSE_SESSION_ID", "latest"
+)
+default_log = find_latest_session_log() or os.path.expanduser(
+    "~/.local/share/muse/sessions/2026/10/26/01a1783d-40f9-7552-8e6f-6cdf013c5a7e/session.jsonl"
 )
 LOG_PATH = os.environ.get(
     "MUSE_SESSION_LOG",
-    os.path.expanduser(
-        "~/.local/share/muse/sessions/2026/10/26/%s/session.jsonl" % SESSION_ID
-    ),
+    default_log
 )
 CORE_URL = os.environ.get("TOTTIE_CORE_URL", "http://127.0.0.1:8765")
 TOKEN = os.environ.get("TOTTIE_API_TOKEN", "changeme-local-token")

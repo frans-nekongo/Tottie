@@ -12,6 +12,8 @@ Endpoint & Purpose & Status \\
 \texttt{POST /write} & enqueue a turn for curation & 202 \\
 \texttt{POST /recall} & cue-typed associative recall + Context Card & 200 \\
 \texttt{POST /chat} & one demo turn: recall, reply, store (W4) & 200 \\
+\texttt{POST /v1/chat/completions} & OpenAI-compatible transparent proxy: auto-recall + auto-curate + SSE live graph & 200 \\
+\texttt{GET /v1/models} & list available models for client compatibility & 200 \\
 \texttt{GET /identity} & pinned identity facts (zero search) & 200 \\
 \texttt{GET /probe} & read a room (tag) in full & 200 \\
 \texttt{GET /memories} & row browser: filters + id lookup (W4) & 200 \\
@@ -54,6 +56,21 @@ One demo turn with no history window (memory replaces context stuffing): recall 
 inject any fired intentions as a ``reminders due'' block, answer grounded in it, enqueue
 the user turn. \texttt{memory=false} is the ablation OFF arm
 (raw model, no recall, no write). Replies are never written.
+
+\texttt{POST /v1/chat/completions}: \texttt{\{messages, model?, stream?, temperature?\}} $\rightarrow$ standard OpenAI wire format (\texttt{\{id, object: "chat.completion", created, model, choices:[\{index:0, message:\{role:"assistant", content\}, finish\_reason:"stop"\}], usage\}}).
+Acts as a transparent reverse proxy between arbitrary agent hosts (Muse, Cursor, Continue, LangChain) and the underlying LLM provider.
+On arrival, the route:
+\begin{enumerate}
+  \item Intercepts the terminal user utterance from \texttt{messages[-1]}.
+  \item Auto-probes and pairs the calling proxy agent in the presence ledger without manual pairing gates.
+  \item Automatically executes associative recall via \texttt{retrieve.recall()}, formulating a Context Card with confidence annotations.
+  \item Injects the synthesized Context Card directly into the system message of the active prompt payload.
+  \item Forwards the enhanced payload to the resolved model provider (Meta Muse Spark or local Ollama).
+  \item Returns standard compliant chat completions JSON or Server-Sent Events text-stream chunks to the caller.
+  \item Asynchronously enqueues the turn to the \texttt{WriteQueue} (\texttt{curate\_turn}), allowing the Observer and Scribe to assess surprise and broadcast node creations to the real-time 3D graph view via SSE within the calibrated latency window.
+\end{enumerate}
+
+\texttt{GET /v1/models}: $\rightarrow$ standard OpenAI models list (\texttt{\{object:"list", data:[\{id:"muse-spark-1.3-contributor", object:"model"\}]\}}) to satisfy client handshake requirements.
 
 \texttt{GET /memories?owner=\&quarantined?\&kind?\&id?\&limit=} $\rightarrow$ live rows newest
 first (the pending strip reads \texttt{quarantined=true}; node detail reads by \texttt{id}).

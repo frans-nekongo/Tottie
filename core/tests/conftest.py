@@ -86,7 +86,7 @@ async def booted_app(_test_db, _clean_tables, monkeypatch):
     from app.main import create_app
 
     app = create_app()
-    async with LifespanManager(app):
+    async with LifespanManager(app, startup_timeout=30):
         yield app
 
 

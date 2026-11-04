@@ -27,7 +27,7 @@ from .queue import (
     UPDATE_SWEEP,
     WriteQueue,
 )
-from .routes import agents, brief, chat, events, graph, health, memories, recall, sleep, sweep, write
+from .routes import agents, brief, chat, events, graph, health, memories, proxy, recall, sleep, sweep, write
 
 
 async def _sleep_loop(db: Database, embedder: Embedder, settings: Settings,
@@ -131,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(memories.router, dependencies=[Depends(require_auth)])
     app.include_router(graph.router, dependencies=[Depends(require_auth)])
     app.include_router(chat.router, dependencies=[Depends(require_auth)])
+    app.include_router(proxy.router)
     app.include_router(sleep.router, dependencies=[Depends(require_auth)])
     app.include_router(sweep.router, dependencies=[Depends(require_auth)])
     app.include_router(brief.router, dependencies=[Depends(require_auth)])
