@@ -80,6 +80,7 @@ export default function Home() {
         // kills shrink out the instant they land, not on the next NEW.
         // Birth animation is clocked by GraphView at first paint.
         setGraphTick((n) => n + 1);
+        if (!graphReadyRef.current) return;
         if (op === "NEW" || op === "SUPERSEDE") {
           flash("remembering");
           const text = (e.utterance ?? "").trim().slice(0, 110);

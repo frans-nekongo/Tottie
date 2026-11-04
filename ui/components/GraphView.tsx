@@ -80,8 +80,9 @@ interface Detail {
   salience: number;
 }
 
-const FRESH_MS = 2600; // white-hot drop-in window per newborn node
+const FRESH_MS = 3800; // bright electric birth drop-in window per newborn node
 const DIE_MS = 700; // red shrink-out window per killed node
+const BIRTH_COLOR = "#00f0ff"; // Vivid incandescent electric cyan
 
 const endId = (e: string | GraphNode): string =>
   typeof e === "string" ? e : e.id;
@@ -186,7 +187,7 @@ export default function GraphView({
         continue;
       }
       const heat = heatAt(b, t, FRESH_MS);
-      if (heat <= 0) {
+      if (heat <= 0 || reducedMotion.current) {
         bornAt.current.delete(id);
         n.color = n.__base.color;
         n.val = n.__base.val;
@@ -194,17 +195,26 @@ export default function GraphView({
         continue;
       }
       active = true;
-      n.color = mixHex("#ffffff", n.__base.color, 1 - heat);
+      n.color = mixHex(BIRTH_COLOR, n.__base.color, 1 - heat);
       n.val = n.__base.val * popScale(heat);
       // Hold newborns above the cluster with d3 fixed pins (no fighting
       // the sim), release into a free drop once cooling.
-      if (heat > 0.55) {
+      if (heat > 0.60) {
         const s = spawnOf(id);
         n.fx = s.x;
         n.fy = s.y;
         n.fz = s.z;
       } else {
         n.fx = n.fy = n.fz = undefined;
+      }
+    }
+    // Living idle neural breathing across resting nodes so the graph never looks frozen or lagging
+    if (!reducedMotion.current && c.nodes.length > 0) {
+      for (let i = 0; i < c.nodes.length; i++) {
+        const n = c.nodes[i];
+        if (bornAt.current.has(n.id) || n.id.startsWith("dead:")) continue;
+        const breathe = Math.sin(t * 0.002 + i * 0.7) * 0.10;
+        n.val = n.__base.val * (1 + breathe);
       }
     }
     for (const l of c.links) {
@@ -234,11 +244,15 @@ export default function GraphView({
     } catch {
       /* headless test stub */
     }
-    if (active) loopRef.current = requestAnimationFrame(frame);
+    if (!reducedMotion.current) {
+      loopRef.current = requestAnimationFrame(frame);
+    } else if (active) {
+      loopRef.current = requestAnimationFrame(frame);
+    }
   }, []);
 
   const kickLoop = useCallback(() => {
-    if (reducedMotion.current || loopRef.current !== 0) return;
+    if (loopRef.current !== 0) return;
     loopRef.current = requestAnimationFrame(frame);
   }, [frame]);
 
@@ -311,10 +325,6 @@ export default function GraphView({
     const stamped = fresh.map((n) => n.id);
     burstIds.current = stamped;
     setBurst({ ids: stamped, at: t });
-    if (!reducedMotion.current) {
-      // Auto-frame camera onto the newborn node
-      setTimeout(() => flyToNew(), 250);
-    }
     if (reducedMotion.current) {
       for (const id of stamped) bornAt.current.set(id, t);
       kickLoop(); // no-op under reduced motion: births render settled
@@ -608,7 +618,7 @@ export default function GraphView({
           onClick={flyToNew}
           className="absolute top-2 left-1/2 -translate-x-1/2 z-10 card px-3 py-1.5 text-xs mono border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)] animate-pulse"
         >
-          <span className="livedot live mr-1" /> ✨ {burst.ids.length} new memory formed — click to center
+          <span className="livedot live mr-1" /> {burst.ids.length} new — show me
         </button>
       )}
       <Suspense fallback={<p className="dim text-sm">growing the brain…</p>}>
@@ -620,27 +630,40 @@ export default function GraphView({
         nodeVal="val"
         linkColor="color"
         linkLabel="reason"
-        linkWidth={1.2}
-        linkDirectionalParticles={onPath}
-        linkDirectionalParticleSpeed={0.006}
-        linkDirectionalParticleColor={WHITE_PARTICLE}
+        linkWidth={1.3}
+        linkDirectionalParticles={(l) => {
+          const src = endId(l.source as string | GraphNode);
+          const tgt = endId(l.target as string | GraphNode);
+          const isFresh = bornAt.current.has(src) || bornAt.current.has(tgt);
+          return isFresh ? 4 : onPath(l);
+        }}
+        linkDirectionalParticleSpeed={0.008}
+        linkDirectionalParticleColor={(l) => {
+          const src = endId(l.source as string | GraphNode);
+          const tgt = endId(l.target as string | GraphNode);
+          return bornAt.current.has(src) || bornAt.current.has(tgt)
+            ? BIRTH_COLOR
+            : "#ffffff";
+        }}
         backgroundColor="#101014"
         showNavInfo={false}
         enableNodeDrag={true}
         onNodeClick={onNodeClick}
-        cooldownTime={3000}
+        cooldownTime={12000}
         d3VelocityDecay={0.6}
         d3AlphaDecay={0.035}
         onEngineStop={() => {
-          // One framing pass once the layout settles, so the brain fills
-          // the view instead of sitting wherever the sim drops it. Skips
-          // empty pools (a later stop retries); never refires per refetch.
           if (framed.current || cache.current.nodes.length === 0) return;
           framed.current = true;
           try {
             fgRef.current?.zoomToFit?.(
-              reducedMotion.current ? 0 : 600, 80
+              reducedMotion.current ? 0 : 800, 70
             );
+            const controls = (fgRef.current as unknown as { controls?: () => { autoRotate?: boolean; autoRotateSpeed?: number } })?.controls?.();
+            if (controls) {
+              controls.autoRotate = true;
+              controls.autoRotateSpeed = 0.45;
+            }
           } catch {
             /* graph not ready */
           }
